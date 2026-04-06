@@ -1,22 +1,3 @@
-"""
-Chatbot evaluation script.
-Runs hardcoded legal prompts through the chatbot and saves results to CSV.
-Optionally runs the full 9-metric evaluation suite via --metrics flag.
-
-Usage:
-    cd server/
-    source myenv/bin/activate
-
-    # Basic run (answers + latency only, same as before):
-    python test_chatbot.py
-
-    # Full metrics evaluation with LLM judge:
-    python test_chatbot.py --metrics
-
-    # Full metrics evaluation using keyword heuristics only (no Ollama judge):
-    python test_chatbot.py --metrics --no-llm-judge
-"""
-
 import argparse
 import asyncio
 import csv
