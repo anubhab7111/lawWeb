@@ -2,6 +2,7 @@
 """
 Run script for the legal chatbot server.
 """
+
 import uvicorn
 from app.config import get_settings
 
@@ -10,8 +11,7 @@ def main():
     """Run the FastAPI server."""
     settings = get_settings()
 
-    print(
-        f"""
+    print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║           Legal Chatbot Server                               ║
 ║                                                              ║
@@ -22,8 +22,7 @@ def main():
 ║                                                              ║
 ║  API Docs: http://{settings.host}:{settings.port}/docs       ║
 ╚══════════════════════════════════════════════════════════════╝
-    """
-    )
+    """)
 
     uvicorn.run(
         "app.main:app",

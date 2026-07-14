@@ -48,14 +48,14 @@ except ImportError as e:
 class LegalChunk:
     """One atomic legal provision retrieved from the vector store."""
 
-    chunk_id: str          # e.g. "ICA_10", "CON_ART21", "CPC_151"
-    domain: str            # "criminal" | "civil" | "constitutional"
-    act_name: str          # e.g. "Indian Contract Act, 1872"
-    section_number: str    # e.g. "10", "21", "302"
-    title: str             # e.g. "What agreements are contracts"
-    text: str              # Full section / Article text
-    source_file: str       # PDF filename
-    score: float = 0.0     # Cosine similarity (higher = more relevant)
+    chunk_id: str  # e.g. "ICA_10", "CON_ART21", "CPC_151"
+    domain: str  # "criminal" | "civil" | "constitutional"
+    act_name: str  # e.g. "Indian Contract Act, 1872"
+    section_number: str  # e.g. "10", "21", "302"
+    title: str  # e.g. "What agreements are contracts"
+    text: str  # Full section / Article text
+    source_file: str  # PDF filename
+    score: float = 0.0  # Cosine similarity (higher = more relevant)
     has_punishment: bool = False  # True only for criminal sections
 
 
@@ -196,7 +196,9 @@ class BaseLegalRAGSystem(ABC):
                 return True
             except Exception as e:
                 print(f"[{self.domain_name}] Initialization error: {e}")
-                import traceback; traceback.print_exc()
+                import traceback
+
+                traceback.print_exc()
                 return False
 
     async def retrieve(
@@ -331,7 +333,9 @@ class BaseLegalRAGSystem(ABC):
         if not matches:
             # Fallback: treat the entire text as a single chunk
             if len(full_text.strip()) > 50:
-                chunk_id = f"{self.domain_name.upper()[:3]}_{Path(source_file).stem}_FULL"
+                chunk_id = (
+                    f"{self.domain_name.upper()[:3]}_{Path(source_file).stem}_FULL"
+                )
                 chunks.append(
                     LegalChunk(
                         chunk_id=chunk_id,
@@ -409,7 +413,9 @@ class BaseLegalRAGSystem(ABC):
 
         pdf_files = list(self._bare_acts_dir.rglob("*.pdf"))
         if not pdf_files:
-            print(f"[{self.domain_name}] WARNING: No PDFs found in {self._bare_acts_dir}")
+            print(
+                f"[{self.domain_name}] WARNING: No PDFs found in {self._bare_acts_dir}"
+            )
             return
 
         print(f"[{self.domain_name}] Indexing {len(pdf_files)} PDF(s)…")
@@ -421,9 +427,7 @@ class BaseLegalRAGSystem(ABC):
                 pages = loader.load()
                 full_text = "\n".join(p.page_content for p in pages)
                 parsed = self._parse_legal_sections(full_text, pdf_path.name)
-                print(
-                    f"  {pdf_path.name}: {len(pages)} pages → {len(parsed)} chunks"
-                )
+                print(f"  {pdf_path.name}: {len(pages)} pages → {len(parsed)} chunks")
                 all_chunks.extend(parsed)
             except Exception as e:
                 print(f"  ERROR loading {pdf_path.name}: {e}")
@@ -437,9 +441,7 @@ class BaseLegalRAGSystem(ABC):
 
         documents: List[Document] = []
         for chunk in all_chunks:
-            embed_text = (
-                f"Section {chunk.section_number}. {chunk.title}. {chunk.text}"
-            )
+            embed_text = f"Section {chunk.section_number}. {chunk.title}. {chunk.text}"
             documents.append(
                 Document(
                     page_content=embed_text,
@@ -503,9 +505,7 @@ class BaseLegalRAGSystem(ABC):
                     source_file=data["source_file"],
                     has_punishment=data.get("has_punishment", False),
                 )
-            print(
-                f"[{self.domain_name}] Loaded {len(self._chunks)} chunks from cache."
-            )
+            print(f"[{self.domain_name}] Loaded {len(self._chunks)} chunks from cache.")
         except Exception as e:
             print(f"[{self.domain_name}] Error loading chunk cache: {e}")
 

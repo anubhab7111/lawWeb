@@ -41,7 +41,6 @@ from app.tools.base_legal_rag import (
     _infer_act_name,
 )
 
-
 # ─────────────────────────────────────────────────────────────
 # Data models (kept for backward compatibility with chatbot.py)
 # ─────────────────────────────────────────────────────────────
@@ -109,14 +108,35 @@ def extract_crime_features(text: str) -> CrimeFeatures:
     f = CrimeFeatures()
 
     violence_words = [
-        "hit", "beat", "attack", "assault", "stab", "slash", "punch", "kick",
-        "injure", "wound", "hurt", "violence", "physical", "bleed", "fracture",
+        "hit",
+        "beat",
+        "attack",
+        "assault",
+        "stab",
+        "slash",
+        "punch",
+        "kick",
+        "injure",
+        "wound",
+        "hurt",
+        "violence",
+        "physical",
+        "bleed",
+        "fracture",
         "broken bone",
     ]
     f.violence = any(w in t for w in violence_words)
 
-    death_words = ["kill", "murder", "dead", "death", "died", "homicide",
-                   "body found", "corpse"]
+    death_words = [
+        "kill",
+        "murder",
+        "dead",
+        "death",
+        "died",
+        "homicide",
+        "body found",
+        "corpse",
+    ]
     f.death = any(w in t for w in death_words)
 
     weapons = {
@@ -134,12 +154,23 @@ def extract_crime_features(text: str) -> CrimeFeatures:
             break
 
     intentional_words = [
-        "deliberately", "intentionally", "planned", "premeditated",
-        "purposely", "wilfully", "willfully", "on purpose",
+        "deliberately",
+        "intentionally",
+        "planned",
+        "premeditated",
+        "purposely",
+        "wilfully",
+        "willfully",
+        "on purpose",
     ]
     reckless_words = [
-        "reckless", "rashly", "negligent", "careless",
-        "speeding", "drunk driving", "rash driving",
+        "reckless",
+        "rashly",
+        "negligent",
+        "careless",
+        "speeding",
+        "drunk driving",
+        "rash driving",
     ]
     if any(w in t for w in intentional_words):
         f.intent = "intentional"
@@ -151,49 +182,106 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         f.intent = "intentional"
 
     property_words = [
-        "stolen", "theft", "robbed", "took my", "snatched",
-        "missing property", "cheated money", "misappropriated", "embezzled",
-        "property taken", "grabbed", "encroached", "illegally taken",
+        "stolen",
+        "theft",
+        "robbed",
+        "took my",
+        "snatched",
+        "missing property",
+        "cheated money",
+        "misappropriated",
+        "embezzled",
+        "property taken",
+        "grabbed",
+        "encroached",
+        "illegally taken",
     ]
     f.property_loss = any(w in t for w in property_words)
 
     sexual_words = [
-        "rape", "molest", "sexual assault", "groping", "stalking",
-        "sexual harassment", "indecent", "obscene",
+        "rape",
+        "molest",
+        "sexual assault",
+        "groping",
+        "stalking",
+        "sexual harassment",
+        "indecent",
+        "obscene",
     ]
     f.sexual = any(w in t for w in sexual_words)
 
     fraud_words = [
-        "fraud", "scam", "cheated", "deceived", "forged",
-        "fake", "forgery", "counterfeit", "swindled", "duped",
+        "fraud",
+        "scam",
+        "cheated",
+        "deceived",
+        "forged",
+        "fake",
+        "forgery",
+        "counterfeit",
+        "swindled",
+        "duped",
     ]
     f.fraud = any(w in t for w in fraud_words)
 
     domestic_words = [
-        "husband", "wife", "in-laws", "dowry", "domestic",
-        "marital", "spouse", "marriage", "matrimonial",
+        "husband",
+        "wife",
+        "in-laws",
+        "dowry",
+        "domestic",
+        "marital",
+        "spouse",
+        "marriage",
+        "matrimonial",
     ]
     f.domestic = any(w in t for w in domestic_words)
 
     trespass_words = [
-        "trespass", "encroach", "illegal entry", "broke into",
-        "entered my", "occupied my land", "illegally taken",
-        "land grabbed", "land taken", "property grabbed",
+        "trespass",
+        "encroach",
+        "illegal entry",
+        "broke into",
+        "entered my",
+        "occupied my land",
+        "illegally taken",
+        "land grabbed",
+        "land taken",
+        "property grabbed",
     ]
     f.trespass = any(w in t for w in trespass_words)
 
-    fire_words = ["fire", "arson", "set fire", "burnt", "burning",
-                  "flames", "house fire", "on fire"]
+    fire_words = [
+        "fire",
+        "arson",
+        "set fire",
+        "burnt",
+        "burning",
+        "flames",
+        "house fire",
+        "on fire",
+    ]
     f.fire = any(w in t for w in fire_words)
 
     kidnap_words = [
-        "kidnap", "abduct", "ransom", "taken away", "missing child", "hostage",
+        "kidnap",
+        "abduct",
+        "ransom",
+        "taken away",
+        "missing child",
+        "hostage",
     ]
     f.kidnapping = any(w in t for w in kidnap_words)
 
     threat_words = [
-        "threatened", "threatening", "threat", "intimidate", "intimidation",
-        "will kill", "warned me", "death threat",
+        "threatened",
+        "threatening",
+        "threat",
+        "intimidate",
+        "intimidation",
+        "will kill",
+        "warned me",
+        "death threat",
     ]
     f.threat = any(w in t for w in threat_words)
 
@@ -282,7 +370,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             terms.extend(["cruelty by husband", "dowry death", "abetment of suicide"])
 
         # Explicit criminal fraud / forgery (only when combined with criminal act verbs)
-        if any(w in q for w in ["forged document", "forged signature", "fake document"]):
+        if any(
+            w in q for w in ["forged document", "forged signature", "fake document"]
+        ):
             terms.extend(["forgery", "using forged document"])
         if any(w in q for w in ["cheated me", "cheated out of", "deceived me into"]):
             terms.extend(["cheating", "dishonestly inducing delivery of property"])
@@ -300,7 +390,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             terms.extend(["arson", "fire to property"])
 
         # Criminal trespass (breaking and entering — not civil land disputes)
-        if any(w in q for w in ["broke into", "illegal entry", "trespassed into house"]):
+        if any(
+            w in q for w in ["broke into", "illegal entry", "trespassed into house"]
+        ):
             terms.extend(["criminal trespass", "house-breaking"])
 
         if terms:
@@ -375,6 +467,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             )
 
             import asyncio as _asyncio
+
             loop = _asyncio.get_event_loop()
             results = await loop.run_in_executor(
                 None,
@@ -443,7 +536,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
 
         except Exception as e:
             print(f"[criminal] Retrieval error: {e}")
-            import traceback; traceback.print_exc()
+            import traceback
+
+            traceback.print_exc()
             return RAGResult(
                 crime_type=crime_type or "general",
                 ipc_sections=[],
@@ -456,8 +551,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
     ) -> CrimeContext:
         """Legacy-compatible interface (used by indian_law_rag.py)."""
         features = extract_crime_features(query)
-        result = await self.retrieve_sections(query, crime_type=crime_type,
-                                              features=features, k=k)
+        result = await self.retrieve_sections(
+            query, crime_type=crime_type, features=features, k=k
+        )
         passages = []
         sources = []
         for match in result.ipc_sections:

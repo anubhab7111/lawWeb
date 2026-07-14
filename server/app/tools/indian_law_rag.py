@@ -288,9 +288,9 @@ class IndianLawRAGTool:
     def __init__(
         self,
         indian_kanoon_tool=None,
-        crime_rag=None,           # Legacy; kept for backward compatibility
-        criminal_rag=None,        # CriminalRAGSystem
-        civil_rag=None,           # CivilRAGSystem
+        crime_rag=None,  # Legacy; kept for backward compatibility
+        criminal_rag=None,  # CriminalRAGSystem
+        civil_rag=None,  # CivilRAGSystem
         constitutional_rag=None,  # ConstitutionalRAGSystem
     ):
         self.indian_kanoon = indian_kanoon_tool
@@ -484,8 +484,12 @@ class IndianLawRAGTool:
 
         criminal_doc_types = {"FIR"}
         civil_doc_types = {
-            "Sale Deed", "Rent Agreement", "Agreement to Sell",
-            "Power of Attorney", "Will / Testament", "Notice (CrPC/CPC)",
+            "Sale Deed",
+            "Rent Agreement",
+            "Agreement to Sell",
+            "Power of Attorney",
+            "Will / Testament",
+            "Notice (CrPC/CPC)",
             "Affidavit",
         }
 

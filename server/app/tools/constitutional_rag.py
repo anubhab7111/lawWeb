@@ -123,9 +123,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
                 )
             )
 
-        print(
-            f"[constitutional] Parsed {len(chunks)} Articles from {source_file}"
-        )
+        print(f"[constitutional] Parsed {len(chunks)} Articles from {source_file}")
         return chunks
 
     def _preprocess_query(self, query: str) -> str:
@@ -138,20 +136,53 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         # Fundamental rights
         if any(w in q for w in ["right to equality", "equal protection", "article 14"]):
             terms.extend(["Article 14", "right to equality", "equal protection of law"])
-        if any(w in q for w in ["free speech", "freedom of speech", "article 19",
-                                  "expression", "press freedom"]):
-            terms.extend(["Article 19", "freedom of speech and expression",
-                          "reasonable restriction"])
-        if any(w in q for w in ["right to life", "personal liberty", "article 21",
-                                  "privacy", "surveillance", "dignity"]):
-            terms.extend(["Article 21", "right to life", "personal liberty",
-                          "right to privacy"])
+        if any(
+            w in q
+            for w in [
+                "free speech",
+                "freedom of speech",
+                "article 19",
+                "expression",
+                "press freedom",
+            ]
+        ):
+            terms.extend(
+                [
+                    "Article 19",
+                    "freedom of speech and expression",
+                    "reasonable restriction",
+                ]
+            )
+        if any(
+            w in q
+            for w in [
+                "right to life",
+                "personal liberty",
+                "article 21",
+                "privacy",
+                "surveillance",
+                "dignity",
+            ]
+        ):
+            terms.extend(
+                ["Article 21", "right to life", "personal liberty", "right to privacy"]
+            )
         if any(w in q for w in ["right to education", "article 21a"]):
             terms.extend(["Article 21A", "right to education"])
-        if any(w in q for w in ["protection against arrest", "double jeopardy",
-                                  "self-incrimination", "article 20"]):
+        if any(
+            w in q
+            for w in [
+                "protection against arrest",
+                "double jeopardy",
+                "self-incrimination",
+                "article 20",
+            ]
+        ):
             terms.extend(["Article 20", "protection against arbitrary arrest"])
-        if any(w in q for w in ["article 32", "supreme court writ", "constitutional remedy"]):
+        if any(
+            w in q
+            for w in ["article 32", "supreme court writ", "constitutional remedy"]
+        ):
             terms.extend(["Article 32", "right to constitutional remedies"])
         if any(w in q for w in ["article 226", "high court writ"]):
             terms.extend(["Article 226", "power of high courts to issue writs"])
@@ -167,27 +198,53 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         # Federalism
         if any(w in q for w in ["president rule", "article 356", "emergency"]):
             terms.extend(["Article 356", "President's rule", "emergency provisions"])
-        if any(w in q for w in ["union list", "state list", "concurrent list",
-                                  "seventh schedule"]):
-            terms.extend(["Seventh Schedule", "legislative lists",
-                          "Article 246", "concurrent list"])
+        if any(
+            w in q
+            for w in ["union list", "state list", "concurrent list", "seventh schedule"]
+        ):
+            terms.extend(
+                [
+                    "Seventh Schedule",
+                    "legislative lists",
+                    "Article 246",
+                    "concurrent list",
+                ]
+            )
 
         # Amendment / basic structure
         if any(w in q for w in ["amendment", "article 368", "basic structure"]):
-            terms.extend(["Article 368", "constitutional amendment",
-                          "basic structure doctrine", "Kesavananda Bharati"])
+            terms.extend(
+                [
+                    "Article 368",
+                    "constitutional amendment",
+                    "basic structure doctrine",
+                    "Kesavananda Bharati",
+                ]
+            )
 
         # Directive Principles
-        if any(w in q for w in ["dpsp", "directive principles", "article 36",
-                                  "welfare state"]):
-            terms.extend(["Directive Principles", "Article 36", "Article 37",
-                          "Article 38", "Article 39"])
+        if any(
+            w in q
+            for w in ["dpsp", "directive principles", "article 36", "welfare state"]
+        ):
+            terms.extend(
+                [
+                    "Directive Principles",
+                    "Article 36",
+                    "Article 37",
+                    "Article 38",
+                    "Article 39",
+                ]
+            )
 
         # Parliament / legislature
-        if any(w in q for w in ["parliament", "lok sabha", "rajya sabha",
-                                  "legislative power"]):
-            terms.extend(["Article 79", "Parliament", "Article 105",
-                          "legislative powers"])
+        if any(
+            w in q
+            for w in ["parliament", "lok sabha", "rajya sabha", "legislative power"]
+        ):
+            terms.extend(
+                ["Article 79", "Parliament", "Article 105", "legislative powers"]
+            )
 
         if terms:
             return query + " " + " ".join(terms)

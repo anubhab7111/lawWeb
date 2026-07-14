@@ -12,7 +12,8 @@ class Settings(BaseSettings):
 
     # Ollama configuration
     ollama_base_url: str = "http://localhost:11434"
-    llm_model: str = "mistral-indian-law:latest"
+    # llm_model: str = "mistral-indian-law:latest"
+    llm_model: str = "qwen3:14b"
     llm_temperature: float = 0.1
 
     # Server configuration - use PYTHON_PORT to avoid conflict with Express PORT

@@ -516,8 +516,7 @@ class LawyerFinder:
         result_parts = [f"## Found {len(lawyers)} Lawyer(s)\n"]
 
         for i, lawyer in enumerate(lawyers, 1):
-            result_parts.append(
-                f"""
+            result_parts.append(f"""
 ### {i}. {lawyer.name}
 - **Specialization:** {lawyer.specialization}
 - **Location:** {lawyer.location}
@@ -528,8 +527,7 @@ class LawyerFinder:
 - **Email:** {lawyer.email}
 - **Consultation:** {lawyer.consultation_fee}
 - **Bar Number:** {lawyer.bar_number}
-"""
-            )
+""")
 
         result_parts.append(
             "\n*Note: Always verify lawyer credentials with your state bar association before engaging their services.*"

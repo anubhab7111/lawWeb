@@ -32,6 +32,7 @@ Environment / config
     Default model : gemini-2.5-flash   (reasoning variant, best quality/speed)
     Fallback model: gemini-2.0-flash   (faster, slightly lower quality)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -51,8 +52,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Model constants
 # ---------------------------------------------------------------------------
-GEMINI_REASONING_MODEL = "gemini-2.5-flash"   # latest reasoning model
-GEMINI_FALLBACK_MODEL  = "gemini-2.0-flash"   # fast fallback
+GEMINI_REASONING_MODEL = "gemini-2.5-flash"  # latest reasoning model
+GEMINI_FALLBACK_MODEL = "gemini-2.0-flash"  # fast fallback
+
 
 # ---------------------------------------------------------------------------
 # Result container  (unchanged from original)
@@ -61,11 +63,11 @@ GEMINI_FALLBACK_MODEL  = "gemini-2.0-flash"   # fast fallback
 class JudgeScore:
     """Structured output from a single LLM judge call."""
 
-    score: float        # [0.0 – 1.0]
-    reasoning: str      # brief natural-language explanation
-    metric: str         # which metric this score belongs to
-    raw_response: str = field(default="", repr=False)   # raw LLM output
-    latency_s: float  = field(default=0.0)              # wall-clock time
+    score: float  # [0.0 – 1.0]
+    reasoning: str  # brief natural-language explanation
+    metric: str  # which metric this score belongs to
+    raw_response: str = field(default="", repr=False)  # raw LLM output
+    latency_s: float = field(default=0.0)  # wall-clock time
 
     def __post_init__(self) -> None:
         self.score = max(0.0, min(1.0, float(self.score)))
@@ -287,8 +289,8 @@ def _build_gemini_model(model_name: str, api_key: str) -> genai.GenerativeModel:
         generation_config=genai.types.GenerationConfig(
             # Strict JSON output — Gemini honours this natively
             response_mime_type="application/json",
-            temperature=0.0,          # deterministic
-            max_output_tokens=512,    # score + one-sentence reasoning only
+            temperature=0.0,  # deterministic
+            max_output_tokens=512,  # score + one-sentence reasoning only
         ),
         # Optional safety settings — relax for legal content that might
         # mention violence / harm in a purely academic context.
@@ -340,16 +342,13 @@ class LLMJudge:
         # Resolve API key: kwarg → settings → env var (google-genai picks
         # up GOOGLE_API_KEY automatically, so passing None is also fine if
         # the env var is set)
-        resolved_key: Optional[str] = (
-            api_key
-            or getattr(settings, "gemini_api_key", None)
+        resolved_key: Optional[str] = api_key or getattr(
+            settings, "gemini_api_key", None
         )
 
         # Resolve model name
         self._model_name: str = (
-            model
-            or getattr(settings, "gemini_model", None)
-            or GEMINI_REASONING_MODEL
+            model or getattr(settings, "gemini_model", None) or GEMINI_REASONING_MODEL
         )
 
         self._max_retries = max_retries
@@ -368,8 +367,8 @@ class LLMJudge:
                 max_output_tokens=512,
             ),
             safety_settings={
-                "HARM_CATEGORY_HARASSMENT":        "BLOCK_NONE",
-                "HARM_CATEGORY_HATE_SPEECH":       "BLOCK_NONE",
+                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
                 "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
                 "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
             },
@@ -404,7 +403,9 @@ class LLMJudge:
 
                 logger.debug(
                     "metric=%s  score=%.3f  latency=%.2fs",
-                    metric, score.score, elapsed,
+                    metric,
+                    score.score,
+                    elapsed,
                 )
                 return score
 
@@ -412,13 +413,18 @@ class LLMJudge:
                 last_exc = exc
                 logger.warning(
                     "Gemini judge timed out (attempt %d/%d) metric=%s",
-                    attempt + 1, self._max_retries + 1, metric,
+                    attempt + 1,
+                    self._max_retries + 1,
+                    metric,
                 )
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 logger.warning(
                     "Gemini judge error (attempt %d/%d) metric=%s: %s",
-                    attempt + 1, self._max_retries + 1, metric, exc,
+                    attempt + 1,
+                    self._max_retries + 1,
+                    metric,
+                    exc,
                 )
 
             if attempt < self._max_retries:
@@ -562,10 +568,10 @@ class LLMJudge:
             return_exceptions=False,
         )
         return {
-            "faithfulness":      faith,
-            "answer_relevance":  relevance,
+            "faithfulness": faith,
+            "answer_relevance": relevance,
             "context_precision": precision,
-            "context_recall":    recall,
+            "context_recall": recall,
         }
 
 

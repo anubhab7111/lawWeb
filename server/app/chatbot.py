@@ -101,7 +101,8 @@ class ToolSelection(BaseModel):
         default=False, description="Use for case law, precedents, judgments"
     )
     use_crime_rag: bool = Field(
-        default=False, description="Use for IPC/CrPC/BNS sections, punishments, criminal procedures"
+        default=False,
+        description="Use for IPC/CrPC/BNS sections, punishments, criminal procedures",
     )
     use_civil_rag: bool = Field(
         default=False,
@@ -884,6 +885,7 @@ def get_llm() -> ChatOllama:
         base_url=settings.ollama_base_url,
         num_predict=1024,  # Balanced: enough for detailed answers, faster inference
         timeout=35.0,  # Tighter timeout for snappier responses
+        reasoning=False,  # qwen3 defaults to thinking mode; keep responses direct
     )
 
 
@@ -897,6 +899,7 @@ def get_fast_llm() -> ChatOllama:
         base_url=settings.ollama_base_url,
         num_predict=128,  # Reduced from 256 for faster classification
         timeout=15.0,  # Reduced from 30s
+        reasoning=False,  # classification needs the raw JSON, not a thinking preamble
     )
 
 
@@ -1216,8 +1219,10 @@ def _determine_tools_needed(
     # Determine sub-domain routing from existing substantive match counts
     use_constitutional_rag = constitutional_matches > 0
     use_civil_rag = (
-        civil_matches > 0 or property_matches > 0
-        or family_matches > 0 or tech_matches > 0
+        civil_matches > 0
+        or property_matches > 0
+        or family_matches > 0
+        or tech_matches > 0
     )
 
     # Apply the isolation guard: force crime_rag OFF when civil/constitutional
@@ -1864,7 +1869,10 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     rag_succeeded = False  # Compulsory RAG tracking
     try:
         # ── Use CriminalRAGSystem (not the old monolithic CrimeRAGSystem) ──
-        from app.tools.criminal_rag import extract_crime_features, get_criminal_rag_system
+        from app.tools.criminal_rag import (
+            extract_crime_features,
+            get_criminal_rag_system,
+        )
 
         rag_system = get_criminal_rag_system()
         await rag_system.initialize()
@@ -2111,10 +2119,14 @@ async def handle_general_query(state: ChatState) -> ChatState:
     # If civil/constitutional flags were captured in ToolSelection but not propagated
     # to state yet, fall back to keyword matching.
     if not use_civil_rag and not use_constitutional_rag and not use_crime_rag:
-        use_civil_rag = _fast_keyword_check(user_input, CIVIL_LAW_KEYWORDS) or \
-                        _fast_keyword_check(user_input, PROPERTY_LAW_KEYWORDS) or \
-                        _fast_keyword_check(user_input, TECH_LAW_KEYWORDS)
-        use_constitutional_rag = _fast_keyword_check(user_input, CONSTITUTIONAL_KEYWORDS)
+        use_civil_rag = (
+            _fast_keyword_check(user_input, CIVIL_LAW_KEYWORDS)
+            or _fast_keyword_check(user_input, PROPERTY_LAW_KEYWORDS)
+            or _fast_keyword_check(user_input, TECH_LAW_KEYWORDS)
+        )
+        use_constitutional_rag = _fast_keyword_check(
+            user_input, CONSTITUTIONAL_KEYWORDS
+        )
 
     # Fallback: If no tools selected but query has legal substance, force tools
     if not selected_tools:
@@ -2312,7 +2324,10 @@ async def handle_general_query(state: ChatState) -> ChatState:
     async def fetch_rag_sections():
         """Fetch IPC/BNS/CrPC sections from the criminal RAG system."""
         try:
-            from app.tools.criminal_rag import extract_crime_features, get_criminal_rag_system
+            from app.tools.criminal_rag import (
+                extract_crime_features,
+                get_criminal_rag_system,
+            )
 
             rag_system = get_criminal_rag_system()
             await rag_system.initialize()
@@ -2333,7 +2348,8 @@ async def handle_general_query(state: ChatState) -> ChatState:
             if rag_result_inner.ipc_sections:
                 MIN_CONFIDENCE = 0.40
                 relevant_sections = [
-                    m for m in rag_result_inner.ipc_sections
+                    m
+                    for m in rag_result_inner.ipc_sections
                     if m.confidence >= MIN_CONFIDENCE
                 ]
                 dropped = len(rag_result_inner.ipc_sections) - len(relevant_sections)
@@ -2363,7 +2379,9 @@ async def handle_general_query(state: ChatState) -> ChatState:
             return None, ""
         except Exception as e:
             print(f"Criminal RAG lookup error: {e}")
-            import traceback; traceback.print_exc()
+            import traceback
+
+            traceback.print_exc()
             return None, ""
 
     async def fetch_civil_sections():
@@ -2504,19 +2522,14 @@ NOTE: The above are civil law provisions. They govern remedies, obligations, and
             )
 
         if constitutional_context_text:
-            context_parts.append(
-                f"""**Applicable Constitutional Provisions:**
-{constitutional_context_text}"""
-            )
+            context_parts.append(f"""**Applicable Constitutional Provisions:**
+{constitutional_context_text}""")
 
         if indian_kanoon_results:
-            context_parts.append(
-                f"""**Relevant Case Law & Precedents:**
-{indian_kanoon_results}"""
-            )
+            context_parts.append(f"""**Relevant Case Law & Precedents:**
+{indian_kanoon_results}""")
 
         retrieved_context = "\n\n".join(context_parts) if context_parts else ""
-
 
         # Choose appropriate prompt based on context
         if retrieved_context:

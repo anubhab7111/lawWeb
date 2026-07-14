@@ -6,7 +6,6 @@ The finetuned LLM handles generating guidance, IPC sections, punishment, and fur
 
 from typing import Dict, List
 
-
 # List of recognized crime types for the /crime-types API endpoint
 CRIME_TYPES: List[str] = [
     "theft",

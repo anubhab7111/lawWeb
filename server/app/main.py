@@ -22,7 +22,6 @@ from app.tools.document_extractor import get_document_extractor
 from app.tools.crime_reporter import CRIME_TYPES
 from app.tools.lawyer_finder import get_lawyer_finder
 
-
 # ============================================================================
 # Pydantic Models
 # ============================================================================

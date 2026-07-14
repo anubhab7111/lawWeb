@@ -93,12 +93,6 @@ def download_with_fallbacks(client: httpx.Client, urls: list[str], dest: Path) -
     return False
 
 
-# ── Document catalogue ────────────────────────────────────────────────────────
-# Tuple schema: (subdirectory_under_data/, filename, [url, fallback, ...])
-#
-# Tip: the script de-duplicates by destination path, so if a file is listed
-# twice (e.g. once in each original script) only the first entry wins.
-
 DOCUMENTS: list[tuple[str, str, list[str]]] = [
     # ═══════════════════════════════════════════════════════════════════════════
     # CRIMINAL — new 2023 codes  (originally from download_legal_data.py)

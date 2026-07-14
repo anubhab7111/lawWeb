@@ -61,6 +61,10 @@
             "@types/react": "^19.2.7",
             "@types/react-dom": "^19.2.3",
             "@vitejs/plugin-react-swc": "^3.10.2",
-            "vite": "6.3.5"
+            "vite": "^6.4.3"
+      },
+      "allowScripts": {
+            "@swc/core@1.15.3": true,
+            "esbuild@0.25.12": true
       }
 }

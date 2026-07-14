@@ -306,9 +306,7 @@ class MetricsEvaluator:
                 excerpt = getattr(doc, "excerpt", "") or ""
                 title = getattr(doc, "title", "") or ""
                 if excerpt or title:
-                    ctx_parts.append(
-                        f"{title}\n{excerpt[:500]}"
-                    )
+                    ctx_parts.append(f"{title}\n{excerpt[:500]}")
         except Exception as exc:
             logger.warning("Indian Kanoon retrieval failed during evaluation: %s", exc)
 
