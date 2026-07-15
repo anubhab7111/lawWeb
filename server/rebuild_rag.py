@@ -22,7 +22,7 @@ async def rebuild_all():
         get_constitutional_rag_system(),
     ]
 
-    print("\n--- Starting Parallel RAG Index Rebuild (Hybrid BM25 + FAISS) ---")
+    print("\n--- Starting Parallel RAG Index Rebuild (FAISS semantic search) ---")
 
     # Initialize all systems in parallel to trigger build
     tasks = [sys.initialize() for sys in systems]

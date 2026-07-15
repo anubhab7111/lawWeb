@@ -33,6 +33,7 @@ from app.tools.base_legal_rag import (
     LegalChunk,
     LegalContext,
     _infer_act_name,
+    _schedule_boundary,
 )
 
 
@@ -69,13 +70,23 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         chunks: List[LegalChunk] = []
         act_name = _infer_act_name(source_file)
 
-        # Primary pattern: "Article 19" / "Article 19A"
+        # Stop before any Schedule: schedules restart their own paragraph
+        # numbering (1, 2, 3, ...), which otherwise collides with real
+        # Article numbers and pollutes the index with schedule text.
+        boundary = _schedule_boundary(full_text)
+        search_text = full_text[:boundary] if boundary else full_text
+
+        # Primary pattern: "Article 19" / "Article 19A". \s* (not \s+) after the
+        # period for consistency with the base parser — some source PDFs run
+        # the body straight on with no space after the number/period. An
+        # optional "N[" prefix is tolerated: amended Articles are often
+        # annotated with a footnote-bracket marker, e.g. "3[226. Power of...".
         article_pattern = re.compile(
-            r"\n\s*(?:Article\s+)?(\d{1,3}[A-Z]?)\.\s+([^\n.—]{3,}?)(?:[.—])\s*",
+            r"\n\s*(?:Article\s+)?(?:\d+\[)?(\d{1,3}[A-Z]?)\.\s*([^\n.—]{3,}?)(?:[.—])\s*",
             re.MULTILINE,
         )
 
-        matches = list(article_pattern.finditer(full_text))
+        matches = list(article_pattern.finditer(search_text))
 
         if not matches:
             # Fallback: treat the whole document as one chunk
@@ -99,14 +110,21 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             title = match.group(2).strip().rstrip(".")
 
             start = match.start()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
-            raw = full_text[start:end].strip()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(search_text)
+            raw = search_text[start:end].strip()
             raw = re.sub(r"\s+", " ", raw)
 
             if len(raw) < 20:
                 continue
 
-            chunk_id = f"CON_ART_{art_num}"
+            # Prefix by Act (not just "CON_ART_"): this domain indexes 3 PDFs
+            # (Constitution, Representation of the People Act, Protection of
+            # Human Rights Act) whose section/article numbers legitimately
+            # overlap — without an Act-specific prefix, e.g. Constitution
+            # Article 21 and Human Rights Act Section 21 collide under the
+            # same chunk_id and one silently shadows the other.
+            act_prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())[:6]
+            chunk_id = f"CON_{act_prefix}_{art_num}"
 
             chunks.append(
                 LegalChunk(

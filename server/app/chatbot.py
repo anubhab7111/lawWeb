@@ -1854,7 +1854,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     Handle crime reporting and guidance requests.
     Uses two-stage legal RAG pipeline:
     1. Extract crime features (violence, intent, weapon, etc.)
-    2. Retrieve IPC sections via vector recall → legal reranking → legal constraints
+    2. Retrieve IPC/BNS sections via FAISS semantic search, sorted by score
     3. Feed structured IPC sections to LLM for court-safe response
     """
     user_input = state["current_input"]
@@ -1863,7 +1863,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     # Detect crime type using keyword matching
     identified_crime = detect_crime_type(crime_details)
 
-    # Two-stage RAG: retrieve IPC/BNS sections with legal reranking
+    # Two-stage RAG: retrieve IPC/BNS sections via FAISS semantic search
     rag_sections_text = ""
     rag_result = None
     rag_succeeded = False  # Compulsory RAG tracking

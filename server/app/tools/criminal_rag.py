@@ -6,9 +6,15 @@ Source PDFs: app/data/bare_acts/criminal/
 
 Key design decisions
 --------------------
-* Punishment-clause filter IS kept: for criminal law, only chargeable sections
-  (those with an explicit "shall be punished" clause) are indexed. This prevents
-  the LLM from citing procedural definitions as offences.
+* Punishment-clause filter is applied PER-ACT, not uniformly. Substantive penal
+  statutes (IPC, BNS, NDPS, POCSO, SC/ST Atrocities Act, PMLA) only index
+  chargeable sections (those with an explicit "shall be punished"/"punishable"
+  clause) — this prevents the LLM from citing procedural definitions as
+  offences. Procedural/evidentiary codes (CrPC, BNSS, Indian Evidence Act, BSA)
+  have no offence-creating clauses by nature — applying the same filter to them
+  would index almost nothing (e.g. CrPC §482 quashing-FIR power, §438
+  anticipatory bail — routinely cited sections — have no punishment clause and
+  would be silently dropped). For those Acts, all parsed sections are indexed.
 
 * _preprocess_query() is SAFE: it maps genuine criminal vocabulary only.
   REMOVED dangerous mappings:
@@ -295,13 +301,29 @@ def extract_crime_features(text: str) -> CrimeFeatures:
 
 class CriminalRAGSystem(BaseLegalRAGSystem):
     """
-    Criminal law RAG: indexes IPC, BNS, CrPC, BNSS, Evidence Act.
+    Criminal law RAG: indexes IPC, BNS, CrPC, BNSS, Evidence Act, BSA, NDPS,
+    POCSO, SC/ST Atrocities Act, PMLA.
 
     Filtering policy:
-      - Only sections with an explicit punishment clause are indexed.
+      - Substantive penal statutes: only sections with an explicit punishment
+        clause are indexed (see PUNISHMENT_FILTERED_ACTS below).
+      - Procedural/evidentiary codes: no offence-creating clauses exist by
+        design, so all parsed sections are indexed unfiltered.
       - Query preprocessing maps genuine criminal vocabulary only —
         civil/tech/AI queries are NOT touched.
     """
+
+    # Substantive penal statutes — apply the punishment-clause filter.
+    # Everything else parsed from bare_acts/criminal/ (procedural/evidentiary
+    # codes: CrPC, BNSS, Indian Evidence Act, BSA) is indexed unfiltered.
+    PUNISHMENT_FILTERED_ACTS = {
+        "indian_penal_code_1860",
+        "bharatiya_nyaya_sanhita_bns_2023",
+        "ndps_act_1985",
+        "pocso_act_2012",
+        "sc_st_prevention_of_atrocities_act_1989",
+        "prevention_of_money_laundering_act_pmla_2002",
+    }
 
     @property
     def domain_name(self) -> str:
@@ -317,14 +339,21 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         self, full_text: str, source_file: str
     ) -> List[LegalChunk]:
         """
-        Criminal law parser with punishment-clause filter.
+        Criminal law parser with a per-Act punishment-clause filter.
 
-        LEGAL FILTER (appropriate for criminal domain only):
-        Sections without a "shall be punished" or "shall be punishable"
-        clause are excluded — we only want chargeable sections in the
-        criminal index.
+        Substantive penal statutes (PUNISHMENT_FILTERED_ACTS) only keep
+        sections with a "shall be punished"/"punishable" clause, so the LLM
+        can't cite a definition as a chargeable offence. Procedural/
+        evidentiary codes (CrPC, BNSS, Evidence Act, BSA) have no such clauses
+        by nature — filtering them the same way would index almost nothing,
+        including routinely-cited sections like CrPC §482 (quashing FIRs) or
+        §438 (anticipatory bail) — so those are indexed unfiltered.
         """
         base_chunks = super()._parse_legal_sections(full_text, source_file)
+
+        stem = Path(source_file).stem.lower()
+        if stem not in self.PUNISHMENT_FILTERED_ACTS:
+            return base_chunks
 
         # Apply criminal-specific filter: only index sections with punishment
         filtered: List[LegalChunk] = []
@@ -488,13 +517,23 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
 
                 cached = self._chunks.get(doc.metadata.get("chunk_id", ""))
 
-                # Punishment clause required for criminal index (sanity check)
+                # Punishment clause is only required for substantive penal
+                # statutes (IPC/BNS/NDPS/POCSO/etc.) — matches _parse_legal_sections'
+                # per-Act policy. Procedural/evidentiary codes (CrPC, BNSS,
+                # Evidence Act, BSA) have no such clause by design; requiring
+                # one here would silently drop routinely-cited sections like
+                # CrPC §438 (anticipatory bail) or §482 (inherent powers).
+                source_file = cached.source_file if cached else doc.metadata.get("source", "")
+                requires_punishment = (
+                    Path(source_file).stem.lower() in self.PUNISHMENT_FILTERED_ACTS
+                )
+
                 punishment = (
                     ""
                     if not cached
                     else (cached.text[:250] if cached.has_punishment else "")
                 ) or doc.metadata.get("punishment", "")
-                if not punishment or len(punishment) < 10:
+                if requires_punishment and (not punishment or len(punishment) < 10):
                     continue
 
                 confidence = max(0.0, 1.0 - (distance / 2.0))
@@ -509,7 +548,11 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                         section=sec_num,
                         title=title,
                         confidence=round(min(confidence, 1.0), 2),
-                        reasons=["Chargeable criminal section with punishment clause"],
+                        reasons=(
+                            ["Chargeable criminal section with punishment clause"]
+                            if requires_punishment
+                            else ["Procedural/evidentiary criminal law section"]
+                        ),
                         punishment=punishment,
                         definition=definition,
                         review_required=confidence < 0.6,

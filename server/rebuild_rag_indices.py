@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-rebuild_rag_indices.py — CLI tool to force-rebuild FAISS/BM25 indexes for specific domains.
+rebuild_rag_indices.py — CLI tool to force-rebuild FAISS indexes for specific domains.
 Usage:
     python rebuild_rag_indices.py --all
     python rebuild_rag_indices.py --domain constitutional
@@ -67,6 +67,24 @@ async def rebuild_domain(domain: str):
             print(f"  Diagnostic: Article 19 has {len(art19)} chunks.")
     else:
         print(f"  Failed to rebuild '{domain}' index.")
+
+    # Each domain's embedding model stays resident in GPU/CPU memory for the
+    # life of this process (systems are cached singletons), and the FAISS
+    # vector_store also holds its own reference to the embeddings object —
+    # both must be dropped (and garbage-collected) before the CUDA cache
+    # actually frees up, or the next domain has no headroom.
+    system.embeddings = None
+    system.vector_store = None
+    try:
+        import gc
+
+        import torch
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
 
 
 async def main():

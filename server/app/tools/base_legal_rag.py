@@ -30,8 +30,8 @@ from typing import Any, Dict, List, Optional
 try:
     from langchain_community.document_loaders import PyPDFLoader
     from langchain_community.vectorstores import FAISS
+    from langchain_community.embeddings import HuggingFaceBgeEmbeddings
     from langchain_core.documents import Document
-    from langchain_ollama import OllamaEmbeddings
 
     HAS_RAG_DEPS = True
 except ImportError as e:
@@ -114,6 +114,75 @@ def _infer_act_name(filename: str) -> str:
     return stem
 
 
+_ORDINALS = (
+    r"(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|"
+    r"ELEVENTH|TWELFTH)"
+)
+_SCHEDULE_HEADING_RE = re.compile(
+    r"\n\s*\d*\[?" + _ORDINALS + r"\s+SCHEDULE\s*\n?\s*\[Articles?\s+\d"
+)
+
+# Genuine substantive section/article text essentially never contains these —
+# they are the standard conventions Indian bare-act PDFs use for amendment
+# footnotes ("Subs. by the ... Amendment Act ... (w.e.f. ...)") and Schedule
+# paragraph headings, both of which can share a number with a real section.
+_NOISE_RE = re.compile(
+    r"w\.e\.f\.|subs\s*\.?\s*by|\bins\s*\.?\s*by\b|\brep\.\s*by\b|omitted by|schedule",
+    re.IGNORECASE,
+)
+
+
+def _schedule_boundary(full_text: str) -> Optional[int]:
+    """
+    Position where a genuine Schedule begins (e.g. "1[FIRST SCHEDULE
+    [Articles 1 and 4]"), if any. Schedules/appendices reuse their own
+    paragraph numbering (1, 2, 3, ...) which otherwise collides with real
+    section/article numbers, so callers should stop header-matching here.
+    """
+    m = _SCHEDULE_HEADING_RE.search(full_text)
+    return m.start() if m else None
+
+
+def _is_noise_match(title: str, raw: str) -> bool:
+    """True if a candidate section/article match looks like a footnote or a
+    Schedule paragraph rather than genuine section/article body text."""
+    return bool(_NOISE_RE.search(title) or _NOISE_RE.search(raw[:250]))
+
+
+_shared_embeddings: Optional[Any] = None
+_shared_embeddings_lock = asyncio.Lock()
+
+
+async def _get_shared_embeddings() -> Any:
+    """
+    Every domain (civil/criminal/constitutional) uses the identical embedding
+    model — load it once and share the instance instead of one copy per
+    domain. Loading 3 separate 1.3GB copies concurrently (e.g. on first
+    query, when chatbot.py fetches all domains via asyncio.gather) exhausts a
+    4GB consumer GPU; a single shared instance uses the memory once.
+    """
+    global _shared_embeddings
+    if _shared_embeddings is not None:
+        return _shared_embeddings
+    async with _shared_embeddings_lock:
+        if _shared_embeddings is None:
+            try:
+                import torch
+
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            except ImportError:
+                device = "cpu"
+            _shared_embeddings = HuggingFaceBgeEmbeddings(
+                model_name="BAAI/bge-large-en-v1.5",
+                model_kwargs={"device": device},
+                # Small batch_size: a few thousand legal-section chunks at
+                # once can OOM a consumer GPU (e.g. 4GB VRAM) if encoded
+                # in one big batch.
+                encode_kwargs={"normalize_embeddings": True, "batch_size": 16},
+            )
+        return _shared_embeddings
+
+
 # ─────────────────────────────────────────────────────────────
 # Abstract Base Class
 # ─────────────────────────────────────────────────────────────
@@ -176,10 +245,7 @@ class BaseLegalRAGSystem(ABC):
             if self.initialized:
                 return True
             try:
-                self.embeddings = OllamaEmbeddings(
-                    model="nomic-embed-text",
-                    base_url="http://localhost:11434",
-                )
+                self.embeddings = await _get_shared_embeddings()
                 if await self._should_rebuild():
                     print(f"[{self.domain_name}] Building vector store from PDFs …")
                     await self._build_vectorstore()
@@ -187,6 +253,13 @@ class BaseLegalRAGSystem(ABC):
                     print(f"[{self.domain_name}] Loading cached vector store …")
                     await self._load_vectorstore()
                     self._load_chunk_cache()
+
+                if self.vector_store is None:
+                    print(
+                        f"[{self.domain_name}] Build produced no vector store — "
+                        f"will retry on next call."
+                    )
+                    return False
 
                 self.initialized = True
                 print(
@@ -270,7 +343,7 @@ class BaseLegalRAGSystem(ABC):
                         act_name=doc.metadata.get("act_name", ""),
                         section_number=doc.metadata.get("section_number", ""),
                         title=doc.metadata.get("title", ""),
-                        text=doc.page_content[:500],
+                        text=doc.page_content,
                         source_file=doc.metadata.get("source", ""),
                         has_punishment=bool(doc.metadata.get("punishment", "")),
                         score=round(min(score, 1.0), 3),
@@ -323,12 +396,22 @@ class BaseLegalRAGSystem(ABC):
         chunks: List[LegalChunk] = []
         act_name = _infer_act_name(source_file)
 
-        # Match  "  10.  What agreements are contracts"  style headers
+        # Stop before any Schedule: schedules restart their own paragraph
+        # numbering (1, 2, 3, ...), which otherwise collides with real
+        # section numbers and pollutes the index with schedule text.
+        boundary = _schedule_boundary(full_text)
+        search_text = full_text[:boundary] if boundary else full_text
+
+        # Match  "  10.  What agreements are contracts"  style headers.
+        # \s* (not \s+) after the number: some Acts (e.g. BNS 2023) run the
+        # subsection straight on, e.g. "103.(1) Whoever commits murder...".
+        # An optional "N[" prefix is tolerated: amended sections are often
+        # annotated with a footnote-bracket marker, e.g. "3[226. Power of...".
         header_pattern = re.compile(
-            r"\n\s*(\d{1,3}[A-Z]{0,2})\.\s+([^.\n\u2014]{3,}?)(?:[.\u2014])\s*",
+            r"\n\s*(?:\d+\[)?(\d{1,3}[A-Z]{0,2})\.\s*([^.\n\u2014]{3,}?)(?:[.\u2014])\s*",
             re.MULTILINE,
         )
-        matches = list(header_pattern.finditer(full_text))
+        matches = list(header_pattern.finditer(search_text))
 
         if not matches:
             # Fallback: treat the entire text as a single chunk
@@ -355,8 +438,8 @@ class BaseLegalRAGSystem(ABC):
             title = match.group(2).strip().rstrip(".")
 
             start = match.start()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
-            raw = full_text[start:end].strip()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(search_text)
+            raw = search_text[start:end].strip()
             raw = re.sub(r"\n\d{1,3}\s*\n", "\n", raw)
             raw = re.sub(r"\s+", " ", raw)
 
@@ -436,11 +519,23 @@ class BaseLegalRAGSystem(ABC):
             print(f"[{self.domain_name}] No chunks parsed — aborting build.")
             return
 
-        self._chunks = {c.chunk_id: c for c in all_chunks}
+        # A given chunk_id can legitimately collide across a document (e.g. a
+        # footnote/amendment citation like "1. Subs. by Act 3 of 1951..." or a
+        # table-of-contents entry re-using the same section number). Prefer a
+        # candidate that doesn't look like footnote/schedule noise; among
+        # equally "clean" candidates, keep the longest (genuine section bodies
+        # are almost always longer than a TOC line or citation).
+        self._chunks = {}
+        best_score: Dict[str, tuple] = {}
+        for c in all_chunks:
+            score = (0 if _is_noise_match(c.title, c.text) else 1, len(c.text))
+            if c.chunk_id not in best_score or score > best_score[c.chunk_id]:
+                best_score[c.chunk_id] = score
+                self._chunks[c.chunk_id] = c
         self._save_chunk_cache()
 
         documents: List[Document] = []
-        for chunk in all_chunks:
+        for chunk in self._chunks.values():
             embed_text = f"Section {chunk.section_number}. {chunk.title}. {chunk.text}"
             documents.append(
                 Document(
@@ -479,7 +574,7 @@ class BaseLegalRAGSystem(ABC):
                 "act_name": chunk.act_name,
                 "section_number": chunk.section_number,
                 "title": chunk.title,
-                "text": chunk.text[:600],
+                "text": chunk.text,
                 "source_file": chunk.source_file,
                 "has_punishment": chunk.has_punishment,
             }

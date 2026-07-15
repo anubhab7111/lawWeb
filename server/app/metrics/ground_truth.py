@@ -12,10 +12,13 @@ Each entry contains:
                          Context Recall and Faithfulness evaluation
   - domain             : Broad legal domain tag for filtering/reporting
 
-NOTE: relevant_ipc_sections intentionally contains ONLY sections indexed in the
-local IPC FAISS store.  Constitutional, contract, evidence, and family-law
-queries have empty lists because the RAG corpus is IPC-only; those queries are
-evaluated purely on generation quality.
+NOTE: relevant_ipc_sections intentionally contains ONLY IPC/BNS section numbers
+usable for Hit Rate@k / MRR scoring. Constitutional, contract, property, and
+family-law queries have empty lists because those domains cite Articles/
+sections from other Acts (or, for family law, an act with no RAG index at
+all) rather than IPC sections; those queries are evaluated on generation
+quality (faithfulness / context recall / answer relevance) using context
+retrieved from the matching civil/constitutional RAG system instead.
 """
 
 from typing import List, Optional, TypedDict

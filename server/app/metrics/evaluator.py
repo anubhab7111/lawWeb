@@ -252,13 +252,21 @@ class MetricsEvaluator:
         ctx_parts: List[str] = []
 
         has_ipc_ground_truth = bool(gt_entry.get("relevant_ipc_sections"))
+        domain = gt_entry.get("domain", "unknown")
 
-        # ── 1. Crime RAG (IPC FAISS) — only for criminal/IPC queries ──
-        if has_ipc_ground_truth:
+        # ── 1. Criminal RAG (IPC/CrPC/Evidence Act FAISS) ──────────────
+        # Runs whenever the ground truth expects IPC sections (Hit-Rate/MRR
+        # signal), OR the domain is criminal-adjacent but has no IPC section
+        # numbers of its own (e.g. Evidence Act queries — context/faithfulness
+        # signal only, no Hit-Rate/MRR contribution).
+        if has_ipc_ground_truth or domain in ("criminal", "criminal_procedure", "evidence_law"):
             try:
-                from app.tools.crime_rag import extract_crime_features, get_rag_system
+                from app.tools.criminal_rag import (
+                    extract_crime_features,
+                    get_criminal_rag_system,
+                )
 
-                rag = get_rag_system()
+                rag = get_criminal_rag_system()
                 await rag.initialize()
 
                 if rag.initialized:
@@ -269,17 +277,44 @@ class MetricsEvaluator:
 
                     sections = [m.section for m in rag_result.ipc_sections]
                     ctx_parts.extend(
-                        f"IPC Section {m.section} -- {m.title}\n"
+                        f"Section {m.section} -- {m.title}\n"
                         f"Punishment: {m.punishment}\n"
                         f"{m.definition[:400]}"
                         for m in rag_result.ipc_sections
                     )
             except Exception as exc:
-                logger.warning("Crime RAG retrieval failed during evaluation: %s", exc)
+                logger.warning("Criminal RAG retrieval failed during evaluation: %s", exc)
+
+        # ── 1b. Civil / Constitutional RAG — context signal for their domains ──
+        civil_domains = ("contract_law", "property_law", "technology_law")
+        try:
+            if domain == "constitutional":
+                from app.tools.constitutional_rag import get_constitutional_rag_system
+
+                const_rag = get_constitutional_rag_system()
+                await const_rag.initialize()
+                if const_rag.initialized:
+                    result = await const_rag.retrieve(query, k=self.rag_k)
+                    ctx_parts.extend(
+                        f"{c.act_name} Article {c.section_number} -- {c.title}\n{c.text[:400]}"
+                        for c in result.chunks
+                    )
+            elif domain in civil_domains:
+                from app.tools.civil_rag import get_civil_rag_system
+
+                civil_rag = get_civil_rag_system()
+                await civil_rag.initialize()
+                if civil_rag.initialized:
+                    result = await civil_rag.retrieve(query, k=self.rag_k)
+                    ctx_parts.extend(
+                        f"{c.act_name} Section {c.section_number} -- {c.title}\n{c.text[:400]}"
+                        for c in result.chunks
+                    )
+        except Exception as exc:
+            logger.warning("Civil/Constitutional RAG retrieval failed during evaluation: %s", exc)
 
         # ── 2. Indian Kanoon (case law & statutes API) ────────────────
         # Map ground-truth domain → Indian Kanoon context_type
-        domain = gt_entry.get("domain", "unknown")
         ik_context_map = {
             "constitutional": "constitution",
             "criminal": "ipc",
