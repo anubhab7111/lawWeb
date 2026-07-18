@@ -60,8 +60,19 @@ def download_file(client: httpx.Client, url: str, dest: Path) -> bool:
                     log.warning(f"  [WARN] Server returned HTML (not PDF): {url}")
                     return False
                 r.raise_for_status()
+                first_chunk = True
                 with open(dest, "wb") as f:
                     for chunk in r.iter_bytes(chunk_size=8192):
+                        if first_chunk:
+                            if not chunk.startswith(b"%PDF"):
+                                log.warning(
+                                    f"  [WARN] Response is not a PDF "
+                                    f"(missing %PDF header): {url}"
+                                )
+                                f.close()
+                                dest.unlink(missing_ok=True)
+                                return False
+                            first_chunk = False
                         f.write(chunk)
 
             size_kb = dest.stat().st_size / 1024
@@ -115,7 +126,11 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/criminal",
         "Bharatiya_Sakshya_Adhiniyam_BSA_2023.pdf",
         [
-            "https://www.mha.gov.in/sites/default/files/BharatiyaSakshyaAdhiniyam_24022024.pdf",
+            # NOTE: the old MHA link (BharatiyaSakshyaAdhiniyam_24022024.pdf)
+            # was the 2-page enforcement notification, NOT the bare act.
+            "https://www.indiacode.nic.in/bitstream/123456789/20063/1/aa202347.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/20063/1/a2023-47.pdf",
+            "https://www.mha.gov.in/sites/default/files/2024-04/250882_english_01042024_0.pdf",
         ],
     ),
     # ═══════════════════════════════════════════════════════════════════════════
@@ -165,10 +180,9 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/criminal",
         "POCSO_Act_2012.pdf",
         [
-            # GOV — WCD Ministry
-            "https://wcd.nic.in/sites/default/files/POCSO%20Act%2C%202012.pdf",
-            # State police portal (confirmed live in search)
-            "https://dhalaipolice.tripura.gov.in/sites/default/files/uploaded-file/The%20Protection%20of%20Children%20from%20Sexual%20Offences%20Act,%202012%20(POCSO,%202012)_0.pdf",
+            # NOTE: the old WCD link served a training slideshow, NOT the act.
+            "https://www.indiacode.nic.in/bitstream/123456789/2079/1/AA2012-32.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/15303/1/pocso_act,_2012.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Protection%20of%20Children%20from%20Sexual%20Offences%20Act%2C%202012.pdf",
         ],
     ),
@@ -587,6 +601,146 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "NJA_Organizational_Structure_and_Jurisdiction.pdf",
         [
             "https://nja.gov.in/Concluded_Programmes/2018-19/SE-05_2019_PPTs/6.Organizational%20Structure%20and%20Jurisdiction.pdf",
+        ],
+    ),
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CORPUS EXPANSION (2026-07) — acts referenced by the document validator
+    # (Succession, Partnership, PoA, Notaries, Oaths) plus high-traffic statutes.
+    # All URLs verified to serve the actual bare-act text with a clean text layer.
+    # ═══════════════════════════════════════════════════════════════════════════
+    (
+        "bare_acts/family",
+        "Indian_Succession_Act_1925.pdf",
+        [
+            "https://thc.nic.in/Central%20Governmental%20Acts/Indian%20Succession%20Act,%201925.pdf",
+        ],
+    ),
+    (
+        "bare_acts/family",
+        "Hindu_Adoptions_and_Maintenance_Act_1956.pdf",
+        [
+            "https://thc.nic.in/Central%20Governmental%20Acts/Hindu%20Adoptions%20and%20Maintenance%20Act,%201956.pdf",
+        ],
+    ),
+    (
+        "bare_acts/family",
+        "Hindu_Minority_and_Guardianship_Act_1956.pdf",
+        [
+            "https://thc.nic.in/Central%20Governmental%20Acts/Hindu%20Minority%20and%20Guardianship%20Act,%201956.pdf",
+        ],
+    ),
+    (
+        "bare_acts/commercial",
+        "Indian_Partnership_Act_1932.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/9183/1/the_indian_partnership_act_1932.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/2394/1/A1932-9.pdf",
+        ],
+    ),
+    (
+        "bare_acts/property",
+        "Powers_of_Attorney_Act_1882.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/2360/1/a1882-07.pdf",
+        ],
+    ),
+    (
+        "bare_acts/civil",
+        "Notaries_Act_1952.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/2172/1/A1952-53.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/17288/1/notaries_act_1952.pdf",
+        ],
+    ),
+    (
+        "bare_acts/civil",
+        "Oaths_Act_1969.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/1643/1/A1969-44.pdf",
+        ],
+    ),
+    (
+        "bare_acts/civil",
+        "General_Clauses_Act_1897.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/2328/1/A1897-10.pdf",
+        ],
+    ),
+    (
+        "bare_acts/civil",
+        "Motor_Vehicles_Act_1988.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/9460/1/a1988-59.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/1798/1/eng.pdf",
+        ],
+    ),
+    (
+        "bare_acts/criminal",
+        "Prevention_of_Corruption_Act_1988.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/1558/1/A1988-49.pdf",
+        ],
+    ),
+    (
+        "bare_acts/criminal",
+        "Juvenile_Justice_Act_2015.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/2148/1/a2016-2.pdf",
+        ],
+    ),
+    (
+        "bare_acts/criminal",
+        "Arms_Act_1959.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/1398/1/A1959_54.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/6791/1/arms_act-1959.pdf",
+        ],
+    ),
+    (
+        "bare_acts/criminal",
+        "Unlawful_Activities_Prevention_Act_UAPA_1967.pdf",
+        [
+            # /1470/3/ is the English-only consolidated text; /1470/1/ 302s and
+            # the thc.nic.in copy is a bilingual gazette (30% Hindi).
+            "https://www.indiacode.nic.in/bitstream/123456789/1470/3/A1967-37.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/6853/1/unlawful_activities_prevention_act1967.pdf",
+        ],
+    ),
+    (
+        "bare_acts/corporate",
+        "SARFAESI_Act_2002.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/2006/1/A2002-54.pdf",
+        ],
+    ),
+    (
+        "bare_acts/labour",
+        "POSH_Sexual_Harassment_at_Workplace_Act_2013.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/2104/1/A2013-14.pdf",
+        ],
+    ),
+    (
+        "bare_acts/labour",
+        "Payment_of_Gratuity_Act_1972.pdf",
+        [
+            "https://www.indiacode.nic.in/bitstream/123456789/20959/2/the_payment_of_gratuity_act,_1972.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/15318/1/payment-of-gratuity-act-1972.pdf",
+        ],
+    ),
+    (
+        "bare_acts/labour",
+        "Minimum_Wages_Act_1948.pdf",
+        [
+            "https://clc.gov.in/clc/sites/default/files/MinimumWagesact.pdf",
+            "https://www.indiacode.nic.in/bitstream/123456789/1730/1/A1948-011.pdf",
+        ],
+    ),
+    (
+        "bare_acts/environment",
+        "Wildlife_Protection_Act_1972.pdf",
+        [
+            "https://thc.nic.in/Central%20Governmental%20Acts/Wild%20Life%20(Protection)%20Act,%201972.pdf",
         ],
     ),
 ]
