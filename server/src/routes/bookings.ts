@@ -1,6 +1,6 @@
 import express from 'express';
 import braintree from 'braintree';
-import Booking from '../models/Booking';
+import { prisma } from '../db';
 
 const router = express.Router();
 
@@ -53,16 +53,16 @@ router.post('/checkout', async (req, res) => {
 
     if (result.success) {
       // Save the confirmed booking with the unique Braintree Transaction ID
-      const newBooking = new Booking({
-        userId,
-        lawyerId,
-        amount,
-        status: 'confirmed',
-        transactionId: result.transaction.id 
+      await prisma.booking.create({
+        data: {
+          userId,
+          lawyerId,
+          amount,
+          status: 'confirmed',
+          transactionId: result.transaction.id
+        }
       });
-      
-      await newBooking.save();
-      
+
       console.log(`✅ Success: Payment settled for User ${userId}`);
       res.status(200).json({ status: 'success', transactionId: result.transaction.id });
     } else {
@@ -78,16 +78,20 @@ router.post('/checkout', async (req, res) => {
 
 /**
  * 4. GET USER BOOKINGS
- * Fetches confirmed appointments from your MongoDB Atlas database.
+ * Fetches confirmed appointments from the local PostgreSQL database.
  */
 router.get('/user-bookings/:userId', async (req, res) => {
   try {
-    const bookings = await Booking.find({ 
-      userId: req.params.userId, 
-      status: 'confirmed' 
-    }).sort({ createdAt: -1 }); 
-    
-    res.json(bookings);
+    const bookings = await prisma.booking.findMany({
+      where: {
+        userId: req.params.userId,
+        status: 'confirmed'
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Prisma Decimal would otherwise serialize as a string
+    res.json(bookings.map(b => ({ ...b, amount: Number(b.amount) })));
   } catch (error) {
     console.error("Fetch Bookings Error:", error);
     res.status(500).json({ message: "Fetch failed" });

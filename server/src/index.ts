@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import mongoose from 'mongoose';
+import { prisma } from './db';
 import lawyerRoutes from './routes/lawyers';
 import chatRoutes from './routes/chat';
 import authRoutes from './routes/auth';
@@ -33,22 +33,20 @@ app.use('/api/bookings', bookingRoutes); // Added this line to register payment 
 const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000';
 console.log(`📡 Python Chatbot API: ${PYTHON_API_URL}`);
 
-// This will log only the cluster name, keeping your password safe
-console.log("Checking Connection to:", process.env.MONGODB_URI?.split('@')[1] || "NOT FOUND - USING LOCALHOST");
+// This will log only the host/db part, keeping your password safe
+console.log("Checking Connection to:", process.env.DATABASE_URL?.split('@')[1] || "NOT FOUND");
 
 // 5. Database Connection & Server Startup
-const MONGODB_URI = process.env.MONGODB_URI;
-
 const startServer = async () => {
     try {
-        // Check if URI exists before trying to connect
-        if (!MONGODB_URI) {
-            throw new Error("MONGODB_URI is missing from your .env file!");
+        if (!process.env.DATABASE_URL) {
+            throw new Error("DATABASE_URL is missing from your .env file!");
         }
 
-        // Wait for MongoDB to connect
-        await mongoose.connect(MONGODB_URI);
-        console.log('✅ Success: Connected to MongoDB Atlas');
+        // Wait for PostgreSQL to answer before serving traffic
+        await prisma.$connect();
+        await prisma.$queryRaw`SELECT 1`;
+        console.log('✅ Success: Connected to PostgreSQL');
 
         // Start the Express server only AFTER the database is ready
         app.listen(PORT, '0.0.0.0', () => {

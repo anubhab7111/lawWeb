@@ -1,21 +1,11 @@
-"use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const router = express_1.default.Router();
-// Mock data for development (since MongoDB is not connected)
-const mockLawyers = [
+import 'dotenv/config';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
+
+const lawyers = [
     {
         id: '1',
         name: 'Sarah Mitchell',
@@ -92,43 +82,21 @@ const mockLawyers = [
         availability: 'Available next week',
     },
 ];
-// Get all lawyers
-router.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        // Return mock data instead of database query
-        res.json(mockLawyers);
+
+async function main() {
+    for (const lawyer of lawyers) {
+        await prisma.lawyer.upsert({
+            where: { id: lawyer.id },
+            update: lawyer,
+            create: lawyer,
+        });
     }
-    catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-}));
-// Get lawyer by ID
-router.get('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const lawyer = mockLawyers.find(l => l.id === req.params.id);
-        if (!lawyer)
-            return res.status(404).json({ message: 'Lawyer not found' });
-        res.json(lawyer);
-    }
-    catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-}));
-// Recommend lawyers
-router.post('/recommend', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // Basic recommendation logic: match specialty
-    const { problemDescription, specialty } = req.body;
-    // This is where we could integrate AI to better match descriptions to specialties
-    // For now, simple filter
-    try {
-        let filteredLawyers = mockLawyers;
-        if (specialty) {
-            filteredLawyers = mockLawyers.filter(lawyer => lawyer.specialty.toLowerCase().includes(specialty.toLowerCase()));
-        }
-        res.json(filteredLawyers);
-    }
-    catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-}));
-exports.default = router;
+    console.log(`Seeded ${lawyers.length} lawyers`);
+}
+
+main()
+    .catch((e) => {
+        console.error(e);
+        process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
