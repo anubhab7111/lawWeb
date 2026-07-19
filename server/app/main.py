@@ -3,17 +3,15 @@ FastAPI backend for the legal chatbot.
 Provides REST API endpoints for chat, document upload, and search.
 """
 
-import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import uuid
-import asyncio
 import json
 
 from app.config import get_settings

@@ -18,7 +18,7 @@ the following potential issues were identified…"
 """
 
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 
 from app.tools.document_classifier import DocumentClassification
 from app.tools.statutory_validator import StatutoryValidationResult

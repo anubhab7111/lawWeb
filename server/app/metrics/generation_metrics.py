@@ -31,8 +31,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from dataclasses import dataclass
+from typing import Dict, Optional, Sequence
 
 from app.metrics.llm_judge import JudgeScore, LLMJudge, get_judge
 

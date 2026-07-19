@@ -5,7 +5,7 @@ to provide comprehensive document analysis with legal context.
 """
 
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import asyncio
 import re
 

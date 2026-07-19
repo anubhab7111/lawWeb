@@ -11,35 +11,26 @@ from asyncio.events import AbstractEventLoop
 from functools import lru_cache
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.prompts import (
-    CONVERSATION_PROMPT,
-    CRIME_REPORT_PROMPT,
     DOCUMENT_ANALYSIS_PROMPT,
-    DOCUMENT_VALIDATION_INTENT_KEYWORDS,
     DOCUMENT_VALIDATION_UPLOAD_PROMPT,
     GENERAL_QUERY_PROMPT,
-    INDIAN_LAW_SEARCH_PROMPT,
-    INTENT_CLASSIFICATION_PROMPT,
     LAWYER_SEARCH_PROMPT,
-    RELEVANCE_CHECK_PROMPT,
 )
 from app.state import (
     ChatState,
-    CrimeReportInfo,
-    DocumentInfo,
     DocumentValidationInfo,
     LawyerInfo,
     Message,
 )
 from app.tools.crime_reporter import detect_crime_type
 from app.tools.document_classifier import get_document_classifier
-from app.tools.document_extractor import get_document_extractor
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 from app.tools.indian_law_rag import get_indian_law_rag
 from app.tools.lawyer_finder import get_lawyer_finder
@@ -962,8 +953,6 @@ def _extract_legal_entities(text: str) -> List[str]:
     text_lower = text.lower()
 
     # Extract IPC/CrPC sections
-    import re
-
     section_patterns = [
         r"section\s+(\d+[a-z]?)",
         r"ipc\s+(\d+[a-z]?)",
@@ -1290,8 +1279,6 @@ def _stage2_specialization(
     If Legal, determine: Transactional (Documents), Informational (General), or Personal (Crime).
     Uses keyword-based fast routing with confidence scoring.
     """
-    text_lower = text.lower()
-
     # If non-legal, return immediately
     if not domain.is_legal:
         return RoutingDecision(
@@ -1451,8 +1438,6 @@ Available tools: indian_kanoon (case law), crime_rag (IPC/CrPC), lawyer_finder, 
         response = await invoke_llm_safely(llm, prompt)
 
         # Parse JSON response
-        import json
-
         # Try to extract JSON from response
         response_clean = response.strip()
         if response_clean.startswith("```"):
@@ -1544,7 +1529,6 @@ async def classify_intent(state: ChatState) -> ChatState:
     user_input = state["current_input"]
     has_document = bool(state.get("document_content"))
     messages = state.get("messages", [])
-    input_lower = user_input.lower()
 
     print(f"[Router] Input: {user_input[:100]}...")
     print(f"[Router] Has document: {has_document}")
@@ -1708,9 +1692,9 @@ You can upload your document using the upload feature."""
     async def init_crime_rag():
         """Initialize Crime RAG in parallel."""
         try:
-            from app.tools.crime_rag import get_rag_system
+            from app.tools.criminal_rag import get_criminal_rag_system
 
-            rag_system = get_rag_system()
+            rag_system = get_criminal_rag_system()
             await rag_system.initialize()
             return rag_system
         except Exception:
@@ -2087,7 +2071,6 @@ async def handle_general_query(state: ChatState) -> ChatState:
     # Get tools selected by the router
     selected_tools = state.get("selected_tools", [])
     extracted_entities = state.get("extracted_entities", [])
-    routing_reasoning = state.get("routing_reasoning", "")
 
     print(f"[GeneralQuery] Selected tools: {selected_tools}")
     print(f"[GeneralQuery] Extracted entities: {extracted_entities}")
@@ -2630,12 +2613,9 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
     binding legal opinions or states "this document is legally valid."
     """
     document_content = state.get("document_content", "")
-    user_query = state.get("current_input", "")
 
     # If no document content, show upload prompt
     if not document_content:
-        from app.prompts import DOCUMENT_VALIDATION_UPLOAD_PROMPT
-
         response = DOCUMENT_VALIDATION_UPLOAD_PROMPT
         return {
             **state,
@@ -2685,9 +2665,9 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
         async def init_rag():
             try:
-                from app.tools.crime_rag import get_rag_system
+                from app.tools.criminal_rag import get_criminal_rag_system
 
-                rag_system = get_rag_system()
+                rag_system = get_criminal_rag_system()
                 await rag_system.initialize()
                 return rag_system
             except Exception:

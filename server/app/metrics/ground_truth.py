@@ -690,16 +690,6 @@ def get_entry_by_query(query: str) -> Optional[GroundTruthEntry]:
     return None
 
 
-def get_entries_by_domain(domain: str) -> List[GroundTruthEntry]:
-    """Return all entries belonging to a given domain."""
-    return [e for e in GROUND_TRUTH if e["domain"] == domain]
-
-
-def get_all_domains() -> List[str]:
-    """Return a sorted, deduplicated list of all domains in the dataset."""
-    return sorted({e["domain"] for e in GROUND_TRUTH})
-
-
 # Quick self-check
 if __name__ == "__main__":
     print(f"Ground truth entries: {len(GROUND_TRUTH)}")

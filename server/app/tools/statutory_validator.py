@@ -25,7 +25,7 @@ Sources of authority:
 """
 
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 
@@ -1088,10 +1088,6 @@ class StatutoryValidator:
                 )
 
         return issues
-
-    def get_supported_types(self) -> List[str]:
-        """Return list of document types that have statutory checklists."""
-        return list(self.checklists.keys())
 
 
 # Singleton
