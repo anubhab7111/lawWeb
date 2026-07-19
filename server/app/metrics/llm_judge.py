@@ -279,31 +279,6 @@ def _parse_score(raw: str, metric: str) -> JudgeScore:
 
 
 # ---------------------------------------------------------------------------
-# Gemini client factory  (module-level, configured once)
-# ---------------------------------------------------------------------------
-def _build_gemini_model(model_name: str, api_key: str) -> genai.GenerativeModel:
-    """Configure the google-genai client and return a GenerativeModel."""
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(
-        model_name=model_name,
-        generation_config=genai.types.GenerationConfig(
-            # Strict JSON output — Gemini honours this natively
-            response_mime_type="application/json",
-            temperature=0.0,  # deterministic
-            max_output_tokens=512,  # score + one-sentence reasoning only
-        ),
-        # Optional safety settings — relax for legal content that might
-        # mention violence / harm in a purely academic context.
-        safety_settings={
-            "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-            "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-            "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-            "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
 # Core judge class
 # ---------------------------------------------------------------------------
 class LLMJudge:
@@ -312,8 +287,8 @@ class LLMJudge:
     Gemini 2.5 Flash reasoning model.
 
     Drop-in replacement for the original Ollama-backed LLMJudge — the public
-    API (faithfulness / answer_relevance / context_precision / context_recall /
-    score_all) is identical.
+    API (faithfulness / answer_relevance / context_precision / context_recall)
+    is identical.
 
     Usage::
         judge = LLMJudge()
@@ -537,42 +512,6 @@ class LLMJudge:
             answer=model_answer[:2000],
         )
         return await self._invoke(prompt, "context_recall")
-
-    # ------------------------------------------------------------------
-    # Convenience: score all four metrics concurrently
-    # ------------------------------------------------------------------
-    async def score_all(
-        self,
-        query: str,
-        answer: str,
-        context: str,
-        reference_answer: str = "",
-    ) -> dict[str, JudgeScore]:
-        """
-        Run all four judge metrics concurrently and return a dict keyed by
-        metric name.
-
-        Returns::
-            {
-                "faithfulness":      JudgeScore,
-                "answer_relevance":  JudgeScore,
-                "context_precision": JudgeScore,
-                "context_recall":    JudgeScore,
-            }
-        """
-        faith, relevance, precision, recall = await asyncio.gather(
-            self.faithfulness(answer=answer, context=context),
-            self.answer_relevance(question=query, answer=answer),
-            self.context_precision(query=query, context=context),
-            self.context_recall(reference_answer=reference_answer, model_answer=answer),
-            return_exceptions=False,
-        )
-        return {
-            "faithfulness": faith,
-            "answer_relevance": relevance,
-            "context_precision": precision,
-            "context_recall": recall,
-        }
 
 
 # ---------------------------------------------------------------------------

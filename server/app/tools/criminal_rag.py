@@ -34,18 +34,11 @@ Key design decisions
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-from app.tools.base_legal_rag import (
-    BaseLegalRAGSystem,
-    LegalChunk,
-    LegalContext,
-    _extract_punishment,
-    _infer_act_name,
-)
+from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalChunk
 
 # ─────────────────────────────────────────────────────────────
 # Data models (kept for backward compatibility with chatbot.py)
@@ -474,8 +467,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         Maintains the same signature as the old CrimeRAGSystem.retrieve_sections()
         so chatbot.py nodes need only change the import.
         """
-        import asyncio
-
         if not self.initialized:
             await self.initialize()
 
@@ -495,9 +486,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 self._preprocess_query(query), crime_type, features
             )
 
-            import asyncio as _asyncio
+            import asyncio
 
-            loop = _asyncio.get_event_loop()
+            loop = asyncio.get_event_loop()
             results = await loop.run_in_executor(
                 None,
                 lambda: self.vector_store.similarity_search_with_score(

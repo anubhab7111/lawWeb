@@ -5,7 +5,6 @@ Provides lawyer search and recommendations based on specialization and location.
 
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-import random
 
 
 @dataclass

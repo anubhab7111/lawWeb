@@ -3,7 +3,7 @@
 from .document_extractor import DocumentExtractor, get_document_extractor
 from .crime_reporter import detect_crime_type, is_complex_crime, CRIME_TYPES
 from .lawyer_finder import LawyerFinder, get_lawyer_finder
-from .indian_kanoon import IndianKanoonTool, get_indian_kanoon_tool, search_indian_law
+from .indian_kanoon import IndianKanoonTool, get_indian_kanoon_tool
 from .document_classifier import DocumentClassifier, get_document_classifier
 from .statutory_validator import StatutoryValidator, get_statutory_validator
 from .indian_law_rag import IndianLawRAGTool, get_indian_law_rag
@@ -25,7 +25,6 @@ __all__ = [
     "get_lawyer_finder",
     "IndianKanoonTool",
     "get_indian_kanoon_tool",
-    "search_indian_law",
     "DocumentClassifier",
     "get_document_classifier",
     "StatutoryValidator",

@@ -44,12 +44,10 @@ from app.metrics.engineering_metrics import (
     build_token_record,
     compute_latency_stats,
     compute_token_efficiency,
-    count_tokens_approx,
     estimate_cost_all_tiers,
 )
 from app.metrics.generation_metrics import (
     GenerationScore,
-    aggregate_generation_scores,
     compute_all_generation_metrics,
 )
 from app.metrics.ground_truth import (
@@ -59,11 +57,8 @@ from app.metrics.ground_truth import (
 )
 from app.metrics.llm_judge import LLMJudge
 from app.metrics.retrieval_metrics import (
-    RetrievalSample,
-    compute_all_retrieval_metrics,
     compute_hit_rate,
     compute_mrr_single,
-    print_retrieval_report,
 )
 
 logger = logging.getLogger(__name__)

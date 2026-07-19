@@ -25,13 +25,11 @@ Key design decisions
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import List, Optional
 
 from app.tools.base_legal_rag import (
     BaseLegalRAGSystem,
     LegalChunk,
-    LegalContext,
     _infer_act_name,
     _schedule_boundary,
 )

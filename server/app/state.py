@@ -3,7 +3,6 @@ State definitions for the LangGraph legal chatbot.
 """
 
 from typing import TypedDict, Literal, Optional, List, Any
-from dataclasses import dataclass, field
 
 
 class Message(TypedDict):
