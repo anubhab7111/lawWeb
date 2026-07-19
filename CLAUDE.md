@@ -18,6 +18,7 @@ Do **not** use `server/myenv` (an empty stray venv) or the system Python — nei
 - `server/` — the single FastAPI backend (port 8000). `app/main.py` wires routers from `app/routers/` (auth, lawyers, bookings, chat); `app/chatbot.py` is the LangGraph chatbot; `app/tools/` holds RAG systems and document pipeline; `app/db/` holds SQLModel models, `schema.sql`, and `init_db`.
 - `client/` — React + Vite frontend (port 5173). API base URL from `VITE_API_URL`, default `http://localhost:8000/api`.
 - There is no Node backend. JS/TS exists only in `client/`.
+- `SYSTEM_DESIGN.md` and `CHATBOT_ARCHITECTURE.md` are **outdated** (they describe the old Express/Mongo/mistral setup) — do not use them as reference; trust the code.
 
 ## Running
 

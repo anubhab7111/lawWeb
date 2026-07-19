@@ -72,4 +72,4 @@ cd server
 python test_chatbot.py    # accuracy sweep over domain prompts; needs Ollama running, slow
 ```
 
-See `SYSTEM_DESIGN.md` and `CHATBOT_ARCHITECTURE.md` for architecture details, and `CLAUDE.md` for development conventions.
+See `CLAUDE.md` for development conventions.
