@@ -16,12 +16,12 @@ class Settings(BaseSettings):
     llm_model: str = "qwen3:14b"
     llm_temperature: float = 0.1
 
-    # Server configuration - use PYTHON_PORT to avoid conflict with Express PORT
+    # Server configuration
     host: str = "0.0.0.0"
     python_port: int = 8000
 
-    # Express server port
-    port_express: int = 5001
+    # PostgreSQL connection string
+    database_url: str = ""
 
     # Authentication
     jwt_secret: str = ""
@@ -34,9 +34,6 @@ class Settings(BaseSettings):
     # Optional external APIs
     lawyer_api_key: str = ""
     indian_kanoon_api_key: str = ""
-
-    # Python Chatbot API Configuration
-    python_api_url: str = "http://127.0.0.1:8000"
 
     # Performance settings
     max_document_size_mb: int = 10
