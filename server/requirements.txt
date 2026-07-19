@@ -42,3 +42,14 @@ aiofiles>=24.1.0
 
 # Caching for performance
 cachetools>=5.5.0
+
+# Database (PostgreSQL)
+sqlmodel>=0.0.22
+psycopg[binary]>=3.2
+
+# Auth
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+
+# Payments (Braintree sandbox)
+braintree>=4.28.0

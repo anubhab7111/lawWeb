@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import DropIn from "braintree-web-drop-in-react";
 import { ArrowLeft, Lock, CheckCircle2 } from 'lucide-react';
+import { API_BASE_URL } from '../api/config';
 
 interface Props {
   lawyer: any;
@@ -18,8 +19,7 @@ export function PaymentGateway({ lawyer, currentUser, onBack, onSuccess }: Props
   const total = lawyer.hourlyRate * 1.05; // 5% platform fee
 
   useEffect(() => {
-    // Fetch token from Port 5001
-    fetch('http://localhost:5001/api/bookings/client_token')
+    fetch(`${API_BASE_URL}/bookings/client_token`)
       .then(res => res.text())
       .then(token => setClientToken(token))
       .catch(err => console.error("Token Fetch Error:", err));
@@ -34,7 +34,7 @@ export function PaymentGateway({ lawyer, currentUser, onBack, onSuccess }: Props
       const { nonce } = await instance.requestPaymentMethod();
 
       // 2. Send to Backend
-      const response = await fetch('http://localhost:5001/api/bookings/checkout', {
+      const response = await fetch(`${API_BASE_URL}/bookings/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
