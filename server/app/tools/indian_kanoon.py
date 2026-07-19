@@ -7,9 +7,6 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import asyncio
 import aiohttp
-from functools import lru_cache
-import json
-from urllib.parse import quote
 
 
 @dataclass
@@ -177,38 +174,6 @@ class IndianKanoonClient:
 
         return results
 
-    async def get_document_details(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get detailed information about a specific document.
-
-        Args:
-            doc_id: Document ID from Indian Kanoon
-
-        Returns:
-            Dictionary with document details
-        """
-        # Check cache
-        cache_key = f"doc:{doc_id}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-
-        session = await self._get_session()
-        endpoint = f"{self.BASE_URL}/doc/{doc_id}/"
-
-        try:
-            # Use POST for document retrieval as well
-            async with session.post(endpoint) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    self._cache[cache_key] = data
-                    return data
-                else:
-                    print(f"Error fetching document {doc_id}: {response.status}")
-                    return None
-        except Exception as e:
-            print(f"Error getting document details: {e}")
-            return None
-
     async def search_ipc_section(self, section: str) -> List[LegalDocument]:
         """
         Search for specific IPC (Indian Penal Code) section.
@@ -240,27 +205,6 @@ class IndianKanoonClient:
             query=query, doc_type="judgments", max_results=15
         )
 
-    async def search_act(
-        self, act_name: str, section: Optional[str] = None
-    ) -> List[LegalDocument]:
-        """
-        Search for specific Act and optionally a section within it.
-
-        Args:
-            act_name: Name of the Act (e.g., "Indian Evidence Act", "Contract Act")
-            section: Optional section number within the Act
-
-        Returns:
-            List of relevant documents
-        """
-        query = act_name
-        if section:
-            query += f" Section {section}"
-
-        return await self.search_documents(
-            query=query, doc_type="statutes", max_results=15
-        )
-
     async def search_case_law(
         self,
         keywords: str,
@@ -285,30 +229,6 @@ class IndianKanoonClient:
         return await self.search_documents(
             query=query, doc_type="judgments", max_results=max_results
         )
-
-    async def get_related_documents(self, doc_id: str) -> List[LegalDocument]:
-        """
-        Get documents related to a specific document.
-
-        Args:
-            doc_id: Document ID
-
-        Returns:
-            List of related documents
-        """
-        # Indian Kanoon doesn't have a direct related docs API
-        # We'll fetch the document and extract citations
-        doc_details = await self.get_document_details(doc_id)
-
-        if not doc_details:
-            return []
-
-        # Extract potential related case citations from the text
-        # This is a simplified approach - in production, you'd want better parsing
-        title = doc_details.get("title", "")
-
-        # Search for documents with similar titles
-        return await self.search_documents(query=title, max_results=5)
 
     def format_search_results(self, results: List[LegalDocument]) -> str:
         """
@@ -335,35 +255,6 @@ class IndianKanoonClient:
 
             formatted += f"**URL:** {doc.url}\n"
             formatted += f"**Relevance:** {doc.relevance_score:.2f}\n\n"
-
-        return formatted
-
-    def format_document_details(self, doc_details: Dict[str, Any]) -> str:
-        """
-        Format detailed document information for LLM context.
-
-        Args:
-            doc_details: Document details dictionary
-
-        Returns:
-            Formatted string
-        """
-        if not doc_details:
-            return "Document details not available."
-
-        formatted = "## Legal Document Details:\n\n"
-
-        # Basic info
-        title = doc_details.get("title", "Untitled")
-        formatted += f"**Title:** {title}\n\n"
-
-        # Document text (truncated for token limits)
-        doc_text = doc_details.get("doc", "")
-        if doc_text:
-            max_length = 5000
-            if len(doc_text) > max_length:
-                doc_text = doc_text[:max_length] + "\n\n[Document truncated...]"
-            formatted += f"**Content:**\n{doc_text}\n\n"
 
         return formatted
 
@@ -462,29 +353,6 @@ class IndianKanoonTool:
             "total_found": len(unique_results),
         }
 
-    async def get_punishment_details(self, crime_description: str) -> Dict[str, Any]:
-        """
-        Get punishment details for a specific crime from IPC and case law.
-
-        Args:
-            crime_description: Description of the crime
-
-        Returns:
-            Dictionary with punishment information
-        """
-        await self.initialize()
-
-        # Search for relevant IPC sections
-        query = f"{crime_description} punishment penalty IPC"
-        results = await self.client.search_documents(query, max_results=15)
-
-        return {
-            "crime": crime_description,
-            "results": results,
-            "formatted_results": self.client.format_search_results(results),
-            "sources": [doc.url for doc in results[:5]],
-        }
-
     async def close(self):
         """Close the client connection."""
         await self.client.close()
@@ -516,19 +384,3 @@ def get_indian_kanoon_tool(api_key: Optional[str] = None) -> IndianKanoonTool:
         _indian_kanoon_tool = IndianKanoonTool(api_key)
 
     return _indian_kanoon_tool
-
-
-async def search_indian_law(query: str, context_type: str = "general") -> str:
-    """
-    Convenience function to search Indian law documents.
-
-    Args:
-        query: Search query
-        context_type: Type of legal context
-
-    Returns:
-        Formatted string with search results
-    """
-    tool = get_indian_kanoon_tool()
-    result = await tool.answer_legal_query(query, context_type)
-    return result["formatted_results"]

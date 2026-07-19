@@ -6,8 +6,7 @@ Unified tool that combines text extraction and Tesseract OCR.
 
 import io
 import os
-from typing import Optional, Tuple, List
-from functools import lru_cache
+from typing import Optional, Tuple
 import asyncio
 
 # OCR processing
@@ -151,17 +150,6 @@ class DocumentExtractor:
             return text, "txt"
         else:
             raise ValueError(f"Unsupported file type: {extension}")
-
-    def get_text_preview(self, text: str, max_length: int = 500) -> str:
-        """Get a preview of the extracted text."""
-        if len(text) <= max_length:
-            return text
-        return text[:max_length] + "..."
-
-    def is_image_file(self, filename: str) -> bool:
-        """Check if filename is a supported image type."""
-        extension = os.path.splitext(filename.lower())[1]
-        return extension in self.SUPPORTED_IMAGE_EXTENSIONS
 
     # ========================================================================
     # OCR Extraction

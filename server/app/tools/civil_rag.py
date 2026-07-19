@@ -27,10 +27,9 @@ Key design decisions
 
 from __future__ import annotations
 
-import re
 from typing import List, Optional
 
-from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalChunk, LegalContext
+from app.tools.base_legal_rag import BaseLegalRAGSystem
 
 
 class CivilRAGSystem(BaseLegalRAGSystem):
