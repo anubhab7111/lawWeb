@@ -23,9 +23,6 @@ class Settings(BaseSettings):
     # Express server port
     port_express: int = 5001
 
-    # Database configuration
-    mongodb_uri: str = ""
-
     # Authentication
     jwt_secret: str = ""
 

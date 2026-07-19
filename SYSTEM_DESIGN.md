@@ -67,7 +67,7 @@ The Law Education Platform is a full-stack web application that provides:
             │                 │                 │
             ▼                 ▼                 ▼
 ┌───────────────────┐  ┌──────────────┐  ┌─────────────────────┐
-│   MongoDB Atlas   │  │  FastAPI     │  │  Payment Gateways   │
+│   PostgreSQL local│  │  FastAPI     │  │  Payment Gateways   │
 │   ├─ Users        │  │  (Port 8000) │  │  ├─ Braintree       │
 │   ├─ Lawyers      │  │              │  │  └─ Razorpay        │
 │   └─ Bookings     │  │  LangGraph   │  └─────────────────────┘
@@ -216,16 +216,16 @@ User Input → Intent Classification → Route to Handler → Generate Response 
 - `CaseLawResult` - Detailed case information
 - `StatuteResult` - Statute and legal code information
 
-### 5. Database (MongoDB Atlas)
+### 5. Database (PostgreSQL, local)
 
-**Provider:** MongoDB Atlas (Cloud)
+**Provider:** Locally-run PostgreSQL (native install, no cloud dependency)
 
-**Collections:**
-- `users` - User authentication and profiles
-- `lawyers` - Lawyer directory
-- `bookings` - Appointment records
+**Tables:**
+- `users` - User authentication and profiles (UUID primary keys, unique email)
+- `lawyers` - Lawyer directory (seeded; legacy text ids `'1'`-`'5'`)
+- `bookings` - Appointment records (foreign keys to `users` and `lawyers`, `BookingStatus` enum, `numeric(10,2)` amount)
 
-**Connection:** Mongoose ODM
+**Connection:** Prisma ORM (schema at `server/prisma/schema.prisma`, config at `server/prisma.config.ts`, pg driver adapter)
 
 ---
 
@@ -248,7 +248,7 @@ User Input → Intent Classification → Route to Handler → Generate Response 
 | Runtime | Node.js | 20+ |
 | Framework | Express | 4.19.2 |
 | Language | TypeScript | 5.4.3 |
-| Database | MongoDB + Mongoose | 8.2.3 |
+| Database | PostgreSQL + Prisma | 7.x |
 | Authentication | JWT (jsonwebtoken) | 9.0.3 |
 | Password Hashing | bcryptjs | 3.0.3 |
 | Payment | Braintree + Razorpay | 3.35.0, 2.9.6 |
@@ -275,7 +275,7 @@ User Input → Intent Classification → Route to Handler → Generate Response 
 ### 1. User Registration/Authentication Flow
 
 ```
-Client                    Express API              MongoDB
+Client                    Express API              PostgreSQL
   │                          │                       │
   ├─── POST /api/auth/signup ─────>                 │
   │                          │                       │
@@ -324,7 +324,7 @@ Client              Express API          FastAPI/LangGraph      FAISS/IK API
 ### 3. Lawyer Booking Flow
 
 ```
-Client              Express API          MongoDB          Payment Gateway
+Client              Express API          PostgreSQL       Payment Gateway
   │                     │                   │                    │
   ├─ Select Lawyer ────>│                   │                    │
   │                     │                   │                    │
@@ -1036,7 +1036,7 @@ app.use(cors({
 
 **Express (.env):**
 ```
-MONGODB_URI=mongodb+srv://...
+DATABASE_URL=postgresql://lawweb:lawweb@localhost:5432/lawweb?schema=public
 JWT_SECRET=<random-secret>
 PORT=5001
 BRAINTREE_MERCHANT_ID=...
@@ -1083,7 +1083,7 @@ CACHE_TTL_SECONDS=3600
 | Express API | Single instance | ~1000 req/s |
 | FastAPI | Synchronous agents | ~10 concurrent analyses |
 | ChromaDB | Local file storage | ~100K documents |
-| MongoDB Atlas | Free/Shared tier | Limited connections |
+| PostgreSQL (local) | Single instance | Local resources only |
 
 ### Optimization Strategies
 
@@ -1095,7 +1095,7 @@ CACHE_TTL_SECONDS=3600
 - Implement Redis for session/cache management
 
 **Vertical Scaling:**
-- Increase MongoDB Atlas tier
+- Tune local PostgreSQL (shared_buffers, connections)
 - Upgrade server resources
 
 #### 2. AI Service Optimization
@@ -1119,12 +1119,10 @@ CACHE_TTL_SECONDS=3600
 #### 3. Database Optimization
 
 **Indexing:**
-```javascript
-// MongoDB indexes
-Lawyer.createIndex({ specialty: 1, rating: -1 });
-Lawyer.createIndex({ location: 1 });
-User.createIndex({ email: 1 }, { unique: true });
-Booking.createIndex({ userId: 1, appointmentDate: -1 });
+```prisma
+// Prisma schema indexes (server/prisma/schema.prisma)
+model User    { email String @unique }
+model Booking { @@index([userId, status]) }
 ```
 
 **Query Optimization:**
@@ -1172,7 +1170,7 @@ Booking.createIndex({ userId: 1, appointmentDate: -1 });
 Client:  http://localhost:5173  (Vite dev server)
 Express: http://localhost:5001  (ts-node)
 FastAPI: http://127.0.0.1:8000  (uvicorn)
-MongoDB: MongoDB Atlas (cloud)
+Database: PostgreSQL (local)
 ```
 
 ### Production Architecture
@@ -1196,7 +1194,7 @@ MongoDB: MongoDB Atlas (cloud)
                     │                   │
                     ▼                   ▼
           ┌──────────────────┐  ┌──────────────────┐
-          │  AI Service      │  │  MongoDB Atlas   │
+          │  AI Service      │  │  PostgreSQL local│
           │  (Docker)        │  │  (Managed)       │
           └──────────────────┘  └──────────────────┘
 ```
@@ -1286,7 +1284,7 @@ spec:
         ports:
         - containerPort: 5001
         env:
-        - name: MONGODB_URI
+        - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
               name: db-secret

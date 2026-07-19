@@ -189,7 +189,7 @@ export default function App() {
                 <p className="bg-white p-10 rounded-xl border border-dashed text-center text-gray-500">No appointments found.</p>
               ) : (
                 userBookings.map((b: any) => (
-                  <div key={b._id} className="bg-white p-6 rounded-xl shadow-sm border flex justify-between items-center">
+                  <div key={b.id} className="bg-white p-6 rounded-xl shadow-sm border flex justify-between items-center">
                     <div className="flex items-center gap-4">
                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-xl">
                           {b.status === 'confirmed' ? '✓' : '?'}
