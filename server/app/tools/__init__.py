@@ -14,6 +14,7 @@ from .base_legal_rag import BaseLegalRAGSystem, LegalChunk, LegalContext
 from .criminal_rag import CriminalRAGSystem, get_criminal_rag_system
 from .civil_rag import CivilRAGSystem, get_civil_rag_system
 from .constitutional_rag import ConstitutionalRAGSystem, get_constitutional_rag_system
+from .unified_legal_rag import UnifiedLegalRAGSystem, get_unified_rag_system
 
 __all__ = [
     "DocumentExtractor",
@@ -43,4 +44,6 @@ __all__ = [
     "get_civil_rag_system",
     "ConstitutionalRAGSystem",
     "get_constitutional_rag_system",
+    "UnifiedLegalRAGSystem",
+    "get_unified_rag_system",
 ]

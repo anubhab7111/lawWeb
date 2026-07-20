@@ -54,6 +54,7 @@ from app.metrics.ground_truth import (
     GROUND_TRUTH,
     GroundTruthEntry,
     get_entry_by_query,
+    relevant_sections_for,
 )
 from app.metrics.llm_judge import LLMJudge
 from app.metrics.retrieval_metrics import (
@@ -235,9 +236,10 @@ class MetricsEvaluator:
         """
         Re-run retrieval for *query* using domain-aware strategy.
 
-        Crime RAG (IPC FAISS) is invoked ONLY when the ground truth expects
-        IPC sections.  Indian Kanoon uses the ground truth domain to pick
-        the most relevant ``context_type``.
+        Re-runs retrieval against the production path: the unified all-domain
+        hybrid index (BM25 + dense + reranker). Every domain contributes
+        ranked section numbers to Hit-Rate/MRR, not just IPC. Indian Kanoon
+        uses the ground truth domain to pick ``context_type``.
 
         Returns
         -------
@@ -246,67 +248,28 @@ class MetricsEvaluator:
         sections: List[str] = []
         ctx_parts: List[str] = []
 
-        has_ipc_ground_truth = bool(gt_entry.get("relevant_ipc_sections"))
         domain = gt_entry.get("domain", "unknown")
 
-        # ── 1. Criminal RAG (IPC/CrPC/Evidence Act FAISS) ──────────────
-        # Runs whenever the ground truth expects IPC sections (Hit-Rate/MRR
-        # signal), OR the domain is criminal-adjacent but has no IPC section
-        # numbers of its own (e.g. Evidence Act queries — context/faithfulness
-        # signal only, no Hit-Rate/MRR contribution).
-        if has_ipc_ground_truth or domain in ("criminal", "criminal_procedure", "evidence_law"):
-            try:
-                from app.tools.criminal_rag import (
-                    extract_crime_features,
-                    get_criminal_rag_system,
-                )
-
-                rag = get_criminal_rag_system()
-                await rag.initialize()
-
-                if rag.initialized:
-                    features = extract_crime_features(query)
-                    rag_result = await rag.retrieve_sections(
-                        query, crime_type="general", features=features, k=self.rag_k
-                    )
-
-                    sections = [m.section for m in rag_result.ipc_sections]
-                    ctx_parts.extend(
-                        f"Section {m.section} -- {m.title}\n"
-                        f"Punishment: {m.punishment}\n"
-                        f"{m.definition[:400]}"
-                        for m in rag_result.ipc_sections
-                    )
-            except Exception as exc:
-                logger.warning("Criminal RAG retrieval failed during evaluation: %s", exc)
-
-        # ── 1b. Civil / Constitutional RAG — context signal for their domains ──
-        civil_domains = ("contract_law", "property_law", "technology_law")
+        # ── 1. Unified statute RAG (all domains, hybrid + rerank) ──────
         try:
-            if domain == "constitutional":
-                from app.tools.constitutional_rag import get_constitutional_rag_system
+            from app.tools.unified_legal_rag import get_unified_rag_system
 
-                const_rag = get_constitutional_rag_system()
-                await const_rag.initialize()
-                if const_rag.initialized:
-                    result = await const_rag.retrieve(query, k=self.rag_k)
-                    ctx_parts.extend(
-                        f"{c.act_name} Article {c.section_number} -- {c.title}\n{c.text[:400]}"
-                        for c in result.chunks
-                    )
-            elif domain in civil_domains:
-                from app.tools.civil_rag import get_civil_rag_system
-
-                civil_rag = get_civil_rag_system()
-                await civil_rag.initialize()
-                if civil_rag.initialized:
-                    result = await civil_rag.retrieve(query, k=self.rag_k)
-                    ctx_parts.extend(
-                        f"{c.act_name} Section {c.section_number} -- {c.title}\n{c.text[:400]}"
-                        for c in result.chunks
+            rag = get_unified_rag_system()
+            if await rag.initialize():
+                result = await rag.retrieve(query, k=self.rag_k)
+                seen: set = set()
+                for c in result.chunks:
+                    # "Article 21" → "21"; part-chunks share their section no.
+                    sec = c.section_number.replace("Article", "").strip()
+                    if sec and sec not in seen:
+                        seen.add(sec)
+                        sections.append(sec)
+                    ctx_parts.append(
+                        f"{c.act_name} {c.section_number} -- {c.title}\n"
+                        f"{c.text[:400]}"
                     )
         except Exception as exc:
-            logger.warning("Civil/Constitutional RAG retrieval failed during evaluation: %s", exc)
+            logger.warning("Unified RAG retrieval failed during evaluation: %s", exc)
 
         # ── 2. Indian Kanoon (case law & statutes API) ────────────────
         # Map ground-truth domain → Indian Kanoon context_type
@@ -369,7 +332,7 @@ class MetricsEvaluator:
         )
 
         # ---- Retrieval metrics (pure, no LLM) --------------------------------
-        relevant_secs = gt_entry["relevant_ipc_sections"]
+        relevant_secs = relevant_sections_for(gt_entry)
         hr1 = compute_hit_rate(retrieved_sections, relevant_secs, k=1)
         hr3 = compute_hit_rate(retrieved_sections, relevant_secs, k=3)
         hr5 = compute_hit_rate(retrieved_sections, relevant_secs, k=5)
@@ -541,7 +504,7 @@ class MetricsEvaluator:
         cp_mean = round(sum(r.context_precision for r in results) / n, 4)
 
         gt_queries_with_secs = {
-            gt["query"] for gt in GROUND_TRUTH if gt["relevant_ipc_sections"]
+            gt["query"] for gt in GROUND_TRUTH if relevant_sections_for(gt)
         }
         rrs = [r.reciprocal_rank for r in results if r.query in gt_queries_with_secs]
         mrr = round(sum(rrs) / len(rrs), 4) if rrs else 0.0
@@ -661,10 +624,10 @@ class MetricsEvaluator:
         print(sep)
 
         # [1] Retrieval --------------------------------------------------------
-        n_gt = sum(1 for g in GROUND_TRUTH if g["relevant_ipc_sections"])
+        n_gt = sum(1 for g in GROUND_TRUTH if relevant_sections_for(g))
         print(
             f"\n  [1] RETRIEVAL METRICS"
-            f"\n      (IPC ground truth: {n_gt}/{len(GROUND_TRUTH)} queries)"
+            f"\n      (section ground truth: {n_gt}/{len(GROUND_TRUTH)} queries)"
         )
         print(thn)
         print(f"  Hit Rate @ 1          {_bar(report.hit_rate_at_1)}")

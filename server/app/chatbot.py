@@ -4,6 +4,7 @@ This module defines the chatbot workflow using LangGraph for state management an
 """
 
 import asyncio
+import time
 import contextvars
 import json
 import re
@@ -22,6 +23,7 @@ from app.prompts import (
     DOCUMENT_VALIDATION_UPLOAD_PROMPT,
     GENERAL_QUERY_PROMPT,
     LAWYER_SEARCH_PROMPT,
+    QUERY_REWRITE_PROMPT,
 )
 from app.state import (
     ChatState,
@@ -874,20 +876,23 @@ def get_llm() -> ChatOllama:
         model=settings.llm_model,
         temperature=settings.llm_temperature,
         base_url=settings.ollama_base_url,
+        num_ctx=6144,  # Ollama defaults to 2048, which silently clips grounded prompts
         num_predict=1024,  # Balanced: enough for detailed answers, faster inference
         timeout=35.0,  # Tighter timeout for snappier responses
         reasoning=False,  # qwen3 defaults to thinking mode; keep responses direct
+        keep_alive="1h",  # loading the 14B model is the OOM-prone step — do it rarely
     )
 
 
 @lru_cache()
 def get_fast_llm() -> ChatOllama:
-    """Get cached LLM for classification tasks (using local Ollama)."""
+    """Get cached small LLM for classification/routing tasks (local Ollama)."""
     settings = get_settings()
     return ChatOllama(
-        model=settings.llm_model,
+        model=settings.fast_llm_model,
         temperature=0,
         base_url=settings.ollama_base_url,
+        num_ctx=4096,  # rewrite/classification prompts include conversation history
         num_predict=128,  # Reduced from 256 for faster classification
         timeout=15.0,  # Reduced from 30s
         reasoning=False,  # classification needs the raw JSON, not a thinking preamble
@@ -1507,6 +1512,48 @@ Available tools: indian_kanoon (case law), crime_rag (IPC/CrPC), lawyer_finder, 
         )
 
 
+async def _rewrite_query_for_retrieval(
+    messages: List[Message], current_input: str
+) -> str:
+    """
+    Condense conversation history + the latest message into one standalone
+    retrieval query using the fast LLM. First turns (no prior exchange)
+    return the input unchanged with zero added latency; any failure or
+    degenerate output also falls back to the raw input.
+    """
+    # Exclude the current input if it's already the last history entry
+    prior = messages
+    if prior and prior[-1]["role"] == "user" and prior[-1]["content"] == current_input:
+        prior = prior[:-1]
+    if not any(m["role"] == "assistant" for m in prior):
+        return current_input
+
+    history_lines = [
+        f"{m['role'].upper()}: {m['content'][:300]}" for m in prior[-4:]
+    ]
+    prompt = QUERY_REWRITE_PROMPT.format(
+        history="\n".join(history_lines), question=current_input
+    )
+
+    try:
+        loop = asyncio.get_event_loop()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                None, lambda: get_fast_llm().invoke([HumanMessage(content=prompt)])
+            ),
+            timeout=8.0,
+        )
+        rewritten = str(response.content).strip().strip('"').strip()
+        if not rewritten or len(rewritten) > 300 or "\n" in rewritten:
+            return current_input
+        if rewritten.lower() != current_input.lower():
+            print(f"[Router] Retrieval query rewritten: {rewritten[:120]}")
+        return rewritten
+    except Exception as e:
+        print(f"[Router] Query rewrite failed ({e}) — using raw input.")
+        return current_input
+
+
 async def classify_intent(state: ChatState) -> ChatState:
     """
     Hybrid Intent Classification with Hierarchical Routing.
@@ -1604,10 +1651,16 @@ async def classify_intent(state: ChatState) -> ChatState:
     print(f"[Router] Final: intent={decision.primary_intent}, tools={selected_tools}")
 
     # =========================================================================
+    # HISTORY-AWARE QUERY REWRITE (multi-turn only; no-op on first turns)
+    # =========================================================================
+    retrieval_query = await _rewrite_query_for_retrieval(messages, user_input)
+
+    # =========================================================================
     # BUILD ENRICHED STATE
     # =========================================================================
     return {
         **state,
+        "retrieval_query": retrieval_query,
         "intent": decision.primary_intent,
         "routing_confidence": decision.confidence,
         "routing_reasoning": decision.reasoning,
@@ -1842,7 +1895,10 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     3. Feed structured IPC sections to LLM for court-safe response
     """
     user_input = state["current_input"]
-    crime_details = state.get("crime_details") or user_input
+    # Prefer the history-aware standalone query for retrieval on follow-ups
+    crime_details = (
+        state.get("crime_details") or state.get("retrieval_query") or user_input
+    )
 
     # Detect crime type using keyword matching
     identified_crime = detect_crime_type(crime_details)
@@ -2912,11 +2968,35 @@ class LegalChatbot:
         workflow = build_legal_chatbot_graph()
         self.graph = workflow.compile()
         self._sessions: Dict[str, List[Message]] = {}
+        self._session_last_access: Dict[str, float] = {}
+
+    def _evict_stale_sessions(self):
+        """Drop sessions idle beyond the TTL and cap the total session count."""
+        settings = get_settings()
+        now = time.monotonic()
+        for sid in [
+            sid
+            for sid, last in self._session_last_access.items()
+            if now - last > settings.session_ttl_seconds
+        ]:
+            self._sessions.pop(sid, None)
+            self._session_last_access.pop(sid, None)
+
+        overflow = len(self._sessions) - settings.max_sessions
+        if overflow > 0:
+            oldest = sorted(
+                self._session_last_access, key=self._session_last_access.get
+            )[:overflow]
+            for sid in oldest:
+                self._sessions.pop(sid, None)
+                self._session_last_access.pop(sid, None)
 
     def _get_session_messages(self, session_id: str) -> List[Message]:
         """Get or create session message history."""
+        self._evict_stale_sessions()
         if session_id not in self._sessions:
             self._sessions[session_id] = []
+        self._session_last_access[session_id] = time.monotonic()
         return self._sessions[session_id]
 
     def _add_message(self, session_id: str, message: Message):
@@ -2924,6 +3004,7 @@ class LegalChatbot:
         if session_id not in self._sessions:
             self._sessions[session_id] = []
         self._sessions[session_id].append(message)
+        self._session_last_access[session_id] = time.monotonic()
 
         # Keep only last 20 messages for memory efficiency
         if len(self._sessions[session_id]) > 20:
@@ -3107,8 +3188,8 @@ class LegalChatbot:
 
     def clear_session(self, session_id: str):
         """Clear a session's message history."""
-        if session_id in self._sessions:
-            del self._sessions[session_id]
+        self._sessions.pop(session_id, None)
+        self._session_last_access.pop(session_id, None)
 
     def get_session_history(self, session_id: str) -> List[Message]:
         """Get the message history for a session."""

@@ -10,37 +10,17 @@ os.chdir(_SERVER_DIR)
 
 
 async def rebuild_all():
-    from app.tools import (
-        get_criminal_rag_system,
-        get_civil_rag_system,
-        get_constitutional_rag_system,
-    )
+    from app.tools import get_unified_rag_system
 
-    systems = [
-        get_criminal_rag_system(),
-        get_civil_rag_system(),
-        get_constitutional_rag_system(),
-    ]
+    system = get_unified_rag_system()
 
-    print("\n--- Starting Parallel RAG Index Rebuild (FAISS semantic search) ---")
+    print("\n--- Starting Unified RAG Index Rebuild (FAISS + BM25 hybrid) ---")
 
-    # Initialize all systems in parallel to trigger build
-    tasks = [sys.initialize() for sys in systems]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    failed = 0
-    for i, res in enumerate(results):
-        name = systems[i].domain_name
-        if isinstance(res, Exception) or not res:
-            failed += 1
-            print(f"FAILED to build {name}: {res}")
-        else:
-            print(f"SUCCESS: {name} index ready ({len(systems[i]._chunks)} chunks)")
-
-    if failed:
-        print(f"\n--- {len(systems) - failed}/{len(systems)} domains indexed successfully ---")
+    ok = await system.initialize()
+    if ok:
+        print(f"SUCCESS: unified index ready ({len(system._chunks)} chunks)")
     else:
-        print(f"\n--- All {len(systems)} domains indexed successfully ---")
+        print("FAILED to build unified index")
 
 
 if __name__ == "__main__":

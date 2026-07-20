@@ -77,6 +77,9 @@ class ChatState(TypedDict):
     messages: List[Message]
     current_input: str
     conversation_context: Optional[str]  # Summary of recent conversation
+    # Standalone search query condensed from history (multi-turn only);
+    # retrieval uses this, generation still sees current_input.
+    retrieval_query: Optional[str]
 
     # Intent classification
     intent: Optional[

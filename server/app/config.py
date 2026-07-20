@@ -13,7 +13,27 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     # llm_model: str = "mistral-indian-law:latest"
     llm_model: str = "qwen3:14b"
+    # Small model for classification/routing/query-rewrite calls
+    fast_llm_model: str = "qwen3:4b"
     llm_temperature: float = 0.1
+
+    # Cross-encoder used to rerank fused BM25+dense candidates. Ranking
+    # quality is what matters (scores are used relatively); the base model
+    # keeps ~1.2GB of RAM free for the Ollama LLM on 16GB machines. Swap in
+    # BAAI/bge-reranker-v2-m3 on larger hardware for a small quality bump.
+    reranker_model: str = "BAAI/bge-reranker-base"
+
+    # Where the reranker runs: "auto" | "cuda" | "cpu". Auto avoids small
+    # (<6GB) GPUs entirely — the VRAM is worth more to Ollama's LLM offload.
+    reranker_device: str = "auto"
+
+    # Where the bge-large embedding model runs: "auto" | "cuda" | "cpu".
+    # Set EMBEDDINGS_DEVICE=cuda for one-off index rebuilds.
+    embeddings_device: str = "auto"
+
+    # Chat session lifecycle
+    session_ttl_seconds: int = 7200
+    max_sessions: int = 500
 
     # Server configuration
     host: str = "0.0.0.0"
