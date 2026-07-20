@@ -174,6 +174,27 @@ class IndianKanoonClient:
 
         return results
 
+    async def fetch_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a full document (judgment text, bench, citations, court, date)
+        by its Indian Kanoon tid via the /doc/{tid}/ endpoint. Used to build
+        the curated case-law corpus (app/data/case_law/) — a metered call,
+        so callers should fetch once and cache the result to disk.
+        """
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.BASE_URL}/doc/{doc_id}/") as response:
+                if response.status == 200:
+                    return await response.json()
+                print(f"Indian Kanoon doc-fetch error: {response.status}")
+                return None
+        except asyncio.TimeoutError:
+            print(f"Indian Kanoon doc-fetch timeout for {doc_id}")
+            return None
+        except Exception as e:
+            print(f"Error fetching Indian Kanoon document {doc_id}: {e}")
+            return None
+
     async def search_ipc_section(self, section: str) -> List[LegalDocument]:
         """
         Search for specific IPC (Indian Penal Code) section.

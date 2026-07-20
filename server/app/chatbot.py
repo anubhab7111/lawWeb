@@ -2106,6 +2106,71 @@ Would you like me to search with different criteria?"""
     }
 
 
+async def _verify_response_citations(response_text: str) -> str:
+    """
+    Non-LLM post-generation check: does every 'Section N of the X Act' /
+    'Article N' claim in the answer actually exist in the indexed corpus
+    under the cited act? Appends a footer flagging mismatches; silent when
+    everything verifies. Never raises — a verifier bug must not break chat.
+    """
+    try:
+        from app.tools.citation_verifier import verification_footer, verify_citations
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        rag = get_unified_rag_system()
+        if not rag.initialized:
+            return response_text
+        report = verify_citations(response_text, rag)
+        if report.checks:
+            print(
+                f"[CitationVerify] {len(report.verified)}/{len(report.checks)} "
+                f"citations verified"
+            )
+        return response_text + verification_footer(report)
+    except Exception as e:
+        print(f"[CitationVerify] Skipped due to error: {e}")
+        return response_text
+
+
+def _format_case_law(cases, max_chars: int = 4000, per_case_chars: int = 1200) -> str:
+    """Format curated landmark judgments in authority order for the prompt."""
+    parts = []
+    used = 0
+    for c in cases:
+        entry = (
+            f"• **{c.case_name}** ({c.citation or c.court}, {c.date[:4] if c.date else '?'})"
+            f" — {c.court}\n{c.text[:per_case_chars]}"
+        )
+        if used + len(entry) > max_chars and parts:
+            break
+        parts.append(entry)
+        used += len(entry)
+    return "\n\n".join(parts)
+
+
+def _budget_context(chunks, max_chars: int = 12000, per_chunk_chars: int = 2500) -> str:
+    """
+    Format retrieved statute chunks for the prompt in rerank order, filling
+    a fixed character budget (≈3k tokens inside the 6k num_ctx window)
+    instead of blindly truncating every chunk to a few hundred characters.
+    """
+    parts = []
+    used = 0
+    for chunk in chunks:
+        sec = chunk.section_number
+        sec_label = sec if sec.lower().startswith("article") else f"§ {sec}"
+        text = chunk.text[:per_chunk_chars]
+        entry = (
+            f"• **{chunk.act_name} {sec_label}** — {chunk.title} "
+            f"[{chunk.domain}]\n{text}"
+        )
+        if used + len(entry) > max_chars and parts:
+            break
+        parts.append(entry)
+        used += len(entry)
+    return "\n\n".join(parts)
+
+
 async def handle_general_query(state: ChatState) -> ChatState:
     """
     Handle general legal questions and complex legal analysis.
@@ -2123,6 +2188,10 @@ async def handle_general_query(state: ChatState) -> ChatState:
     """
     user_input = state["current_input"]
     messages = state.get("messages", [])
+
+    # Standalone query for retrieval (rewritten from conversation history
+    # when this is a follow-up turn); generation still sees the raw input.
+    retrieval_query = state.get("retrieval_query") or user_input
 
     # Get tools selected by the router
     selected_tools = state.get("selected_tools", [])
@@ -2209,7 +2278,6 @@ async def handle_general_query(state: ChatState) -> ChatState:
 
     indian_kanoon_results = ""
     rag_sections_text = ""
-    rag_result = None
 
     async def fetch_indian_kanoon():
         """Fetch case law from Indian Kanoon."""
@@ -2354,161 +2422,97 @@ async def handle_general_query(state: ChatState) -> ChatState:
             ):
                 context_type = "statute"
 
-            result = await ik_tool.answer_legal_query(user_input, context_type)
+            result = await ik_tool.answer_legal_query(retrieval_query, context_type)
             return result.get("formatted_results", "")
         except Exception as e:
             print(f"Indian Kanoon error: {e}")
             return ""
 
-    async def fetch_rag_sections():
-        """Fetch IPC/BNS/CrPC sections from the criminal RAG system."""
+    async def fetch_statute_context():
+        """
+        Understanding-first statute + case-law retrieval: parse the legal
+        question (citations + doctrine ontology + fast-LLM assist),
+        deterministically pin known governing sections, fill via the
+        unified hybrid index, then hop to the curated landmark-judgment
+        corpus for cases interpreting those same provisions.
+
+        Returns (statute_text, case_law_text).
+        """
         try:
-            from app.tools.criminal_rag import (
-                extract_crime_features,
-                get_criminal_rag_system,
-            )
+            from app.tools.legal_retrieval import retrieve_case_law, retrieve_statutes
 
-            rag_system = get_criminal_rag_system()
-            await rag_system.initialize()
+            # Soft domain hint: only when the criminal signal fires alone.
+            # Civil/constitutional keyword flags historically also covered
+            # property/family/tech queries, so a hard filter there would
+            # exclude the very domains those keywords represent — let the
+            # reranker decide instead.
+            domain_hint = None
+            if use_crime_rag and not (use_civil_rag or use_constitutional_rag):
+                domain_hint = ["criminal"]
 
-            if not rag_system.initialized:
-                return None, ""
-
-            features = extract_crime_features(user_input)
-            k = 5 if is_multi_offense else 3
-
-            rag_result_inner = await rag_system.retrieve_sections(
-                user_input,
-                crime_type="general",
-                features=features,
-                k=k,
-            )
-
-            if rag_result_inner.ipc_sections:
-                MIN_CONFIDENCE = 0.40
-                relevant_sections = [
-                    m
-                    for m in rag_result_inner.ipc_sections
-                    if m.confidence >= MIN_CONFIDENCE
-                ]
-                dropped = len(rag_result_inner.ipc_sections) - len(relevant_sections)
-                if dropped:
-                    print(
-                        f"RAG relevance filter: dropped {dropped} low-confidence sections "
-                        f"(threshold={MIN_CONFIDENCE})"
-                    )
-                if not relevant_sections:
-                    return None, ""
-
-                section_lines = []
-                for match in relevant_sections:
-                    section_info = (
-                        f"• **Section {match.section}** ({match.title})\n"
-                        f"  - Punishment: {match.punishment}\n"
-                    )
-                    section_lines.append(section_info)
-
-                sections_text = "\n".join(section_lines)
-                print(
-                    f"Criminal RAG: {len(relevant_sections)} sections retrieved: "
-                    f"{[m.section for m in relevant_sections]}"
+            async def _fast_llm_invoke(prompt: str) -> str:
+                loop = asyncio.get_event_loop()
+                response = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: get_fast_llm().invoke([HumanMessage(content=prompt)]),
+                    ),
+                    timeout=8.0,
                 )
-                return rag_result_inner, sections_text
+                return str(response.content)
 
-            return None, ""
+            k = 10 if is_multi_offense else 8
+            context, parsed = await retrieve_statutes(
+                retrieval_query,
+                k=k,
+                domains_hint=domain_hint,
+                llm_invoke=_fast_llm_invoke,
+            )
+            if not context.chunks:
+                return "", ""
+
+            text = _budget_context(context.chunks)
+            print(
+                f"Unified RAG: {len(context.chunks)} provisions retrieved "
+                f"(confidence: {context.confidence:.2%}): "
+                f"{[f'{c.act_name} §{c.section_number}' for c in context.chunks]}"
+            )
+
+            case_text = ""
+            try:
+                cases = await retrieve_case_law(retrieval_query, parsed, context.chunks)
+                if cases:
+                    case_text = _format_case_law(cases)
+                    print(
+                        f"Case law: {len(cases)} judgments retrieved: "
+                        f"{[c.case_name for c in cases]}"
+                    )
+            except Exception as e:
+                print(f"Case law lookup error: {e}")
+
+            return text, case_text
         except Exception as e:
-            print(f"Criminal RAG lookup error: {e}")
+            print(f"Unified RAG lookup error: {e}")
             import traceback
 
             traceback.print_exc()
-            return None, ""
-
-    async def fetch_civil_sections():
-        """Fetch civil/contract/property law provisions from the civil RAG system."""
-        try:
-            from app.tools.civil_rag import get_civil_rag_system
-
-            civil_system = get_civil_rag_system()
-            await civil_system.initialize()
-
-            if not civil_system.initialized:
-                return ""
-
-            context = await civil_system.retrieve(user_input, k=4, min_score=0.30)
-            if not context.chunks:
-                return ""
-
-            lines = []
-            for chunk in context.chunks:
-                lines.append(
-                    f"• **{chunk.act_name} § {chunk.section_number}** — {chunk.title}\n"
-                    f"  {chunk.text[:300]}"
-                )
-            text = "\n\n".join(lines)
-            print(
-                f"Civil RAG: {len(context.chunks)} provisions retrieved "
-                f"(confidence: {context.confidence:.2%})"
-            )
-            return text
-        except Exception as e:
-            print(f"Civil RAG error: {e}")
-            return ""
-
-    async def fetch_constitutional_articles():
-        """Fetch constitutional Articles from the constitutional RAG system."""
-        try:
-            from app.tools.constitutional_rag import get_constitutional_rag_system
-
-            const_system = get_constitutional_rag_system()
-            await const_system.initialize()
-
-            if not const_system.initialized:
-                return ""
-
-            context = await const_system.retrieve(user_input, k=3, min_score=0.30)
-            if not context.chunks:
-                return ""
-
-            lines = []
-            for chunk in context.chunks:
-                lines.append(
-                    f"• **{chunk.section_number}** — {chunk.title}\n"
-                    f"  {chunk.text[:400]}"
-                )
-            text = "\n\n".join(lines)
-            print(
-                f"Constitutional RAG: {len(context.chunks)} Articles retrieved "
-                f"(confidence: {context.confidence:.2%})"
-            )
-            return text
-        except Exception as e:
-            print(f"Constitutional RAG error: {e}")
-            return ""
+            return "", ""
 
     # Execute tools in parallel based on router selection
     tasks = []
     task_names = []
     rag_succeeded = False  # Compulsory RAG tracking
-
-    # New domain-specific RAG context containers
-    civil_context_text = ""
-    constitutional_context_text = ""
+    case_law_text = ""
 
     if use_indian_kanoon:
         tasks.append(fetch_indian_kanoon())
         task_names.append("indian_kanoon")
 
-    if use_crime_rag:
-        tasks.append(fetch_rag_sections())
-        task_names.append("rag")
-
-    if use_civil_rag:
-        tasks.append(fetch_civil_sections())
-        task_names.append("civil_rag")
-
-    if use_constitutional_rag:
-        tasks.append(fetch_constitutional_articles())
-        task_names.append("constitutional_rag")
+    # The unified index covers every legal domain, so statute retrieval
+    # always runs for general legal queries — routing flags only shape the
+    # optional domain hint inside fetch_statute_context().
+    tasks.append(fetch_statute_context())
+    task_names.append("statute_rag")
 
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -2522,18 +2526,9 @@ async def handle_general_query(state: ChatState) -> ChatState:
                 indian_kanoon_results = result if result else ""
                 if indian_kanoon_results:
                     rag_succeeded = True
-            elif task_names[i] == "rag":
-                if result and len(result) == 2:
-                    rag_result, rag_sections_text = result
-                    if rag_sections_text:
-                        rag_succeeded = True
-            elif task_names[i] == "civil_rag":
-                civil_context_text = result if result else ""
-                if civil_context_text:
-                    rag_succeeded = True
-            elif task_names[i] == "constitutional_rag":
-                constitutional_context_text = result if result else ""
-                if constitutional_context_text:
+            elif task_names[i] == "statute_rag":
+                rag_sections_text, case_law_text = result if result else ("", "")
+                if rag_sections_text:
                     rag_succeeded = True
 
     # =========================================================================
@@ -2548,25 +2543,21 @@ async def handle_general_query(state: ChatState) -> ChatState:
 
         if rag_sections_text:
             context_parts.append(
-                f"""**Applicable Criminal Law Sections (IPC/BNS/CrPC):**
-{rag_sections_text}"""
+                f"""**Applicable Statutory Provisions** (each is tagged with its legal domain, e.g. [criminal], [civil], [family]):
+{rag_sections_text}
+
+NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/constitutional/other provisions govern rights, remedies, and obligations — do NOT describe them as criminal offences."""
             )
 
-        if civil_context_text:
+        if case_law_text:
             context_parts.append(
-                f"""**Applicable Civil Law Provisions:**
-{civil_context_text}
-
-NOTE: The above are civil law provisions. They govern remedies, obligations, and rights — NOT criminal punishments. Do NOT describe civil breaches as criminal offences."""
+                f"""**Judicial Interpretation** (curated landmark judgments, ordered by court authority — cite the case NAME, do not invent citations beyond what's shown):
+{case_law_text}"""
             )
-
-        if constitutional_context_text:
-            context_parts.append(f"""**Applicable Constitutional Provisions:**
-{constitutional_context_text}""")
 
         if indian_kanoon_results:
             context_parts.append(f"""**Relevant Case Law & Precedents:**
-{indian_kanoon_results}""")
+{indian_kanoon_results[:3000]}""")
 
         retrieved_context = "\n\n".join(context_parts) if context_parts else ""
 
@@ -2602,9 +2593,9 @@ End with: "This is general legal information. For specific advice on your situat
             # No retrieved context — tools returned empty or were not used.
             # Use general prompt with extra caution about ungrounded claims.
             prompt = GENERAL_QUERY_PROMPT.format(query=user_input)
-            if use_indian_kanoon or use_crime_rag:
-                # Tools were attempted but returned no results — CRITICAL anti-hallucination warning
-                prompt += """
+            # Statute retrieval always runs and returned no results —
+            # CRITICAL anti-hallucination warning
+            prompt += """
 
 🚨 CRITICAL WARNING: Legal database searches returned NO RELEVANT RESULTS for this query.
 
@@ -2639,14 +2630,18 @@ In the meantime, I can help you with:
 
 Please try rephrasing your question or selecting one of the options above."""
 
-    # Compulsory RAG: if tools were requested but retrieval failed, prepend disclaimer
-    if (use_indian_kanoon or use_crime_rag) and not rag_succeeded:
+    # Compulsory RAG: if retrieval failed across all sources, prepend disclaimer
+    if not rag_succeeded:
         final_response = (
             "⚠️ **I was unable to retrieve authoritative legal references for this query.** "
             "The response below is based on general knowledge and may not contain "
             "accurate statutory citations. Please verify with a qualified legal practitioner.\n\n"
             + final_response
         )
+    elif rag_sections_text:
+        # Only check citations when statute context was actually retrieved —
+        # the no-context path already forbids specific citations by prompt.
+        final_response = await _verify_response_citations(final_response)
 
     return {
         **state,
