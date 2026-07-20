@@ -21,12 +21,16 @@ quality (faithfulness / context recall / answer relevance) using context
 retrieved from the matching civil/constitutional RAG system instead.
 """
 
-from typing import List, Optional, TypedDict
+from typing import List, NotRequired, Optional, TypedDict
 
 
 class GroundTruthEntry(TypedDict):
     query: str
     relevant_ipc_sections: List[str]  # e.g. ["302", "307"]
+    # Act-agnostic section/article numbers for the unified all-domain index
+    # (e.g. ["25F"], ["Article 21"] → matched on section number). When absent,
+    # relevant_ipc_sections is used for Hit Rate@k / MRR.
+    relevant_sections: NotRequired[List[str]]
     relevant_keywords: List[str]  # must-appear terms
     expected_acts: List[str]  # statutes to cite
     reference_answer: str  # concise gold answer
@@ -674,6 +678,121 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         "domain": "family_law",
     },
 ]
+
+
+# ---------------------------------------------------------------------------
+# Act-agnostic section ground truth for the original 18 queries.
+#
+# The unified all-domain index retrieves from EVERY statute, so the scoring
+# target can no longer be IPC-only: a modern answer to "marital rape" cites
+# BNS §63/§64 (which replaced IPC §375/§376), a privacy-photos answer cites
+# IT Act §66E, and a bail question is answered by CrPC §438 / BNSS §482 —
+# all of which the IPC-era relevant_ipc_sections lists would score as
+# misses. These lists accept the classical AND modern-code equivalents.
+# relevant_ipc_sections is retained unchanged for reference.
+# ---------------------------------------------------------------------------
+
+_ORIGINAL_RELEVANT_SECTIONS = {
+    # constitutional
+    "Can Parliament pass a law restricting social media speech": ["19"],
+    "Is the Right to Privacy absolute in India": ["21"],
+    "Can a State government refuse to implement a Central law": [
+        "254",
+        "256",
+        "365",
+    ],
+    "How does the “basic structure doctrine” limit": ["368", "13"],
+    # criminal / procedure (CrPC + BNSS equivalents)
+    "Can an FIR be quashed by the High Court": ["482", "528", "226"],
+    "Is anticipatory bail available for economic offences": [
+        "438",
+        "482",
+        "420",
+        "406",
+        "409",
+    ],
+    "Can a criminal case proceed if the complainant withdraws": [
+        "321",
+        "320",
+        "359",
+        "360",
+    ],
+    "Does marital rape constitute an offence": [
+        "375",
+        "376",
+        "376B",
+        "63",
+        "64",
+        "67",
+    ],
+    # technology (IPC + BNS + IT Act + CPA equivalents)
+    "Can cryptocurrency transactions attract criminal liability": [
+        "420",
+        "406",
+        "465",
+        "468",
+        "471",
+        "120B",
+        "318",
+        "66C",
+        "66D",
+    ],
+    "If someone's private photos are shared online": [
+        "354C",
+        "509",
+        "66E",
+        "67",
+        "67A",
+        "77",
+        "78",
+    ],
+    "Who is liable if an AI system causes financial loss": [
+        "420",
+        "304A",
+        "84",
+        "85",
+        "86",
+    ],
+    # Evidence Act §65B or its BSA 2023 successors (§62/§63) — the indexed
+    # Evidence Act PDF is a pre-2000 edition without §65B, so the modern
+    # equivalents are the retrievable governing law.
+    "Are WhatsApp chats admissible as evidence": ["65B", "63", "62"],
+    # contract / civil
+    "Is a contract enforceable if signed under economic pressure": [
+        "16",
+        "19A",
+    ],
+    "Can an oral agreement be legally binding": ["10"],
+    "What happens if one party breaches a contract but claims": ["56"],
+    "Is a non-compete clause valid after employment ends": ["27"],
+    # property / family
+    "Can ancestral property be sold without consent": ["6"],
+    "What legal rights does a live-in partner have": ["17", "20", "125"],
+}
+
+
+def _apply_original_relevant_sections() -> None:
+    for entry in GROUND_TRUTH:
+        for prefix, sections in _ORIGINAL_RELEVANT_SECTIONS.items():
+            if entry["query"].startswith(prefix):
+                entry["relevant_sections"] = sections
+                break
+
+
+_apply_original_relevant_sections()
+
+
+def relevant_sections_for(entry: GroundTruthEntry) -> List[str]:
+    """Ground-truth section list for Hit Rate@k / MRR scoring."""
+    return entry.get("relevant_sections") or entry["relevant_ipc_sections"]
+
+
+# Extended coverage for the unified all-domain index (family, labour,
+# corporate, tax, environment, consumer, cyber/IP, election, property,
+# commercial, human rights) — see ground_truth_extended.py.
+from app.metrics.ground_truth_extended import EXTENDED_GROUND_TRUTH  # noqa: E402
+
+GROUND_TRUTH.extend(EXTENDED_GROUND_TRUTH)
 
 
 # ---------------------------------------------------------------------------

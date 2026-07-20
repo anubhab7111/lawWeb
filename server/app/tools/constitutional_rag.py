@@ -25,11 +25,13 @@ Key design decisions
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import List, Optional
 
 from app.tools.base_legal_rag import (
     BaseLegalRAGSystem,
     LegalChunk,
+    LegalContext,
     _infer_act_name,
     _schedule_boundary,
 )
@@ -51,6 +53,39 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
     @property
     def pdf_subdir(self) -> str:
         return "constitutional"
+
+    # ── Adapter: delegate storage/retrieval to the unified index ──
+
+    async def initialize(self) -> bool:
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        self.initialized = await get_unified_rag_system().initialize()
+        return self.initialized
+
+    async def retrieve(
+        self,
+        query: str,
+        k: int = 4,
+        min_score: float = 0.25,
+        domains: Optional[List[str]] = None,
+        use_reranker: bool = True,
+    ) -> LegalContext:
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        context = await get_unified_rag_system().retrieve(
+            query,
+            k=k,
+            min_score=min_score,
+            domains=domains or [self.domain_name],
+            use_reranker=use_reranker,
+        )
+        return LegalContext(
+            domain=self.domain_name,
+            query=query,
+            chunks=context.chunks,
+            sources=context.sources,
+            confidence=context.confidence,
+        )
 
     # ── Overrides ────────────────────────────────────────────────
 
@@ -124,12 +159,18 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             act_prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())[:6]
             chunk_id = f"CON_{act_prefix}_{art_num}"
 
+            # Only the Constitution itself has "Articles"; the other statutes
+            # in this domain (RoPA, PHRA) have plain sections and citing them
+            # as Articles would be legally wrong.
+            is_constitution = "constitution" in Path(source_file).stem.lower()
+            sec_label = f"Article {art_num}" if is_constitution else art_num
+
             chunks.append(
                 LegalChunk(
                     chunk_id=chunk_id,
                     domain=self.domain_name,
                     act_name=act_name,
-                    section_number=f"Article {art_num}",
+                    section_number=sec_label,
                     title=title,
                     text=raw,
                     source_file=source_file,

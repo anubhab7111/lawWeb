@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from app.tools.base_legal_rag import BaseLegalRAGSystem
+from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalContext
 
 
 class CivilRAGSystem(BaseLegalRAGSystem):
@@ -52,6 +52,39 @@ class CivilRAGSystem(BaseLegalRAGSystem):
 
     # No override of _parse_legal_sections() — base implementation is correct
     # for civil law (generic parser, no punishment filter).
+
+    # ── Adapter: delegate storage/retrieval to the unified index ──
+
+    async def initialize(self) -> bool:
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        self.initialized = await get_unified_rag_system().initialize()
+        return self.initialized
+
+    async def retrieve(
+        self,
+        query: str,
+        k: int = 4,
+        min_score: float = 0.25,
+        domains: Optional[List[str]] = None,
+        use_reranker: bool = True,
+    ) -> LegalContext:
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        context = await get_unified_rag_system().retrieve(
+            query,
+            k=k,
+            min_score=min_score,
+            domains=domains or [self.domain_name],
+            use_reranker=use_reranker,
+        )
+        return LegalContext(
+            domain=self.domain_name,
+            query=query,
+            chunks=context.chunks,
+            sources=context.sources,
+            confidence=context.confidence,
+        )
 
     def _preprocess_query(self, query: str) -> str:
         """

@@ -20,16 +20,12 @@ _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
-from app.tools import (
-    get_constitutional_rag_system,
-    get_criminal_rag_system,
-    get_civil_rag_system,
-)
+from app.tools import get_unified_rag_system
 
+# All bare-act domains live in the single unified index; the old per-domain
+# indexes (criminal/civil/constitutional) are thin adapters over it now.
 DOMAINS = {
-    "constitutional": get_constitutional_rag_system,
-    "criminal": get_criminal_rag_system,
-    "civil": get_civil_rag_system,
+    "unified": get_unified_rag_system,
 }
 
 
@@ -61,10 +57,13 @@ async def rebuild_domain(domain: str):
             f"  Successfully rebuilt '{domain}' index with {len(system._chunks)} chunks."
         )
 
-        # Diagnostic for constitutional
-        if domain == "constitutional":
-            art19 = [c for c in system._chunks.values() if "19" in c.section_number]
-            print(f"  Diagnostic: Article 19 has {len(art19)} chunks.")
+        # Diagnostic: per-domain chunk counts in the unified index
+        if domain == "unified":
+            counts = {}
+            for c in system._chunks.values():
+                counts[c.domain] = counts.get(c.domain, 0) + 1
+            for d in sorted(counts):
+                print(f"    {d}: {counts[d]} chunks")
     else:
         print(f"  Failed to rebuild '{domain}' index.")
 

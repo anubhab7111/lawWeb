@@ -38,7 +38,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalChunk
+from app.tools.base_legal_rag import (
+    BaseLegalRAGSystem,
+    LegalChunk,
+    LegalContext,
+    _extract_punishment,
+)
 
 # ─────────────────────────────────────────────────────────────
 # Data models (kept for backward compatibility with chatbot.py)
@@ -355,7 +360,51 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 filtered.append(chunk)
             # else: skip definition-only sections — appropriate for IPC/BNS
 
+        # Fallback: some penal acts (e.g. PMLA, POCSO scans) have few
+        # sections whose punishment clause the regex can extract — a strict
+        # filter would nearly empty them. Better an unfiltered act than an
+        # unretrievable one.
+        if len(filtered) < max(10, len(base_chunks) // 4):
+            print(
+                f"  [criminal] Punishment filter kept only {len(filtered)}/"
+                f"{len(base_chunks)} sections of {source_file} — keeping all."
+            )
+            return base_chunks
+
         return filtered
+
+    # ── Adapter: delegate storage/retrieval to the unified index ──
+
+    async def initialize(self) -> bool:
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        self.initialized = await get_unified_rag_system().initialize()
+        return self.initialized
+
+    async def retrieve(
+        self,
+        query: str,
+        k: int = 4,
+        min_score: float = 0.25,
+        domains: Optional[List[str]] = None,
+        use_reranker: bool = True,
+    ) -> LegalContext:
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        context = await get_unified_rag_system().retrieve(
+            query,
+            k=k,
+            min_score=min_score,
+            domains=domains or [self.domain_name],
+            use_reranker=use_reranker,
+        )
+        return LegalContext(
+            domain=self.domain_name,
+            query=query,
+            chunks=context.chunks,
+            sources=context.sources,
+            confidence=context.confidence,
+        )
 
     def _preprocess_query(self, query: str) -> str:
         """
@@ -398,6 +447,27 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             terms.extend(["forgery", "using forged document"])
         if any(w in q for w in ["cheated me", "cheated out of", "deceived me into"]):
             terms.extend(["cheating", "dishonestly inducing delivery of property"])
+
+        # Electronic evidence (WhatsApp/email/CCTV → statutory vocabulary)
+        if any(
+            w in q
+            for w in [
+                "whatsapp",
+                "electronic evidence",
+                "digital evidence",
+                "email as evidence",
+                "chats admissible",
+                "cctv",
+                "call recording",
+            ]
+        ):
+            terms.extend(
+                [
+                    "admissibility of electronic records",
+                    "electronic record",
+                    "certificate",
+                ]
+            )
 
         # FIR / procedure queries
         if any(w in q for w in ["fir", "police complaint", "cognizable", "arrest"]):
@@ -462,15 +532,16 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         k: int = 2,
     ) -> RAGResult:
         """
-        Full criminal RAG pipeline.
+        Full criminal RAG pipeline over the unified hybrid index
+        (BM25 + dense + reranker, filtered to the criminal domain).
 
         Maintains the same signature as the old CrimeRAGSystem.retrieve_sections()
         so chatbot.py nodes need only change the import.
         """
-        if not self.initialized:
-            await self.initialize()
+        from app.tools.unified_legal_rag import get_unified_rag_system
 
-        if not self.initialized or not self.vector_store:
+        unified = get_unified_rag_system()
+        if not await unified.initialize():
             return RAGResult(
                 crime_type=crime_type or "general",
                 ipc_sections=[],
@@ -486,27 +557,22 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 self._preprocess_query(query), crime_type, features
             )
 
-            import asyncio
-
-            loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(
-                None,
-                lambda: self.vector_store.similarity_search_with_score(
-                    search_query, k=20
-                ),
+            chunks = await unified._hybrid_search(
+                search_query=search_query,
+                rerank_query=query,
+                k=k * 2,
+                min_score=0.25,
+                domains=[self.domain_name],
             )
 
-            MIN_CONFIDENCE = 0.40
             matches: List[SectionMatch] = []
             seen: set = set()
 
-            for doc, distance in results:
-                sec_num = doc.metadata.get("section_number", "")
+            for chunk in chunks:
+                sec_num = chunk.section_number
                 if not sec_num or sec_num in seen:
                     continue
                 seen.add(sec_num)
-
-                cached = self._chunks.get(doc.metadata.get("chunk_id", ""))
 
                 # Punishment clause is only required for substantive penal
                 # statutes (IPC/BNS/NDPS/POCSO/etc.) — matches _parse_legal_sections'
@@ -514,44 +580,32 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 # Evidence Act, BSA) have no such clause by design; requiring
                 # one here would silently drop routinely-cited sections like
                 # CrPC §438 (anticipatory bail) or §482 (inherent powers).
-                source_file = cached.source_file if cached else doc.metadata.get("source", "")
                 requires_punishment = (
-                    Path(source_file).stem.lower() in self.PUNISHMENT_FILTERED_ACTS
+                    Path(chunk.source_file).stem.lower()
+                    in self.PUNISHMENT_FILTERED_ACTS
                 )
 
-                punishment = (
-                    ""
-                    if not cached
-                    else (cached.text[:250] if cached.has_punishment else "")
-                ) or doc.metadata.get("punishment", "")
+                punishment = _extract_punishment(chunk.text) or (
+                    chunk.text[:250] if chunk.has_punishment else ""
+                )
                 if requires_punishment and (not punishment or len(punishment) < 10):
                     continue
-
-                confidence = max(0.0, 1.0 - (distance / 2.0))
-                if confidence < MIN_CONFIDENCE:
-                    continue
-
-                title = cached.title if cached else doc.metadata.get("title", "")
-                definition = cached.text if cached else doc.page_content[:300]
 
                 matches.append(
                     SectionMatch(
                         section=sec_num,
-                        title=title,
-                        confidence=round(min(confidence, 1.0), 2),
+                        title=chunk.title,
+                        confidence=round(min(chunk.score, 1.0), 2),
                         reasons=(
                             ["Chargeable criminal section with punishment clause"]
                             if requires_punishment
                             else ["Procedural/evidentiary criminal law section"]
                         ),
                         punishment=punishment,
-                        definition=definition,
-                        review_required=confidence < 0.6,
+                        definition=chunk.text,
+                        review_required=chunk.score < 0.6,
                     )
                 )
-
-                if len(matches) >= k * 2:
-                    break
 
             matches.sort(key=lambda m: m.confidence, reverse=True)
             matches = matches[:k]
@@ -579,6 +633,15 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 sources=[],
                 confidence=0.0,
             )
+
+    async def get_relevant_context(self, query: str, top_k: int = 3) -> dict:
+        """Dict-style context used by the document analysis pipeline."""
+        context = await self.retrieve_context(query, k=top_k)
+        return {
+            "passages": context.relevant_passages,
+            "sources": context.sources,
+            "crime_type": context.crime_type,
+        }
 
     async def retrieve_context(
         self, query: str, k: int = 5, crime_type: str = ""

@@ -33,23 +33,46 @@ TEST_PROMPTS = [
     "What legal rights does a live-in partner have over shared property?",
 ]
 
+# Extended prompts covering the domains added by the unified all-domain RAG
+# index. Queries match app/metrics/ground_truth_extended.py exactly.
+# Enabled with --extended.
+EXTENDED_PROMPTS = [
+    "What are the grounds for divorce under the Hindu Marriage Act?",
+    "Can elderly parents claim maintenance from their children in India?",
+    "How much maternity leave is a woman employee entitled to in India?",
+    "What compensation must an employer pay when retrenching a workman?",
+    "How can a financial creditor initiate corporate insolvency proceedings against a defaulting company?",
+    "What is the requirement for independent directors on the board of a listed company?",
+    "What are the conditions for claiming input tax credit under GST?",
+    "Who is required to file an income tax return in India and what happens on late filing?",
+    "What powers does the Central Government have under the Environment Protection Act to control pollution?",
+    "How do I file a consumer complaint for a defective product and what relief can I get?",
+    "What is the punishment for identity theft and cheating by personation online?",
+    "What exclusive rights does a copyright owner have and how long does copyright protection last?",
+    "What constitutes a corrupt practice in Indian elections?",
+    "Can a homebuyer get a refund with interest if the builder delays possession under RERA?",
+    "On what grounds can an arbitral award be set aside by a court?",
+    "What are the functions and powers of the National Human Rights Commission?",
+]
+
 
 # ============================================================================
 # Pass 1 — run the chatbot and collect raw answers
 # ============================================================================
 
 
-async def run_evaluation():
+async def run_evaluation(prompts=None):
     """Run all test prompts through the chatbot and collect raw results."""
     chatbot = get_chatbot()
     results = []
 
-    total = len(TEST_PROMPTS)
+    prompts = prompts or TEST_PROMPTS
+    total = len(prompts)
     print(f"{'=' * 60}")
     print(f"  Legal Chatbot Evaluation — {total} prompts")
     print(f"{'=' * 60}\n")
 
-    for i, prompt in enumerate(TEST_PROMPTS, 1):
+    for i, prompt in enumerate(prompts, 1):
         print(f"[{i}/{total}] {prompt[:80]}...")
         start = time.time()
 
@@ -207,6 +230,22 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--extended",
+        action="store_true",
+        default=False,
+        help=(
+            "Also run the extended new-domain prompts (family, labour, "
+            "corporate, tax, environment, consumer, cyber/IP, election, "
+            "property, commercial, human rights)."
+        ),
+    )
+    parser.add_argument(
+        "--extended-only",
+        action="store_true",
+        default=False,
+        help="Run ONLY the extended new-domain prompts.",
+    )
+    parser.add_argument(
         "--no-llm-judge",
         action="store_true",
         default=False,
@@ -227,7 +266,13 @@ async def main() -> None:
     # ------------------------------------------------------------------
     # Pass 1: run the chatbot and collect raw answers + latencies
     # ------------------------------------------------------------------
-    chatbot_results = await run_evaluation()
+    if args.extended_only:
+        prompts = EXTENDED_PROMPTS
+    elif args.extended:
+        prompts = TEST_PROMPTS + EXTENDED_PROMPTS
+    else:
+        prompts = TEST_PROMPTS
+    chatbot_results = await run_evaluation(prompts)
 
     # Save the basic CSV (same format as before, always written)
     basic_csv_path = f"eval_results_{timestamp}.csv"

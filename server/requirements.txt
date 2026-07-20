@@ -53,3 +53,8 @@ bcrypt>=4.1.0
 
 # Payments (Braintree sandbox)
 braintree>=4.28.0
+
+# Hybrid retrieval (BM25 sparse index; reranker comes from sentence-transformers)
+rank-bm25>=0.2.2
+
+flake8

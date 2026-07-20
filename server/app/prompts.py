@@ -300,3 +300,17 @@ CRITICAL RULES:
 - Be authoritative but measured — this is not a binding legal opinion
 - If no defects are found, say: "No formal defects or statutory non-compliance were identified based on the available text. However, substantive validity and enforceability require professional legal review."
 """
+
+
+# ============================================================================
+# Query rewriting (history-aware retrieval)
+# ============================================================================
+
+QUERY_REWRITE_PROMPT = """Rewrite the user's latest message as ONE standalone search query for an Indian law database. Resolve pronouns and references (\"it\", \"that\", \"this offence\", \"apply for it\") using the conversation below. Keep every legal term. Do not answer the question.
+
+Conversation:
+{history}
+
+Latest message: {question}
+
+Return ONLY the rewritten query text, nothing else."""
