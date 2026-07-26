@@ -6,3 +6,5 @@ __pycache__
 **/__pycache__/
 *.csv
 dist
+app/metrics/.judge_cache.json
+app/metrics/.judge_usage.json
