@@ -207,12 +207,15 @@ class MetricsEvaluator:
     Parameters
     ----------
     use_llm_judge : bool
-        True  -> local Ollama LLM is used for all judge-based metrics.
+        True  -> the OpenRouter LLM judge (see app/metrics/llm_judge.py) is
+                 used for all judge-based metrics.
         False -> keyword heuristics only (offline / fast mode).
     rag_k : int
         Number of IPC sections to retrieve in the direct RAG pass.
     max_concurrent_judge_calls : int
-        Semaphore cap to avoid flooding the local Ollama server.
+        Semaphore cap on concurrent judge calls. The judge itself also
+        rate-limits real API calls process-wide to stay under OpenRouter's
+        free-tier 20 req/min cap, so this mainly bounds in-flight coroutines.
     """
 
     def __init__(
@@ -616,7 +619,7 @@ class MetricsEvaluator:
             f"Judge failures: {report.judge_failures}"
         )
         jmode = (
-            "ON (Ollama LLM-as-Judge)"
+            "ON (OpenRouter LLM-as-Judge)"
             if self.use_llm_judge
             else "OFF (keyword heuristics only)"
         )

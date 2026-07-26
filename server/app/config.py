@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     lawyer_api_key: str = ""
     indian_kanoon_api_key: str = ""
 
+    # OpenRouter (LLM-as-judge for RAG evaluation — see app/metrics/llm_judge.py)
+    openrouter_api_key: str = ""
+    # Free-tier model; check https://openrouter.ai/models?max_price=0 for the
+    # current catalog since free model availability rotates.
+    openrouter_model: str = "openai/gpt-oss-20b:free"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # OpenRouter free models: 20 req/min, 50 req/day (1000/day once the
+    # account has $10+ in lifetime credit purchases). Bump via env var
+    # after topping up rather than editing this default.
+    openrouter_daily_limit: int = 50
+
     # Performance settings
     max_document_size_mb: int = 10
     cache_ttl_seconds: int = 3600
