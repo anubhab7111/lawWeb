@@ -292,25 +292,6 @@ export async function checkChatHealth() {
 }
 
 // ============================================================================
-// Bookings API
-// ============================================================================
-
-/**
- * Fetch a user's confirmed bookings
- */
-export async function fetchUserBookings(userId: string) {
-    const response = await fetch(`${API_BASE_URL}/bookings/user-bookings/${userId}`, {
-        headers: {
-            ...getAuthHeaders(),
-        },
-    });
-    if (!response.ok) {
-        throw new Error('Failed to fetch bookings');
-    }
-    return response.json();
-}
-
-// ============================================================================
 // Lawyers API
 // ============================================================================
 
@@ -386,6 +367,66 @@ export async function fetchUserProfile() {
     });
     if (!response.ok) {
         throw new Error('Failed to fetch profile');
+    }
+    return response.json();
+}
+
+// ============================================================================
+// Bookings API (Braintree sandbox + Postgres)
+// ============================================================================
+
+export interface Booking {
+    id: string;
+    userId: string;
+    lawyerId: string;
+    amount: number;
+    transactionId: string;
+    status: string;
+    appointmentDate?: string | null;
+    appointmentTime?: string | null;
+    createdAt?: string | null;
+}
+
+/** One-time Braintree client token authorizing the drop-in UI (plain text). */
+export async function fetchBraintreeClientToken(): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/bookings/client_token`);
+    if (!response.ok) {
+        throw new Error('Failed to get payment token');
+    }
+    return response.text();
+}
+
+export interface CheckoutPayload {
+    amount: string;
+    paymentMethodNonce: string;
+    lawyerId: string;
+    userId: string;
+}
+
+/** Charge the nonce and record the confirmed booking. */
+export async function checkoutBooking(payload: CheckoutPayload) {
+    const response = await fetch(`${API_BASE_URL}/bookings/checkout`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.status === 'error') {
+        throw new Error(data.message || 'Payment failed');
+    }
+    return data as { status: string; transactionId: string };
+}
+
+/** Confirmed appointments for a user, newest first. */
+export async function fetchUserBookings(userId: string): Promise<Booking[]> {
+    const response = await fetch(`${API_BASE_URL}/bookings/user-bookings/${userId}`, {
+        headers: { ...getAuthHeaders() },
+    });
+    if (!response.ok) {
+        throw new Error('Failed to fetch bookings');
     }
     return response.json();
 }
