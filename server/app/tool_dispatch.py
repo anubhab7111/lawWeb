@@ -271,11 +271,20 @@ async def invoke_statute_context(
         except Exception as e:
             print(f"Case law lookup error: {e}")
 
+        retrieved_sections = {
+            c.section_number.replace("Article", "").replace("§", "").strip().upper()
+            for c in context.chunks
+            if not c.section_number.startswith("part ")
+        }
+
         return ToolInvocationResult(
             name="statute_context",
             succeeded=True,
             context_text=text,
-            raw={"case_law_text": case_text},
+            raw={
+                "case_law_text": case_text,
+                "retrieved_sections": retrieved_sections,
+            },
         )
     except Exception as e:
         print(f"Unified RAG lookup error: {e}")

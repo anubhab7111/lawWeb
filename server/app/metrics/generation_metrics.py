@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Optional, Sequence
 
-from app.metrics.llm_judge import JudgeScore, LLMJudge, get_judge
+from app.metrics.llm_judge import JudgeScore, LLMJudge
 
 logger = logging.getLogger(__name__)
 
@@ -259,15 +259,23 @@ async def compute_faithfulness(
     Returns:
         :class:`GenerationScore` with metric ``"faithfulness"``.
     """
-    j = judge or get_judge()
     kw_score = (
         _keyword_faithfulness(answer, retrieved_context)
         if use_keyword_fallback
         else 0.5
     )
+    if judge is None:
+        return GenerationScore(
+            metric="faithfulness",
+            llm_score=kw_score,
+            keyword_score=kw_score,
+            final_score=round(kw_score, 3),
+            reasoning="LLM judge disabled — keyword heuristic used.",
+            judge_failed=True,
+        )
 
     try:
-        result: JudgeScore = await j.faithfulness(
+        result: JudgeScore = await judge.faithfulness(
             answer=answer,
             context=retrieved_context,
         )
@@ -320,11 +328,19 @@ async def compute_answer_relevance(
     Returns:
         :class:`GenerationScore` with metric ``"answer_relevance"``.
     """
-    j = judge or get_judge()
     kw_score = _keyword_answer_relevance(query, answer) if use_keyword_fallback else 0.5
+    if judge is None:
+        return GenerationScore(
+            metric="answer_relevance",
+            llm_score=kw_score,
+            keyword_score=kw_score,
+            final_score=round(kw_score, 3),
+            reasoning="LLM judge disabled — keyword heuristic used.",
+            judge_failed=True,
+        )
 
     try:
-        result: JudgeScore = await j.answer_relevance(
+        result: JudgeScore = await judge.answer_relevance(
             question=query,
             answer=answer,
         )
@@ -378,15 +394,23 @@ async def compute_context_recall(
     Returns:
         :class:`GenerationScore` with metric ``"context_recall"``.
     """
-    j = judge or get_judge()
     kw_score = (
         _keyword_context_recall(reference_answer, model_answer)
         if use_keyword_fallback
         else 0.5
     )
+    if judge is None:
+        return GenerationScore(
+            metric="context_recall",
+            llm_score=kw_score,
+            keyword_score=kw_score,
+            final_score=round(kw_score, 3),
+            reasoning="LLM judge disabled — keyword heuristic used.",
+            judge_failed=True,
+        )
 
     try:
-        result: JudgeScore = await j.context_recall(
+        result: JudgeScore = await judge.context_recall(
             reference_answer=reference_answer,
             model_answer=model_answer,
         )
@@ -445,14 +469,12 @@ async def compute_all_generation_metrics(
                 "context_recall":   GenerationScore,
             }
     """
-    j = judge or get_judge()
-
     faith_task = compute_faithfulness(
-        answer=answer, retrieved_context=retrieved_context, judge=j
+        answer=answer, retrieved_context=retrieved_context, judge=judge
     )
-    relevance_task = compute_answer_relevance(query=query, answer=answer, judge=j)
+    relevance_task = compute_answer_relevance(query=query, answer=answer, judge=judge)
     recall_task = compute_context_recall(
-        reference_answer=reference_answer, model_answer=answer, judge=j
+        reference_answer=reference_answer, model_answer=answer, judge=judge
     )
 
     faith, relevance, recall = await asyncio.gather(

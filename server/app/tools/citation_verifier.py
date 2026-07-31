@@ -40,7 +40,7 @@ class CitationCheck:
     raw: str  # e.g. "Section 420 of the IPC"
     section: str
     act_hint: str  # resolved act-name hint ("" if none found nearby)
-    status: str  # verified | wrong_act | unverified
+    status: str  # verified | not_retrieved | wrong_act | unverified
     found_in: List[str] = field(default_factory=list)  # acts that DO have it
 
 
@@ -51,6 +51,10 @@ class VerificationReport:
     @property
     def verified(self) -> List[CitationCheck]:
         return [c for c in self.checks if c.status == "verified"]
+
+    @property
+    def not_retrieved(self) -> List[CitationCheck]:
+        return [c for c in self.checks if c.status == "not_retrieved"]
 
     @property
     def wrong_act(self) -> List[CitationCheck]:
@@ -101,10 +105,16 @@ def _act_hint_near(text: str, start: int, end: int, is_article: bool) -> str:
     return "Constitution of India" if is_article else ""
 
 
-def verify_citations(answer: str, rag) -> VerificationReport:
+def verify_citations(answer: str, rag, retrieved_sections=None) -> VerificationReport:
     """
     Check every statutory citation in `answer` against the chunk index of
     an initialized RAG system (must expose find_section()).
+
+    When ``retrieved_sections`` (a set of normalized section-number strings,
+    e.g. ``{"438", "482", "21"}``) is supplied, a citation that exists in the
+    corpus but was NOT among the sections actually retrieved for this query is
+    flagged ``not_retrieved`` — the model stated it from general knowledge
+    rather than from the grounded context.
     """
     report = VerificationReport()
     seen: set = set()
@@ -125,9 +135,10 @@ def verify_citations(answer: str, rag) -> VerificationReport:
 
         hits = rag.find_section(act_hint, section, max_parts=1)
         if hits:
-            report.checks.append(
-                CitationCheck(raw, section, act_hint, "verified")
-            )
+            status = "verified"
+            if retrieved_sections is not None and section not in retrieved_sections:
+                status = "not_retrieved"
+            report.checks.append(CitationCheck(raw, section, act_hint, status))
             continue
 
         # Right number, wrong act?
@@ -146,10 +157,16 @@ def verification_footer(report: VerificationReport) -> str:
     Human-readable footer appended to answers when any citation could not
     be confirmed. Silent when everything verified (no noise on good answers).
     """
-    problems = report.wrong_act + report.unverified
+    problems = report.wrong_act + report.unverified + report.not_retrieved
     if not problems:
         return ""
     lines = ["", "---", "⚠️ **Citation check** (against indexed statutes):"]
+    for c in report.not_retrieved:
+        lines.append(
+            f"- {c.raw}: exists in the statute database but was NOT among the "
+            f"provisions retrieved for this query — stated from general legal "
+            f"knowledge, not the grounded context. Please verify."
+        )
     for c in report.wrong_act:
         alts = ", ".join(c.found_in) if c.found_in else "other statutes"
         lines.append(
