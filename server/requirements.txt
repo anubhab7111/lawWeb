@@ -43,6 +43,7 @@ cachetools>=5.5.0
 # Database (PostgreSQL)
 sqlmodel>=0.0.22
 psycopg[binary]>=3.2
+pgvector>=0.3.6
 
 # Auth
 PyJWT>=2.8.0

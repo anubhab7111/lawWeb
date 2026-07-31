@@ -7,15 +7,20 @@ import json
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlmodel import Session
 
 from app.chatbot import get_chatbot
 from app.config import get_settings
+from app.db.engine import get_session
 from app.tools.crime_reporter import CRIME_TYPES
 from app.tools.document_extractor import get_document_extractor
-from app.tools.lawyer_finder import get_lawyer_finder
+from app.tools.lawyer_recommender import (
+    LEGAL_SPECIALIZATIONS,
+    recommend_lawyers as recommend_lawyers_core,
+)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -406,41 +411,25 @@ async def get_crime_report_guidance(request: CrimeReportRequest):
 
 
 @router.post("/find-lawyer")
-async def find_lawyers(request: LawyerSearchRequest):
+async def find_lawyers(
+    request: LawyerSearchRequest, session: Session = Depends(get_session)
+):
     """
-    Search for lawyers based on criteria.
-    Returns matching lawyers without LLM processing for speed.
+    Search for lawyers based on criteria (semantic match on the query text,
+    fused with rating/success_rate).
     """
     try:
-        finder = get_lawyer_finder()
-
-        # If specialization not provided, try to detect from query
-        specialization = request.specialization
-        if not specialization:
-            specialization = finder.detect_specialization(request.query)
-
-        lawyers = finder.search_lawyers(
-            specialization=specialization, location=request.location, limit=10
+        lawyers = await recommend_lawyers_core(
+            session,
+            problem_description=request.query,
+            specialty=request.specialization,
+            location=request.location,
+            limit=10,
         )
 
         return {
-            "lawyers": [
-                {
-                    "name": l.name,
-                    "specialization": l.specialization,
-                    "location": l.location,
-                    "contact": l.contact,
-                    "email": l.email,
-                    "rating": l.rating,
-                    "experience_years": l.experience_years,
-                    "languages": l.languages,
-                    "consultation_fee": l.consultation_fee,
-                    "bar_number": l.bar_number,
-                }
-                for l in lawyers
-            ],
+            "lawyers": [lawyer.to_dict() for lawyer in lawyers],
             "count": len(lawyers),
-            "detected_specialization": specialization,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lawyer search error: {str(e)}")
@@ -449,8 +438,7 @@ async def find_lawyers(request: LawyerSearchRequest):
 @router.get("/specializations")
 async def get_specializations():
     """Get list of available legal specializations."""
-    finder = get_lawyer_finder()
-    return {"specializations": finder.get_specializations()}
+    return {"specializations": LEGAL_SPECIALIZATIONS}
 
 
 @router.get("/crime-types")

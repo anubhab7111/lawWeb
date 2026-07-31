@@ -36,7 +36,10 @@ from app.tools.crime_reporter import detect_crime_type
 from app.tools.document_classifier import get_document_classifier
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 from app.tools.indian_law_rag import get_indian_law_rag
-from app.tools.lawyer_finder import get_lawyer_finder
+from app.tools.lawyer_recommender import (
+    format_lawyer_results,
+    recommend_lawyers as recommend_lawyers_core,
+)
 from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
 from app.tools.statutory_validator import get_statutory_validator
 
@@ -743,7 +746,7 @@ INTENT_TOOL_MAP: Dict[str, List[str]] = {
     "document_analysis": ["indian_kanoon"],
     "crime_report": ["crime_sections"],
     "general_query": ["indian_kanoon", "statute_context"],
-    "find_lawyer": ["lawyer_finder"],
+    "find_lawyer": ["lawyer_recommender"],
     "non_legal": [],
 }
 
@@ -1225,12 +1228,16 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     user_input = state["current_input"]
     lawyer_query = state.get("lawyer_query") or user_input
 
-    # Get lawyer finder tool
-    finder = get_lawyer_finder()
+    # Real Postgres-backed recommendation (pgvector semantic search + weighted
+    # rating/success_rate score). ChatState has no session plumbing, and this
+    # is the only DB access chatbot.py needs, so open one locally rather than
+    # threading a Session through the whole graph.
+    from app.db.engine import get_engine
+    from sqlmodel import Session as DBSession
 
-    # Search for lawyers
-    lawyers = finder.search_by_query(lawyer_query, limit=5)
-    formatted_results = finder.format_lawyer_results(lawyers)
+    with DBSession(get_engine()) as session:
+        lawyers = await recommend_lawyers_core(session, problem_description=lawyer_query, limit=5)
+    formatted_results = format_lawyer_results(lawyers)
 
     # Optionally use Indian Kanoon to provide legal context for lawyer search —
     # purely locational searches ("find a lawyer near me") get no benefit
@@ -1280,11 +1287,14 @@ Would you like me to search with different criteria?"""
     lawyers_info: List[LawyerInfo] = [
         {
             "name": l.name,
-            "specialization": l.specialization,
+            "specialization": l.specialty,
             "location": l.location,
-            "contact": l.contact,
+            "contact": None,
             "rating": l.rating,
-            "experience_years": l.experience_years,
+            "experience_years": l.experience,
+            "hourly_rate": l.hourly_rate,
+            "success_rate": l.success_rate,
+            "bio": l.bio,
         }
         for l in lawyers
     ]

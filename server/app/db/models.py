@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column, DateTime, Numeric, Text, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -52,6 +53,12 @@ class Lawyer(SQLModel, table=True):
     education: str
     languages: List[str] = Field(sa_column=Column(ARRAY(Text)))
     availability: str
+    # Embedding of "{specialty}. {bio}" via BAAI/bge-large-en-v1.5 (1024-dim),
+    # used for semantic matching in recommend_lawyers(). Internal only — never
+    # serialized in to_dict().
+    bio_embedding: Optional[List[float]] = Field(
+        default=None, sa_column=Column(Vector(1024), nullable=True)
+    )
 
     def to_dict(self) -> dict:
         return {
