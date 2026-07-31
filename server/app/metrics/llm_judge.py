@@ -318,6 +318,45 @@ def _extract_json(text: str) -> Optional[dict]:
     return None
 
 
+def _extract_batched_json(text: str) -> Optional[dict]:
+    """
+    Parse the batched RAG-triad response (a JSON object whose values are
+    themselves ``{"score", "reasoning"}`` objects). Unlike ``_extract_json``,
+    this keeps the OUTER object rather than grabbing the first inner
+    ``{"score": ...}``.
+    """
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"```(?:json)?", "", text).replace("```", "").strip()
+    try:
+        obj = json.loads(text)
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        pass
+    # Greedy outermost {...}
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            obj = json.loads(match.group(0))
+            return obj if isinstance(obj, dict) else None
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _score_from_metric_block(text: str, metric: str) -> Optional[tuple]:
+    """Regex fallback: pull one metric's (score, reasoning) out of a batched
+    response the JSON parser couldn't handle. Returns None if not found."""
+    m = re.search(
+        rf'"{metric}"\s*:\s*\{{[^{{}}]*?"score"\s*:\s*([\d.]+)'
+        r'(?:[^{}]*?"reasoning"\s*:\s*"([^"]*)")?',
+        text,
+        re.DOTALL,
+    )
+    if not m:
+        return None
+    return float(m.group(1)), (m.group(2) or "No reasoning provided.")
+
+
 def _parse_score(raw: str, metric: str) -> JudgeScore:
     """Parse raw LLM text into a JudgeScore, falling back gracefully."""
     parsed = _extract_json(raw)
@@ -727,34 +766,44 @@ class LLMJudge:
         cached = _cache_get(self._model_name, prompt)
         raw = cached.get("raw") if cached else None
         elapsed = 0.0
-        if raw is None:
-            raw, elapsed, reason = await self._post_chat(prompt, max_tokens=700)
-            if raw is None:
+        if not raw:  # not cached, or a previous empty response we won't trust
+            # gpt-oss is a reasoning model; the 4-metric prompt needs a generous
+            # token budget so hidden reasoning doesn't crowd out the JSON answer.
+            raw, elapsed, reason = await self._post_chat(prompt, max_tokens=2048)
+            if not raw:
                 return {
-                    m: JudgeScore.failure(m, reason or "unknown error")
+                    m: JudgeScore.failure(m, reason or "empty judge response")
                     for m in self._TRIAD_METRICS
                 }
             _cache_put(self._model_name, prompt, {"raw": raw})
 
-        parsed = _extract_json(raw) or {}
+        parsed = _extract_batched_json(raw) or {}
         results: Dict[str, JudgeScore] = {}
         for m in self._TRIAD_METRICS:
             sub = parsed.get(m)
+            score_reason = None
             if isinstance(sub, dict) and "score" in sub:
                 try:
-                    results[m] = JudgeScore(
-                        score=float(sub["score"]),
-                        reasoning=str(sub.get("reasoning", "No reasoning provided.")),
-                        metric=m,
-                        raw_response=raw,
-                        latency_s=elapsed,
+                    score_reason = (
+                        float(sub["score"]),
+                        str(sub.get("reasoning", "No reasoning provided.")),
                     )
-                    continue
                 except (TypeError, ValueError):
-                    pass
-            results[m] = JudgeScore.failure(
-                m, "metric missing/unparseable in batched judge response"
-            )
+                    score_reason = None
+            if score_reason is None:  # per-metric regex fallback
+                score_reason = _score_from_metric_block(raw, m)
+            if score_reason is None:
+                results[m] = JudgeScore.failure(
+                    m, "metric missing/unparseable in batched judge response"
+                )
+            else:
+                results[m] = JudgeScore(
+                    score=score_reason[0],
+                    reasoning=score_reason[1],
+                    metric=m,
+                    raw_response=raw,
+                    latency_s=elapsed,
+                )
         return results
 
 
