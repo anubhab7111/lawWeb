@@ -45,8 +45,13 @@ class Settings(BaseSettings):
 
     # Allowed CORS origins (comma-separated). Kept explicit rather than "*"
     # because allow_credentials=True + wildcard lets any origin make
-    # credentialed requests. Default is the local Vite dev server.
-    cors_allow_origins: str = "http://localhost:5173"
+    # credentialed requests. Defaults cover the Vite dev server (configured on
+    # port 3000 in client/vite.config.ts) plus Vite's own 5173 fallback, on
+    # both localhost and 127.0.0.1.
+    cors_allow_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
 
     # PostgreSQL connection string
     database_url: str = ""
