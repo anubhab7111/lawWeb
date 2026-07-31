@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import csv
+import sys
 import time
 from datetime import datetime
 
@@ -9,6 +10,23 @@ from app.chatbot import get_chatbot
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+class _Tee:
+    """Mirror a stream to a log file so each run's full console output is saved."""
+
+    def __init__(self, stream, fh):
+        self._stream = stream
+        self._fh = fh
+
+    def write(self, data):
+        self._stream.write(data)
+        self._fh.write(data)
+        self._fh.flush()
+
+    def flush(self):
+        self._stream.flush()
+        self._fh.flush()
 # ============================================================================
 # Test prompts — covering the domains that previously had accuracy issues
 # ============================================================================
@@ -275,6 +293,23 @@ async def main() -> None:
     args = parse_args()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # Save the complete console output of this run to its own log file.
+    run_log_path = f"run_{timestamp}.log"
+    log_fh = open(run_log_path, "w", encoding="utf-8")
+    sys.stdout = _Tee(sys.__stdout__, log_fh)
+    sys.stderr = _Tee(sys.__stderr__, log_fh)
+    print(f"[log] Saving full run log to {run_log_path}\n")
+
+    try:
+        await _run(args, timestamp)
+    finally:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        log_fh.close()
+        print(f"[log] Full run log written to {run_log_path}")
+
+
+async def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------
     # Pass 1: run the chatbot and collect raw answers + latencies
     # ------------------------------------------------------------------
@@ -293,7 +328,7 @@ async def main() -> None:
 
         settings = get_settings()
         daily_limit = getattr(settings, "openrouter_daily_limit", 50)
-        estimated_calls = len(prompts) * 4  # faithfulness, relevance, precision, recall
+        estimated_calls = len(prompts)  # one batched judge call per query
         print(
             f"[Budget] This run may make up to {estimated_calls} OpenRouter judge "
             f"calls against a daily budget of {daily_limit} "

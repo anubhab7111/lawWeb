@@ -56,13 +56,27 @@ from app.metrics.ground_truth import (
     get_entry_by_query,
     relevant_sections_for,
 )
-from app.metrics.llm_judge import LLMJudge
+from app.metrics.llm_judge import JudgeScore, LLMJudge
 from app.metrics.retrieval_metrics import (
     compute_hit_rate,
     compute_mrr_single,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _judge_to_generation_score(js: JudgeScore) -> GenerationScore:
+    """Adapt a batched JudgeScore into the GenerationScore the report expects."""
+    failed = js.reasoning.startswith("[JUDGE FAILED]")
+    return GenerationScore(
+        metric=js.metric,
+        llm_score=js.score,
+        keyword_score=0.0,
+        final_score=js.score,
+        reasoning=js.reasoning,
+        judge_failed=failed,
+        judge_latency_s=js.latency_s,
+    )
 
 
 # =============================================================================
@@ -237,12 +251,12 @@ class MetricsEvaluator:
         self, query: str, gt_entry: GroundTruthEntry
     ) -> Tuple[List[str], str]:
         """
-        Re-run retrieval for *query* using domain-aware strategy.
-
-        Re-runs retrieval against the production path: the unified all-domain
-        hybrid index (BM25 + dense + reranker). Every domain contributes
-        ranked section numbers to Hit-Rate/MRR, not just IPC. Indian Kanoon
-        uses the ground truth domain to pick ``context_type``.
+        Re-run retrieval for *query* using the SAME production path the
+        chatbot uses: ``retrieve_statutes`` (doctrine pins + hybrid fill +
+        confidence gate), not the raw unified index. This is what makes
+        Hit-Rate/MRR and the judge's ``context`` reflect what the chatbot
+        actually retrieved and answered from. Indian Kanoon uses the ground
+        truth domain to pick ``context_type``.
 
         Returns
         -------
@@ -253,26 +267,26 @@ class MetricsEvaluator:
 
         domain = gt_entry.get("domain", "unknown")
 
-        # ── 1. Unified statute RAG (all domains, hybrid + rerank) ──────
+        # ── 1. Production statute retrieval (pins + hybrid + gate) ─────
         try:
-            from app.tools.unified_legal_rag import get_unified_rag_system
+            from app.tools.legal_retrieval import retrieve_statutes
 
-            rag = get_unified_rag_system()
-            if await rag.initialize():
-                result = await rag.retrieve(query, k=self.rag_k)
-                seen: set = set()
-                for c in result.chunks:
-                    # "Article 21" → "21"; part-chunks share their section no.
-                    sec = c.section_number.replace("Article", "").strip()
-                    if sec and sec not in seen:
-                        seen.add(sec)
-                        sections.append(sec)
-                    ctx_parts.append(
-                        f"{c.act_name} {c.section_number} -- {c.title}\n"
-                        f"{c.text[:400]}"
-                    )
+            # k=8 matches the chatbot's own retrieve_statutes call so the
+            # evaluated context is what production actually feeds the LLM.
+            context, _parsed = await retrieve_statutes(query, k=8)
+            seen: set = set()
+            for c in context.chunks:
+                # "Article 21" → "21"; part-chunks share their section no.
+                sec = c.section_number.replace("Article", "").strip()
+                if sec and sec not in seen:
+                    seen.add(sec)
+                    sections.append(sec)
+                ctx_parts.append(
+                    f"{c.act_name} {c.section_number} -- {c.title}\n"
+                    f"{c.text[:400]}"
+                )
         except Exception as exc:
-            logger.warning("Unified RAG retrieval failed during evaluation: %s", exc)
+            logger.warning("Statute retrieval failed during evaluation: %s", exc)
 
         # ── 2. Indian Kanoon (case law & statutes API) ────────────────
         # Map ground-truth domain → Indian Kanoon context_type
@@ -362,36 +376,52 @@ class MetricsEvaluator:
             async with self._judge_sem:
                 return await coro
 
-        if answer:
+        if answer and self._judge is not None:
+            # Judge ON: one batched OpenRouter call scores all four metrics,
+            # keeping a full run inside the free-tier daily cap.
+            try:
+                scores = await _guarded(
+                    self._judge.evaluate_rag(
+                        query=query,
+                        answer=answer,
+                        context=retrieved_context,
+                        reference=gt_entry["reference_answer"],
+                    )
+                )
+                cp_precision = float(scores["context_precision"].score)
+                gen_scores = {
+                    m: _judge_to_generation_score(scores[m])
+                    for m in ("faithfulness", "answer_relevance", "context_recall")
+                }
+            except Exception as exc:
+                logger.warning("Judge failed for query %d: %s", query_id, exc)
+                judge_failures += 4
+        elif answer:
+            # Judge OFF: keyword heuristics only, no network calls.
             try:
                 from app.metrics.retrieval_metrics import (
                     compute_context_precision_async,
                 )
 
                 cp_raw, gen_scores = await asyncio.gather(
-                    _guarded(
-                        compute_context_precision_async(
-                            query=query,
-                            context=retrieved_context,
-                            keywords=gt_entry["relevant_keywords"],
-                            judge=self._judge,
-                        )
+                    compute_context_precision_async(
+                        query=query,
+                        context=retrieved_context,
+                        keywords=gt_entry["relevant_keywords"],
+                        judge=None,
                     ),
-                    _guarded(
-                        compute_all_generation_metrics(
-                            query=query,
-                            answer=answer,
-                            retrieved_context=retrieved_context,
-                            reference_answer=gt_entry["reference_answer"],
-                            judge=self._judge,
-                        )
+                    compute_all_generation_metrics(
+                        query=query,
+                        answer=answer,
+                        retrieved_context=retrieved_context,
+                        reference_answer=gt_entry["reference_answer"],
+                        judge=None,
                     ),
                     return_exceptions=False,
                 )
                 cp_precision = float(cp_raw)
-
             except Exception as exc:
-                logger.warning("Metrics failed for query %d: %s", query_id, exc)
+                logger.warning("Heuristic metrics failed for query %d: %s", query_id, exc)
                 judge_failures += 4
         else:
             judge_failures += 4  # error / empty answer

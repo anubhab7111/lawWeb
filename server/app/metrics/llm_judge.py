@@ -58,7 +58,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import httpx
 
@@ -221,6 +221,52 @@ INSTRUCTIONS:
 
 Respond with ONLY a valid JSON object on a single line, like this:
 {{"score": <float between 0 and 1>, "reasoning": "<one sentence>"}}
+"""
+
+# Batched rubric: all four RAG-triad metrics in ONE call, so a full evaluation
+# run costs one API request per query (~18/run) instead of four — keeping it
+# inside OpenRouter's free-tier 50/day cap. Same rubrics as the single-metric
+# prompts above, just scored together.
+_RAG_TRIAD_PROMPT = """\
+You are a strict evaluation judge for a legal question-answering system.
+Score the MODEL ANSWER on four independent metrics, each a float in [0, 1].
+
+USER QUERY:
+\"\"\"
+{query}
+\"\"\"
+
+RETRIEVED CONTEXT (chunks the system retrieved):
+\"\"\"
+{context}
+\"\"\"
+
+MODEL ANSWER:
+\"\"\"
+{answer}
+\"\"\"
+
+REFERENCE ANSWER (gold standard):
+\"\"\"
+{reference}
+\"\"\"
+
+METRICS:
+- faithfulness: fraction of the Model Answer's factual claims that are explicitly
+  supported by the Retrieved Context. If context is empty, non-trivial claims are
+  unsupported (score 0). A pure refusal scores 1.
+- answer_relevance: how directly and completely the Model Answer addresses the
+  User Query (1 = fully, 0 = not at all).
+- context_precision: fraction of the Retrieved Context that is relevant to the
+  User Query (1 = all relevant, 0 = all noise / empty).
+- context_recall: fraction of the key facts in the Reference Answer that the Model
+  Answer also covers (1 = all covered; if reference is empty, score 1).
+
+Respond with ONLY a valid JSON object on a single line, exactly like this:
+{{"faithfulness": {{"score": <float>, "reasoning": "<one sentence>"}}, \
+"answer_relevance": {{"score": <float>, "reasoning": "<one sentence>"}}, \
+"context_precision": {{"score": <float>, "reasoning": "<one sentence>"}}, \
+"context_recall": {{"score": <float>, "reasoning": "<one sentence>"}}}}
 """
 
 
@@ -442,36 +488,33 @@ class LLMJudge:
     # ------------------------------------------------------------------
     # Internal async invoke with cache, budget guard, throttle, and retry
     # ------------------------------------------------------------------
-    async def _invoke(self, prompt: str, metric: str) -> JudgeScore:
-        """Call OpenRouter with quota protection and return a parsed JudgeScore."""
-        cached = _cache_get(self._model_name, prompt)
-        if cached is not None:
-            return JudgeScore(
-                score=float(cached["score"]),
-                reasoning=f"{cached.get('reasoning', '')} [cached]",
-                metric=metric,
-                raw_response=cached.get("raw", ""),
-            )
-
+    async def _post_chat(
+        self, prompt: str, max_tokens: int = 512
+    ) -> tuple[Optional[str], float, Optional[str]]:
+        """
+        One OpenRouter chat call with the daily-budget guard, rate throttle,
+        and retry/back-off. Returns ``(raw_content, latency_s, failure_reason)``
+        — ``raw_content`` is None (and ``failure_reason`` set) when the call
+        could not be completed. Does NOT touch the response cache; callers own
+        caching and parsing.
+        """
         if not self._api_key:
-            return JudgeScore.failure(metric, "OPENROUTER_API_KEY not configured.")
+            return None, 0.0, "OPENROUTER_API_KEY not configured."
 
         if _usage_count_today() >= self._daily_limit:
             logger.warning(
-                "OpenRouter daily judge budget (%d calls) reached; "
-                "skipping live call for metric=%s.",
+                "OpenRouter daily judge budget (%d calls) reached; skipping call.",
                 self._daily_limit,
-                metric,
             )
-            return JudgeScore.failure(
-                metric,
+            return (
+                None,
+                0.0,
                 f"Daily OpenRouter budget of {self._daily_limit} calls reached. "
                 "Raise OPENROUTER_DAILY_LIMIT after a $10+ topup (unlocks "
                 "1000/day), or rerun after the daily reset.",
             )
 
         last_exc: Optional[Exception] = None
-
         for attempt in range(self._max_retries + 1):
             await _throttle()
             t0 = time.perf_counter()
@@ -487,61 +530,58 @@ class LLMJudge:
                             "model": self._model_name,
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.0,
-                            "max_tokens": 512,
+                            "max_tokens": max_tokens,
                         },
                     )
                 elapsed = time.perf_counter() - t0
-                _usage_increment()  # counts against quota whether it succeeded or not
+                _usage_increment()  # counts against quota whether it parsed or not
 
                 response.raise_for_status()
                 data = response.json()
                 raw = data["choices"][0]["message"]["content"] or ""
-
-                score = _parse_score(raw, metric)
-                score.latency_s = elapsed
-
-                _cache_put(
-                    self._model_name,
-                    prompt,
-                    {"score": score.score, "reasoning": score.reasoning, "raw": raw},
-                )
-
-                logger.debug(
-                    "metric=%s  score=%.3f  latency=%.2fs",
-                    metric,
-                    score.score,
-                    elapsed,
-                )
-                return score
+                return raw, elapsed, None
 
             except httpx.HTTPStatusError as exc:
                 last_exc = RuntimeError(
                     f"OpenRouter HTTP {exc.response.status_code}: {exc.response.text[:200]}"
                 )
-                logger.warning(
-                    "OpenRouter judge error (attempt %d/%d) metric=%s: %s",
-                    attempt + 1,
-                    self._max_retries + 1,
-                    metric,
-                    last_exc,
-                )
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
-                logger.warning(
-                    "OpenRouter judge error (attempt %d/%d) metric=%s: %s",
-                    attempt + 1,
-                    self._max_retries + 1,
-                    metric,
-                    exc,
-                )
-
+            logger.warning(
+                "OpenRouter judge error (attempt %d/%d): %s",
+                attempt + 1,
+                self._max_retries + 1,
+                last_exc,
+            )
             if attempt < self._max_retries:
                 await asyncio.sleep(self._retry_delay_s * (attempt + 1))
 
-        logger.error(
-            "OpenRouter judge exhausted retries for metric=%s: %s", metric, last_exc
+        logger.error("OpenRouter judge exhausted retries: %s", last_exc)
+        return None, 0.0, str(last_exc)
+
+    async def _invoke(self, prompt: str, metric: str) -> JudgeScore:
+        """Call OpenRouter with cache + quota protection; return a JudgeScore."""
+        cached = _cache_get(self._model_name, prompt)
+        if cached is not None and "score" in cached:
+            return JudgeScore(
+                score=float(cached["score"]),
+                reasoning=f"{cached.get('reasoning', '')} [cached]",
+                metric=metric,
+                raw_response=cached.get("raw", ""),
+            )
+
+        raw, elapsed, reason = await self._post_chat(prompt)
+        if raw is None:
+            return JudgeScore.failure(metric, reason or "unknown error")
+
+        score = _parse_score(raw, metric)
+        score.latency_s = elapsed
+        _cache_put(
+            self._model_name,
+            prompt,
+            {"score": score.score, "reasoning": score.reasoning, "raw": raw},
         )
-        return JudgeScore.failure(metric, str(last_exc))
+        return score
 
     # ------------------------------------------------------------------
     # Public metric methods  (same signatures as original)
@@ -645,6 +685,77 @@ class LLMJudge:
             answer=model_answer[:2000],
         )
         return await self._invoke(prompt, "context_recall")
+
+    # ------------------------------------------------------------------
+    # Batched: all four RAG-triad metrics in a single API call
+    # ------------------------------------------------------------------
+    _TRIAD_METRICS = (
+        "faithfulness",
+        "answer_relevance",
+        "context_precision",
+        "context_recall",
+    )
+
+    async def evaluate_rag(
+        self,
+        *,
+        query: str,
+        answer: str,
+        context: str,
+        reference: str,
+    ) -> Dict[str, JudgeScore]:
+        """
+        Score all four RAG-triad metrics in ONE OpenRouter call.
+
+        Returns a dict keyed by metric name. This keeps a full evaluation run
+        (one call per query) inside the free-tier daily cap, where calling the
+        four single-metric methods separately would cost 4x the quota.
+        """
+        if not answer.strip():
+            return {
+                m: JudgeScore(0.0, "Empty answer — nothing to evaluate.", m)
+                for m in self._TRIAD_METRICS
+            }
+
+        prompt = _RAG_TRIAD_PROMPT.format(
+            query=query[:800],
+            context=context[:3000],
+            answer=answer[:2000],
+            reference=reference[:2000],
+        )
+
+        cached = _cache_get(self._model_name, prompt)
+        raw = cached.get("raw") if cached else None
+        elapsed = 0.0
+        if raw is None:
+            raw, elapsed, reason = await self._post_chat(prompt, max_tokens=700)
+            if raw is None:
+                return {
+                    m: JudgeScore.failure(m, reason or "unknown error")
+                    for m in self._TRIAD_METRICS
+                }
+            _cache_put(self._model_name, prompt, {"raw": raw})
+
+        parsed = _extract_json(raw) or {}
+        results: Dict[str, JudgeScore] = {}
+        for m in self._TRIAD_METRICS:
+            sub = parsed.get(m)
+            if isinstance(sub, dict) and "score" in sub:
+                try:
+                    results[m] = JudgeScore(
+                        score=float(sub["score"]),
+                        reasoning=str(sub.get("reasoning", "No reasoning provided.")),
+                        metric=m,
+                        raw_response=raw,
+                        latency_s=elapsed,
+                    )
+                    continue
+                except (TypeError, ValueError):
+                    pass
+            results[m] = JudgeScore.failure(
+                m, "metric missing/unparseable in batched judge response"
+            )
+        return results
 
 
 # ---------------------------------------------------------------------------

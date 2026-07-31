@@ -502,6 +502,15 @@ CRIMINAL_PROCEDURE_KEYWORDS = frozenset(
 )
 
 
+# Main-LLM context window / output reservation. Kept as module constants so the
+# prompt-budget guard (_fit_context_blocks) sizes the input against the same
+# window the model runs with.
+LLM_NUM_CTX = 6144  # Ollama defaults to 2048, which silently clips grounded prompts
+LLM_NUM_PREDICT = 1024  # tokens reserved for the answer
+_PROMPT_SAFETY_MARGIN = 256  # headroom for chat scaffolding the estimate can't see
+_MAX_QUERY_CHARS = 8000  # clamp on user-derived text so one huge query can't overflow
+
+
 @lru_cache()
 def get_llm() -> ChatOllama:
     """Get cached LLM instance for better performance."""
@@ -510,12 +519,41 @@ def get_llm() -> ChatOllama:
         model=settings.llm_model,
         temperature=settings.llm_temperature,
         base_url=settings.ollama_base_url,
-        num_ctx=6144,  # Ollama defaults to 2048, which silently clips grounded prompts
-        num_predict=1024,  # Balanced: enough for detailed answers, faster inference
+        num_ctx=LLM_NUM_CTX,
+        num_predict=LLM_NUM_PREDICT,
         timeout=35.0,  # Tighter timeout for snappier responses
         reasoning=False,  # qwen3 defaults to thinking mode; keep responses direct
         keep_alive="1h",  # loading the 14B model is the OOM-prone step — do it rarely
     )
+
+
+def _fit_context_blocks(context_parts: list, reserved_tokens: int) -> str:
+    """
+    Join retrieved-context blocks (already in priority order: statute → case
+    law → Indian Kanoon) without exceeding the model's input budget. Drops
+    lower-priority blocks and truncates the last kept one, so the instruction
+    template and user query always survive — this is what stops Ollama from
+    silently front-truncating the grounded statute block on long prompts.
+    """
+    from app.metrics.engineering_metrics import count_tokens_approx
+
+    budget = LLM_NUM_CTX - LLM_NUM_PREDICT - _PROMPT_SAFETY_MARGIN - reserved_tokens
+    if budget <= 0:
+        return ""
+
+    kept: list = []
+    used = 0
+    for block in context_parts:
+        block_tokens = count_tokens_approx(block)
+        if used + block_tokens <= budget:
+            kept.append(block)
+            used += block_tokens
+        else:
+            remaining = budget - used
+            if remaining > 50:  # ~4 chars/token — keep a useful truncated head
+                kept.append(block[: remaining * 4])
+            break
+    return "\n\n".join(kept)
 
 
 @lru_cache()
@@ -1187,7 +1225,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
 
 **Further Steps:** [Steps: call 100/112, file FIR, preserve evidence]
 
-Crime reported: {crime_details}
+Crime reported: {crime_details[:_MAX_QUERY_CHARS]}
 Type: {identified_crime}{rag_section}{no_rag_warning}
 
 IMPORTANT: All 4 sections (Crime, Statute, Punishment, Further Steps) are REQUIRED. Use the IPC sections provided above."""
@@ -1309,12 +1347,16 @@ Would you like me to search with different criteria?"""
     }
 
 
-async def _verify_response_citations(response_text: str) -> str:
+async def _verify_response_citations(
+    response_text: str, retrieved_sections=None
+) -> str:
     """
     Non-LLM post-generation check: does every 'Section N of the X Act' /
     'Article N' claim in the answer actually exist in the indexed corpus
-    under the cited act? Appends a footer flagging mismatches; silent when
-    everything verifies. Never raises — a verifier bug must not break chat.
+    under the cited act? When ``retrieved_sections`` is given, citations that
+    exist but were not retrieved for this query are flagged as ungrounded.
+    Appends a footer flagging mismatches; silent when everything verifies.
+    Never raises — a verifier bug must not break chat.
     """
     try:
         from app.tools.citation_verifier import verification_footer, verify_citations
@@ -1323,7 +1365,7 @@ async def _verify_response_citations(response_text: str) -> str:
         rag = get_unified_rag_system()
         if not rag.initialized:
             return response_text
-        report = verify_citations(response_text, rag)
+        report = verify_citations(response_text, rag, retrieved_sections)
         if report.checks:
             print(
                 f"[CitationVerify] {len(report.verified)}/{len(report.checks)} "
@@ -1449,14 +1491,27 @@ NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/c
             context_parts.append(f"""**Relevant Case Law & Precedents:**
 {indian_kanoon_results[:3000]}""")
 
-        retrieved_context = "\n\n".join(context_parts) if context_parts else ""
+        from app.metrics.engineering_metrics import count_tokens_approx
+
+        user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
+        # Reserve budget for the fixed scaffolding (instruction template ~500
+        # tokens) plus the query and conversation history, then fit the context
+        # blocks into whatever input budget remains.
+        reserved = (
+            count_tokens_approx(user_input_for_prompt)
+            + count_tokens_approx(conversation_context or "")
+            + 500
+        )
+        retrieved_context = (
+            _fit_context_blocks(context_parts, reserved) if context_parts else ""
+        )
 
         # Choose appropriate prompt based on context
         if retrieved_context:
             # Use enhanced prompt with retrieved legal context
             prompt = f"""You are a knowledgeable Indian legal assistant. Answer the following legal query comprehensively using ONLY the retrieved legal context below.
 
-**User Query:** {user_input}
+**User Query:** {user_input_for_prompt}
 
 {retrieved_context}
 
@@ -1464,6 +1519,7 @@ NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/c
 - You MUST base your answer on the retrieved context above. Cite specific sections, articles, case names, and provisions that appear in the context.
 - If the retrieved context does not cover a particular aspect of the query, say "I don't have specific references for this aspect" rather than guessing.
 - NEVER fabricate or guess section numbers, article numbers, or case citations.
+- Do NOT state any punishment term, fine, monetary threshold, age limit, or other numeric condition unless it appears in the retrieved provisions above. If a specific figure is not in the context, say the retrieved provisions do not specify it rather than recalling a number from memory.
 - If the legal position has changed or is contested, explicitly state that.
 - Cite landmark cases BY NAME when they appear in the retrieved context.
 
@@ -1482,7 +1538,10 @@ End with: "This is general legal information. For specific advice on your situat
         else:
             # No retrieved context — tools returned empty.
             # Use general prompt with extra caution about ungrounded claims.
-            prompt = GENERAL_QUERY_PROMPT.format(query=user_input) + prompt_warning
+            prompt = (
+                GENERAL_QUERY_PROMPT.format(query=user_input_for_prompt)
+                + prompt_warning
+            )
 
         # Add conversation context if available
         if conversation_context:
@@ -1510,7 +1569,10 @@ Please try rephrasing your question or selecting one of the options above."""
     elif rag_sections_text:
         # Only check citations when statute context was actually retrieved —
         # the no-context path already forbids specific citations by prompt.
-        final_response = await _verify_response_citations(final_response)
+        retrieved_sections = (statute_result.raw or {}).get("retrieved_sections")
+        final_response = await _verify_response_citations(
+            final_response, retrieved_sections
+        )
 
     return {
         **state,
