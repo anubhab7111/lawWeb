@@ -18,9 +18,12 @@ class LawyerInfo(TypedDict):
     name: str
     specialization: str
     location: str
-    contact: str
+    contact: Optional[str]
     rating: Optional[float]
     experience_years: Optional[int]
+    hourly_rate: Optional[int]
+    success_rate: Optional[int]
+    bio: Optional[str]
 
 
 class DocumentInfo(TypedDict):
@@ -102,7 +105,7 @@ class ChatState(TypedDict):
     # Tool selection
     selected_tools: Optional[
         List[str]
-    ]  # Tools to be used, from INTENT_TOOL_MAP: ["indian_kanoon", "statute_context", "crime_sections", "lawyer_finder"]
+    ]  # Tools to be used, from INTENT_TOOL_MAP: ["indian_kanoon", "statute_context", "crime_sections", "lawyer_recommender"]
     domain_hint: Optional[
         Literal["criminal"]
     ]  # Soft bias for unified statute retrieval; computed deterministically by _infer_domain_hint

@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from app.tools.indian_kanoon import get_indian_kanoon_tool
-from app.tools.lawyer_finder import get_lawyer_finder
 
 
 @dataclass
@@ -352,27 +351,8 @@ async def invoke_crime_sections(
         return ToolInvocationResult(name="crime_sections", succeeded=False, context_text="")
 
 
-# ============================================================================
-# Lawyer finder
-# ============================================================================
-
-
-async def invoke_lawyer_finder(query: str, limit: int = 5) -> ToolInvocationResult:
-    """Search the lawyer directory."""
-    finder = get_lawyer_finder()
-    lawyers = finder.search_by_query(query, limit=limit)
-    formatted = finder.format_lawyer_results(lawyers)
-    return ToolInvocationResult(
-        name="lawyer_finder",
-        succeeded=bool(lawyers),
-        context_text=formatted,
-        raw=lawyers,
-    )
-
-
 RAG_TOOL_REGISTRY: Dict[str, Callable] = {
     "indian_kanoon": invoke_indian_kanoon,
     "statute_context": invoke_statute_context,
     "crime_sections": invoke_crime_sections,
-    "lawyer_finder": invoke_lawyer_finder,
 }
