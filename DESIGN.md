@@ -132,3 +132,30 @@ Keep the Radix-primitive / shadcn-style component approach already in the repo; 
 - Backend is fixed: FastAPI on `:8000`, base `VITE_API_URL` (default `http://localhost:8000/api`). Lawyer/booking JSON is **camelCase**; `client_token` returns **plain text**; auth/lawyer/booking errors are `{message}`.
 - Ignore legacy leftovers in the current `App.tsx` (hardcoded `:5001`, MongoDB/Razorpay comments) — target the real endpoints above.
 - No real payments/PII beyond Braintree sandbox; keep the "educational, not legal advice" framing visible.
+
+---
+
+## 11. Using this brief in Claude Design (claude.ai/design)
+
+Paste this whole file into a new design, then drive it with the prompts below. Design agent: treat §1–§9 as binding — use the tokens and screen specs exactly; don't invent a new palette or brand.
+
+**Kick-off prompt:**
+> Build the **LawWeb** web app frontend from the attached design brief. Modern & minimal, light + dark, single blue accent on a neutral canvas. Use the exact tokens in §4 and the screen specs in §6. Start with the **app shell** (sticky top bar, wordmark, primary nav, theme toggle) and the **Home** screen, then we'll do each screen.
+
+**Per-screen prompts (run in order):**
+1. *"Design the **Ask AI** screen (§6): streaming chat thread + collapsible context panel showing intent, statute/case-law citation chips, and a confidence badge. Include the composer with attach + quick-action chips, and intent result blocks for lawyer cards, crime-report steps, and document analysis. Show empty, loading (typing/streaming), and error states."*
+2. *"Design **Find Lawyers**: a searchable/filterable directory grid of lawyer cards + a guided 'Recommend' form + a full lawyer profile page with a prominent Book CTA."*
+3. *"Design the **Document Analysis** screen: dropzone (PDF/DOCX/image) or paste-text, then a result view with a classification badge, statutory-requirement checklist (pass/fail), and warning-colored defect flags. Include the OCR/processing state."*
+4. *"Design **Booking & Payment** (Braintree drop-in summary + confirmation) and **My Bookings** (list of confirmed consultations with status pills + empty state)."*
+5. *"Design **Sign In / Sign Up**: minimal centered cards with inline error messages."*
+6. *"Now generate the **dark theme** for every screen using the §4 dark tokens, and verify AA contrast."*
+
+**Refinement prompts:** *"Tighten spacing to the §4 scale,"* *"make it responsive — collapse the two-pane chat and lawyer grid to one column below lg,"* *"add citation chips and the 'not legal advice' disclaimer near all AI output."*
+
+## 12. Screen & component checklist (design-agent definition of done)
+
+**Screens:** Home · Ask AI (chat + context panel) · Document Analysis · Find Lawyers (directory) · Recommend form · Lawyer Profile · Booking/Payment · My Bookings · Sign In · Sign Up. Plus global: app shell, mobile nav sheet, 404/empty/error.
+
+**Reusable components:** Button (primary/secondary/ghost/danger) · Input · Textarea · Select · Combobox/Filter · Card · Badge/Pill (specialty, status, confidence) · Avatar · Tabs · Dialog · Sheet/Drawer · Toast · Dropzone · Chat bubble (user/assistant/streaming/loading) · Citation chip · Rating stars · Skeleton · Empty state · Nav bar · Theme toggle.
+
+**Every screen must ship:** default + empty + loading + error states, light **and** dark, mobile + desktop, AA contrast, visible focus states.
