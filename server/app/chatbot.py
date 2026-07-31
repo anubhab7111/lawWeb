@@ -6,7 +6,6 @@ This module defines the chatbot workflow using LangGraph for state management an
 import asyncio
 import time
 import contextvars
-import json
 import re
 from asyncio.events import AbstractEventLoop
 from functools import lru_cache
@@ -31,6 +30,8 @@ from app.state import (
     LawyerInfo,
     Message,
 )
+from app.intent_classifier import classify_intent_embedding
+from app.tool_dispatch import RAG_TOOL_REGISTRY, infer_indian_kanoon_context_type
 from app.tools.crime_reporter import detect_crime_type
 from app.tools.document_classifier import get_document_classifier
 from app.tools.indian_kanoon import get_indian_kanoon_tool
@@ -44,39 +45,6 @@ from app.tools.statutory_validator import get_statutory_validator
 # ============================================================================
 
 
-class RoutingDecision(BaseModel):
-    """Structured output for routing logic."""
-
-    primary_intent: Literal[
-        "document_analysis",
-        "crime_report",
-        "find_lawyer",
-        "general_query",
-        "non_legal",
-    ] = Field(description="The main intent classification")
-
-    confidence: float = Field(
-        default=0.5, ge=0.0, le=1.0, description="Confidence score between 0 and 1"
-    )
-
-    reasoning: str = Field(
-        default="", description="Brief explanation of why this route was chosen"
-    )
-
-    secondary_intents: List[str] = Field(
-        default_factory=list, description="Additional intents for multi-intent queries"
-    )
-
-    extracted_entities: List[str] = Field(
-        default_factory=list, description="Extracted legal terms, acts, or sections"
-    )
-
-    requires_tools: List[str] = Field(
-        default_factory=list,
-        description="Tools needed: indian_kanoon, crime_rag, lawyer_finder, document_analyzer",
-    )
-
-
 class DomainClassification(BaseModel):
     """Stage 1: Domain-level classification (Legal vs Non-Legal)."""
 
@@ -85,36 +53,6 @@ class DomainClassification(BaseModel):
     legal_indicators: List[str] = Field(
         default_factory=list, description="Legal terms or concepts found in the query"
     )
-
-
-class ToolSelection(BaseModel):
-    """Determines which tools should be used for a given query."""
-
-    use_indian_kanoon: bool = Field(
-        default=False, description="Use for case law, precedents, judgments"
-    )
-    use_crime_rag: bool = Field(
-        default=False,
-        description="Use for IPC/CrPC/BNS sections, punishments, criminal procedures",
-    )
-    use_civil_rag: bool = Field(
-        default=False,
-        description="Use for civil/contract/property/tort law sections (Contract Act, TPA, CPC)",
-    )
-    use_constitutional_rag: bool = Field(
-        default=False,
-        description="Use for constitutional Articles, fundamental rights, directive principles",
-    )
-    use_lawyer_finder: bool = Field(
-        default=False, description="Use for finding lawyers"
-    )
-    use_document_analyzer: bool = Field(
-        default=False, description="Use for document analysis/validation"
-    )
-    use_llm_only: bool = Field(
-        default=True, description="Use LLM directly without tools"
-    )
-    reasoning: str = Field(default="", description="Why these tools were selected")
 
 
 # ============================================================================
@@ -227,87 +165,6 @@ VALIDATION_KEYWORDS = frozenset(
     ]
 )
 
-# Personal crime report indicators
-PERSONAL_CRIME_INDICATORS = frozenset(
-    [
-        "i was attacked",
-        "i was scammed",
-        "i was robbed",
-        "i was cheated",
-        "someone stole",
-        "someone attacked",
-        "someone threatened",
-        "i am victim",
-        "i need help",
-        "help me report",
-        "file fir",
-        "report crime",
-        "happened to me",
-        "i have been",
-        "they took my",
-        "my money was",
-    ]
-)
-
-# Legal analysis indicators (theoretical questions)
-LEGAL_ANALYSIS_KEYWORDS = frozenset(
-    [
-        "which section",
-        "what section",
-        "which ipc",
-        "what ipc",
-        "sections apply",
-        "offences apply",
-        "laws apply",
-        "act apply",
-        "procedural steps",
-        "procedure under",
-        "cognizable",
-        "non-cognizable",
-        "bailable",
-        "non-bailable",
-        "sanction required",
-        "sanction for prosecution",
-        "legal implications",
-        "legal consequences",
-        "jurisdiction",
-        "which court",
-        "competent court",
-        "extradition",
-        "can both",
-        "both apply",
-        "what happens if",
-        "explain the",
-    ]
-)
-
-# Case law / precedent search keywords (→ Indian Kanoon)
-CASE_SEARCH_KEYWORDS = frozenset(
-    [
-        "case",
-        "judgment",
-        "judgement",
-        "ruling",
-        "verdict",
-        "precedent",
-        "citation",
-        "court held",
-        "supreme court",
-        "high court",
-        "landmark",
-        "case law",
-        "decided by",
-        "vs",
-        "v/s",
-        "versus",
-        "petitioner",
-        "respondent",
-        "appellant",
-        "similar cases",
-        "previous cases",
-    ]
-)
-
 # IPC/CrPC/Statute keywords (→ Crime RAG)
 STATUTE_KEYWORDS = frozenset(
     [
@@ -379,234 +236,8 @@ CRIME_TYPE_KEYWORDS = frozenset(
     ]
 )
 
-# Lawyer search keywords
-LAWYER_SEARCH_KEYWORDS = frozenset(
-    [
-        "lawyer",
-        "attorney",
-        "advocate",
-        "legal help",
-        "representation",
-        "law firm",
-        "find lawyer",
-        "need lawyer",
-        "consult lawyer",
-        "hire lawyer",
-        "legal counsel",
-    ]
-)
-
 # ============================================================================
-# Enhanced Tool Selection Keywords
-# ============================================================================
-
-# Keywords that STRONGLY indicate Indian Kanoon is needed
-INDIAN_KANOON_STRONG_INDICATORS = frozenset(
-    [
-        "case law",
-        "case laws",
-        "precedent",
-        "precedents",
-        "landmark case",
-        "supreme court held",
-        "high court held",
-        "court ruling",
-        "court rulings",
-        "judgment in",
-        "judgement in",
-        "cited in",
-        "ratio decidendi",
-        "obiter dicta",
-        "similar case",
-        "similar cases",
-        "relevant cases",
-        "leading case",
-        "authority",
-        "binding precedent",
-        "persuasive precedent",
-        "case citation",
-        "air ",
-        "scr ",
-        "scc ",
-        "all ",  # Case report abbreviations
-        # Substantive law queries that need authoritative sources
-        "constitutionality",
-        "constitutional validity",
-        "unconstitutional",
-        "basic structure doctrine",
-        "fundamental right",
-        "article 19",
-        "article 21",
-        "article 14",
-        "article 32",
-        "article 226",
-        "article 356",
-        "puttaswamy",
-        "kesavananda",
-        "right to privacy",
-        "marital rape",
-        "section 65b",
-        "admissibility",
-        "electronic evidence",
-        "anticipatory bail",
-        "quash",
-        "quashing",
-        "section 482",
-        "cryptocurrency",
-        "rbi ban",
-    ]
-)
-
-# Keywords that MODERATELY indicate Indian Kanoon might be useful
-INDIAN_KANOON_MODERATE_INDICATORS = frozenset(
-    [
-        "case",
-        "judgment",
-        "judgement",
-        "ruling",
-        "verdict",
-        "decided",
-        "vs",
-        "v/s",
-        "versus",
-        "petitioner",
-        "respondent",
-        "appellant",
-        "supreme court",
-        "high court",
-        "district court",
-        "sessions court",
-        "tribunal",
-        "bench",
-        "division bench",
-        "constitution bench",
-        # Substantive law areas that benefit from case law
-        "constitution",
-        "constitutional",
-        "parliament",
-        "legislature",
-        "fundamental rights",
-        "article",
-        "contract act",
-        "transfer of property",
-        "succession act",
-        "hindu succession",
-        "special marriage act",
-        "hindu marriage act",
-        "evidence act",
-        "consumer protection",
-        "arbitration",
-        "negotiable instruments",
-        "partnership act",
-        "it act",
-        "information technology act",
-        "rera",
-        "fema",
-        "pmla",
-        "sebi",
-        "rbi",
-        "dv act",
-        "domestic violence act",
-        "prevention of corruption",
-        "bail",
-        "fir",
-        "enforceable",
-        "valid",
-        "void",
-        "voidable",
-        "legal position",
-        "legal status",
-        "legally",
-    ]
-)
-
-# Keywords that STRONGLY indicate Crime RAG is needed
-CRIME_RAG_STRONG_INDICATORS = frozenset(
-    [
-        "which section",
-        "what section",
-        "applicable section",
-        "sections apply",
-        "ipc section",
-        "crpc section",
-        "under which",
-        "punishable under",
-        "punishment for",
-        "penalty for",
-        "imprisonment for",
-        "fine for",
-        "cognizable",
-        "non-cognizable",
-        "bailable",
-        "non-bailable",
-        "compoundable",
-        "non-compoundable",
-        "triable by",
-        "investigation",
-        "chargesheet",
-        "fir for",
-        "file fir",
-        "police complaint",
-    ]
-)
-
-# Keywords that MODERATELY indicate Crime RAG might be useful
-CRIME_RAG_MODERATE_INDICATORS = frozenset(
-    [
-        "ipc",
-        "crpc",
-        "indian penal code",
-        "criminal procedure",
-        "offence",
-        "offense",
-        "crime",
-        "criminal",
-        "penal",
-        "forgery",
-        "theft",
-        "robbery",
-        "assault",
-        "murder",
-        "kidnapping",
-        "cheating",
-        "fraud",
-        "defamation",
-        "trespass",
-        "hurt",
-        "grievous",
-        "extortion",
-        "bribery",
-        "corruption",
-        "cyber crime",
-        "hacking",
-    ]
-)
-
-# Keywords indicating NO tools needed (LLM sufficient)
-# NOTE: These are VERY narrow — only truly non-legal-domain definitional queries
-# qualify. Any query touching specific acts, sections, rights, or legal concepts
-# MUST still use tools for grounding.
-LLM_ONLY_INDICATORS = frozenset(
-    [
-        "general advice",
-        "guidance",
-        "help me understand",
-    ]
-)
-
-# Strong LLM-only patterns — extremely narrow, only meta/definitional queries
-# that are about learning the structure of law, not about specific legal questions
-LLM_ONLY_STRONG_PATTERNS: frozenset[str] = frozenset(
-    [
-        "what is the meaning",
-        "what does the term",
-        "explain the concept of jurisprudence",
-    ]
-)
-
-# ============================================================================
-# LEGAL SUBSTANCE KEYWORDS — Force tool use for any substantive legal question
-# These override LLM_ONLY when present, ensuring RAG grounding
+# Domain keyword banks — sole remaining consumer is _infer_domain_hint
 # ============================================================================
 
 # Constitutional & fundamental rights keywords (→ Indian Kanoon)
@@ -992,258 +623,6 @@ def _extract_legal_entities(text: str) -> List[str]:
     return list(set(entities))
 
 
-def _determine_tools_needed(
-    text: str, intent: str, has_document: bool
-) -> ToolSelection:
-    """
-    Enhanced tool selection with weighted scoring system.
-
-    CORE PRINCIPLE: Any substantive legal question MUST use tools for grounding.
-    LLM-only is reserved for truly non-legal definitional meta-questions.
-
-    Tool Selection Logic (Weighted Scoring):
-    - indian_kanoon: Case law, precedents, judgments, constitutional questions,
-      civil/property/family law, tech law — anything needing authoritative sources
-      * Strong indicators: +2.0 each
-      * Moderate indicators: +1.0 each
-      * Substantive law domain matches: +1.5 each
-      * Threshold: >= 1.5 to activate
-
-    - crime_rag: IPC/CrPC sections, punishments, procedures, criminal process
-      * Strong indicators: +2.0 each
-      * Moderate indicators: +1.0 each
-      * Criminal procedure keywords: +1.5
-      * Multi-offense detection: +1.5
-      * Threshold: >= 1.5 to activate
-
-    - lawyer_finder: Finding lawyers (intent-based)
-    - document_analyzer: Document analysis/validation (intent/document-based)
-    - llm_only: ONLY when no legal substance keywords match at all
-    """
-    text_lower = text.lower()
-
-    # =========================================================================
-    # Weighted Scoring for Indian Kanoon
-    # =========================================================================
-    indian_kanoon_score = 0.0
-    ik_reasons = []
-
-    # Strong indicators (weight: 2.0 each, max 3)
-    strong_ik_matches = sum(
-        1 for kw in INDIAN_KANOON_STRONG_INDICATORS if kw in text_lower
-    )
-    if strong_ik_matches > 0:
-        indian_kanoon_score += min(strong_ik_matches * 2.0, 6.0)
-        ik_reasons.append(f"{strong_ik_matches} strong case law indicators")
-
-    # Moderate indicators (weight: 1.0 each, max 5)
-    moderate_ik_matches = sum(
-        1 for kw in INDIAN_KANOON_MODERATE_INDICATORS if kw in text_lower
-    )
-    if moderate_ik_matches > 0:
-        indian_kanoon_score += min(moderate_ik_matches * 1.0, 5.0)
-        ik_reasons.append(f"{moderate_ik_matches} moderate case law indicators")
-
-    # Substantive law domain keywords (weight: 1.5 each, max 4.5)
-    # These are CRITICAL — they catch constitutional, civil, property, family,
-    # and tech law queries that the old system missed entirely
-    constitutional_matches = sum(
-        1 for kw in CONSTITUTIONAL_KEYWORDS if kw in text_lower
-    )
-    civil_matches = sum(1 for kw in CIVIL_LAW_KEYWORDS if kw in text_lower)
-    property_matches = sum(1 for kw in PROPERTY_LAW_KEYWORDS if kw in text_lower)
-    family_matches = sum(1 for kw in FAMILY_LAW_KEYWORDS if kw in text_lower)
-    tech_matches = sum(1 for kw in TECH_LAW_KEYWORDS if kw in text_lower)
-
-    substantive_matches = (
-        constitutional_matches
-        + civil_matches
-        + property_matches
-        + family_matches
-        + tech_matches
-    )
-    if substantive_matches > 0:
-        indian_kanoon_score += min(substantive_matches * 1.5, 4.5)
-        domain_parts = []
-        if constitutional_matches:
-            domain_parts.append(f"constitutional({constitutional_matches})")
-        if civil_matches:
-            domain_parts.append(f"civil({civil_matches})")
-        if property_matches:
-            domain_parts.append(f"property({property_matches})")
-        if family_matches:
-            domain_parts.append(f"family({family_matches})")
-        if tech_matches:
-            domain_parts.append(f"tech({tech_matches})")
-        ik_reasons.append(f"substantive law: {', '.join(domain_parts)}")
-
-    # =========================================================================
-    # Weighted Scoring for Crime RAG
-    # =========================================================================
-    crime_rag_score = 0.0
-    rag_reasons = []
-
-    # Strong indicators (weight: 2.0 each, max 3)
-    strong_rag_matches = sum(
-        1 for kw in CRIME_RAG_STRONG_INDICATORS if kw in text_lower
-    )
-    if strong_rag_matches > 0:
-        crime_rag_score += min(strong_rag_matches * 2.0, 6.0)
-        rag_reasons.append(f"{strong_rag_matches} strong statute indicators")
-
-    # Moderate indicators (weight: 1.0 each, max 3)
-    moderate_rag_matches = sum(
-        1 for kw in CRIME_RAG_MODERATE_INDICATORS if kw in text_lower
-    )
-    if moderate_rag_matches > 0:
-        crime_rag_score += min(moderate_rag_matches * 1.0, 3.0)
-        rag_reasons.append(f"{moderate_rag_matches} moderate statute indicators")
-
-    # Criminal procedure keywords (weight: 1.5 each, max 3)
-    crim_proc_matches = sum(1 for kw in CRIMINAL_PROCEDURE_KEYWORDS if kw in text_lower)
-    if crim_proc_matches > 0:
-        crime_rag_score += min(crim_proc_matches * 1.5, 4.5)
-        rag_reasons.append(f"{crim_proc_matches} criminal procedure indicators")
-
-    # Multi-offense detection bonus
-    crime_count = _count_keyword_matches(text, CRIME_TYPE_KEYWORDS)
-    if crime_count >= 2:
-        crime_rag_score += 1.5 + (crime_count - 2) * 0.5  # Bonus for complexity
-        rag_reasons.append(f"multi-offense scenario ({crime_count} crimes)")
-
-    # Intent-based boost
-    if intent == "crime_report":
-        crime_rag_score += 2.0
-        rag_reasons.append("crime report intent")
-
-    # =========================================================================
-    # LLM-Only Check — STRICT: only when NO legal substance is detected
-    # =========================================================================
-    llm_only_matches = sum(1 for kw in LLM_ONLY_INDICATORS if kw in text_lower)
-    strong_llm_only = any(pattern in text_lower for pattern in LLM_ONLY_STRONG_PATTERNS)
-
-    # Check if query has ANY legal substance that needs grounding
-    has_legal_substance = (
-        strong_ik_matches > 0
-        or moderate_ik_matches > 0
-        or strong_rag_matches > 0
-        or moderate_rag_matches > 0
-        or substantive_matches > 0
-        or crim_proc_matches > 0
-        or crime_count > 0
-    )
-
-    # LLM-only ONLY when: no legal substance AND explicitly a meta-question
-    is_simple_query = not has_legal_substance and (
-        strong_llm_only or llm_only_matches >= 2
-    )
-
-    # =========================================================================
-    # Determine Final Tool Selection (Threshold: 1.5)
-    # =========================================================================
-    ACTIVATION_THRESHOLD = 1.5
-
-    use_indian_kanoon = indian_kanoon_score >= ACTIVATION_THRESHOLD
-    use_crime_rag = crime_rag_score >= ACTIVATION_THRESHOLD
-    use_lawyer_finder = intent == "find_lawyer"
-    use_document_analyzer = has_document or intent == "document_analysis"
-
-    # If has legal substance but neither tool scored enough, force Indian Kanoon
-    # as the default grounding tool for substantive legal questions
-    if has_legal_substance and not use_indian_kanoon and not use_crime_rag:
-        use_indian_kanoon = True
-        ik_reasons.append("forced: substantive legal query needs grounding")
-
-    # LLM-only if no tools needed OR if it's a simple general query
-    use_llm_only = is_simple_query or not (
-        use_indian_kanoon or use_crime_rag or use_lawyer_finder or use_document_analyzer
-    )
-
-    # If LLM-only but intent requires tools, override
-    if use_llm_only and intent in (
-        "crime_report",
-        "document_analysis",
-        "find_lawyer",
-    ):
-        use_llm_only = False
-        if intent == "crime_report":
-            use_crime_rag = True
-        elif intent == "document_analysis":
-            use_document_analyzer = True
-        elif intent == "find_lawyer":
-            use_lawyer_finder = True
-
-    # =========================================================================
-    # Build Detailed Reasoning
-    # =========================================================================
-    reasons = []
-
-    if use_indian_kanoon:
-        reasons.append(
-            f"indian_kanoon (score: {indian_kanoon_score:.1f}) - {'; '.join(ik_reasons)}"
-        )
-
-    if use_crime_rag:
-        reasons.append(
-            f"crime_rag (score: {crime_rag_score:.1f}) - {'; '.join(rag_reasons)}"
-        )
-
-    if use_lawyer_finder:
-        reasons.append("lawyer_finder - lawyer search requested")
-
-    if use_document_analyzer:
-        reasons.append("document_analyzer - document processing required")
-
-    if use_llm_only:
-        reasons.append(
-            f"llm_only - general query (simple indicators: {llm_only_matches})"
-        )
-
-    # =========================================================================
-    # Domain Isolation Guard — CRITICAL for legal safety
-    # =========================================================================
-    # If a query is primarily about civil or constitutional law, criminal RAG
-    # must be disabled to prevent IPC punishment clauses from contaminating
-    # the context (the root cause of hallucinations reported in crime_rag.py).
-    # "Strong" criminal signals (explicit IPC section numbers, punishment
-    # keywords) are the only case where criminal RAG is allowed alongside
-    # civil/constitutional signals.
-    # =========================================================================
-
-    # Determine sub-domain routing from existing substantive match counts
-    use_constitutional_rag = constitutional_matches > 0
-    use_civil_rag = (
-        civil_matches > 0
-        or property_matches > 0
-        or family_matches > 0
-        or tech_matches > 0
-    )
-
-    # Apply the isolation guard: force crime_rag OFF when civil/constitutional
-    # signals dominate AND there are no strong explicit criminal statute signals.
-    if (use_constitutional_rag or use_civil_rag) and strong_rag_matches == 0:
-        use_crime_rag = False
-        if use_constitutional_rag:
-            rag_reasons.append(
-                "constitutional domain detected — criminal RAG disabled (domain isolation)"
-            )
-        if use_civil_rag:
-            rag_reasons.append(
-                "civil/property/tech domain detected — criminal RAG disabled (domain isolation)"
-            )
-
-    return ToolSelection(
-        use_indian_kanoon=use_indian_kanoon,
-        use_crime_rag=use_crime_rag,
-        use_civil_rag=use_civil_rag,
-        use_constitutional_rag=use_constitutional_rag,
-        use_lawyer_finder=use_lawyer_finder,
-        use_document_analyzer=use_document_analyzer,
-        use_llm_only=use_llm_only,
-        reasoning=" | ".join(reasons) if reasons else "default routing",
-    )
-
-
 async def _stage1_domain_check(text: str) -> DomainClassification:
     """
     Stage 1: Hierarchical Routing - Domain Check
@@ -1274,242 +653,6 @@ async def _stage1_domain_check(text: str) -> DomainClassification:
 
     # Ambiguous - assume legal with lower confidence
     return DomainClassification(is_legal=True, confidence=0.5, legal_indicators=[])
-
-
-def _stage2_specialization(
-    text: str, has_document: bool, domain: DomainClassification
-) -> RoutingDecision:
-    """
-    Stage 2: Hierarchical Routing - Specialization
-    If Legal, determine: Transactional (Documents), Informational (General), or Personal (Crime).
-    Uses keyword-based fast routing with confidence scoring.
-    """
-    # If non-legal, return immediately
-    if not domain.is_legal:
-        return RoutingDecision(
-            primary_intent="non_legal",
-            confidence=domain.confidence,
-            reasoning="Query is not related to legal matters",
-            extracted_entities=[],
-            requires_tools=[],
-        )
-
-    # Extract entities for context
-    entities = _extract_legal_entities(text)
-
-    # =========================================================================
-    # Priority 1: Document Context (if document is present)
-    # =========================================================================
-    if has_document:
-        # Check if validation is requested
-        wants_validation = _fast_keyword_check(text, VALIDATION_KEYWORDS)
-        reasoning = (
-            "Document present with validation request"
-            if wants_validation
-            else "Document present for analysis"
-        )
-        return RoutingDecision(
-            primary_intent="document_analysis",
-            confidence=0.95 if wants_validation else 0.9,
-            reasoning=reasoning,
-            extracted_entities=entities,
-            requires_tools=["document_analyzer", "indian_kanoon"],
-        )
-
-    # =========================================================================
-    # Priority 2: Personal Crime Reports (urgent/immediate)
-    # =========================================================================
-    is_personal_crime = _fast_keyword_check(text, PERSONAL_CRIME_INDICATORS)
-    if is_personal_crime:
-        # Check for multi-intent (crime + lawyer)
-        needs_lawyer = _fast_keyword_check(text, LAWYER_SEARCH_KEYWORDS)
-        secondary = ["find_lawyer"] if needs_lawyer else []
-
-        return RoutingDecision(
-            primary_intent="crime_report",
-            confidence=0.9,
-            reasoning="Personal crime incident reported",
-            secondary_intents=secondary,
-            extracted_entities=entities,
-            requires_tools=["crime_rag"],
-        )
-
-    # =========================================================================
-    # Priority 3: Lawyer Search
-    # =========================================================================
-    needs_lawyer = _fast_keyword_check(text, LAWYER_SEARCH_KEYWORDS)
-    if needs_lawyer:
-        # Check for multi-intent (lawyer + crime context)
-        has_crime_context = _count_keyword_matches(text, CRIME_TYPE_KEYWORDS) > 0
-        secondary = []
-        tools = ["lawyer_finder"]
-
-        if has_crime_context:
-            secondary.append("crime_report")
-            tools.append("crime_rag")
-
-        return RoutingDecision(
-            primary_intent="find_lawyer",
-            confidence=0.85,
-            reasoning="Lawyer search requested",
-            secondary_intents=secondary,
-            extracted_entities=entities,
-            requires_tools=tools,
-        )
-
-    # =========================================================================
-    # Priority 4: Legal Analysis / General Query
-    # =========================================================================
-    is_legal_analysis = _fast_keyword_check(text, LEGAL_ANALYSIS_KEYWORDS)
-    crime_count = _count_keyword_matches(text, CRIME_TYPE_KEYWORDS)
-    is_multi_offense = crime_count >= 2
-    needs_case_law = _fast_keyword_check(text, CASE_SEARCH_KEYWORDS)
-    needs_statute = _fast_keyword_check(text, STATUTE_KEYWORDS)
-
-    # Determine tools needed
-    tools = []
-    if needs_case_law:
-        tools.append("indian_kanoon")
-    if needs_statute or is_multi_offense:
-        tools.append("crime_rag")
-
-    # Calculate confidence based on indicators
-    confidence = 0.7
-    if is_legal_analysis:
-        confidence += 0.1
-    if is_multi_offense:
-        confidence += 0.1
-    if len(entities) > 0:
-        confidence += 0.05
-    confidence = min(0.95, confidence)
-
-    reasoning_parts = []
-    if is_legal_analysis:
-        reasoning_parts.append("legal analysis question")
-    if is_multi_offense:
-        reasoning_parts.append(f"multi-offense scenario ({crime_count} crimes)")
-    if needs_case_law:
-        reasoning_parts.append("requires case law search")
-    if needs_statute:
-        reasoning_parts.append("requires statute lookup")
-    if not reasoning_parts:
-        reasoning_parts.append("general legal query")
-
-    return RoutingDecision(
-        primary_intent="general_query",
-        confidence=confidence,
-        reasoning="; ".join(reasoning_parts),
-        extracted_entities=entities,
-        requires_tools=tools if tools else [],
-    )
-
-
-async def _llm_routing_fallback(
-    text: str, history: List[Message], has_document: bool
-) -> RoutingDecision:
-    """
-    LLM-based routing fallback for ambiguous cases.
-    Uses structured output for confidence scoring.
-    """
-    try:
-        llm = get_fast_llm()
-
-        # Build context from history
-        history_text = ""
-        if history:
-            recent = history[-4:]  # Last 2 exchanges
-            history_text = "\n".join(
-                [f"{m['role']}: {m['content'][:100]}" for m in recent]
-            )
-
-        prompt = f"""Analyze this legal query and classify the intent. Respond in JSON format.
-
-Query: {text}
-Document Uploaded: {has_document}
-Recent History: {history_text}
-
-Classification options:
-- "crime_report": Personal incident (theft, assault) seeking help
-- "general_query": Legal questions, IPC/CrPC analysis, multi-offense scenarios
-- "document_analysis": Analyzing or validating a legal document
-- "find_lawyer": Looking for legal representation
-- "non_legal": Not related to law
-
-Respond ONLY with a JSON object like:
-{{"intent": "general_query", "confidence": 0.8, "reasoning": "Legal analysis question about sections", "tools": ["crime_rag"]}}
-
-Available tools: indian_kanoon (case law), crime_rag (IPC/CrPC), lawyer_finder, document_analyzer"""
-
-        response = await invoke_llm_safely(llm, prompt)
-
-        # Parse JSON response
-        # Try to extract JSON from response
-        response_clean = response.strip()
-        if response_clean.startswith("```"):
-            response_clean = response_clean.split("```")[1]
-            if response_clean.startswith("json"):
-                response_clean = response_clean[4:]
-
-        try:
-            data = json.loads(response_clean)
-            intent = data.get("intent", "general_query")
-            confidence = float(data.get("confidence", 0.6))
-            reasoning = data.get("reasoning", "LLM classification")
-            tools = data.get("tools", [])
-
-            # Validate intent
-            valid_intents = [
-                "document_analysis",
-                "crime_report",
-                "find_lawyer",
-                "general_query",
-                "non_legal",
-            ]
-            if intent == "document_validation":
-                intent = "document_analysis"
-            if intent not in valid_intents:
-                intent = "general_query"
-
-            return RoutingDecision(
-                primary_intent=intent,
-                confidence=confidence,
-                reasoning=reasoning,
-                requires_tools=tools,
-            )
-        except json.JSONDecodeError:
-            pass
-
-        # Fallback: try to extract intent from text
-        response_lower = response.lower()
-        for intent in [
-            "crime_report",
-            "document_analysis",
-            "find_lawyer",
-            "non_legal",
-        ]:
-            if intent in response_lower:
-                return RoutingDecision(
-                    primary_intent=intent,
-                    confidence=0.6,
-                    reasoning="LLM classification (text extraction)",
-                    requires_tools=[],
-                )
-
-        return RoutingDecision(
-            primary_intent="general_query",
-            confidence=0.5,
-            reasoning="LLM fallback - could not parse response",
-            requires_tools=[],
-        )
-
-    except Exception as e:
-        print(f"LLM routing fallback error: {e}")
-        return RoutingDecision(
-            primary_intent="general_query",
-            confidence=0.4,
-            reasoning=f"LLM error fallback: {str(e)}",
-            requires_tools=[],
-        )
 
 
 async def _rewrite_query_for_retrieval(
@@ -1554,23 +697,149 @@ async def _rewrite_query_for_retrieval(
         return current_input
 
 
+# ============================================================================
+# Primary Router (embedding-based) + deterministic policy layer
+# ============================================================================
+
+# The only keyword signals treated as "strong, unambiguous criminal" for
+# _infer_domain_hint below — explicit section/procedure references, not
+# generic crime-adjacent words. Deliberately narrow.
+STRONG_CRIMINAL_SIGNAL_KEYWORDS = frozenset(
+    [
+        "which section",
+        "what section",
+        "applicable section",
+        "sections apply",
+        "ipc section",
+        "crpc section",
+        "under which",
+        "punishable under",
+        "punishment for",
+        "penalty for",
+        "imprisonment for",
+        "fine for",
+        "cognizable",
+        "non-cognizable",
+        "bailable",
+        "non-bailable",
+        "compoundable",
+        "non-compoundable",
+        "triable by",
+        "investigation",
+        "chargesheet",
+        "fir for",
+        "file fir",
+        "police complaint",
+    ]
+)
+
+# Hard-wired per-intent tool sets — metadata for state["selected_tools"];
+# each handler still calls its specific tool_dispatch.invoke_* function(s)
+# directly (bespoke prompt assembly per handler), it doesn't loop over this
+# dict generically. find_lawyer deliberately omits indian_kanoon here — that
+# handler keeps its own cheap local keyword gate (purely locational lawyer
+# searches get no benefit from case-law retrieval).
+INTENT_TOOL_MAP: Dict[str, List[str]] = {
+    "document_analysis": ["indian_kanoon"],
+    "crime_report": ["crime_sections"],
+    "general_query": ["indian_kanoon", "statute_context"],
+    "find_lawyer": ["lawyer_finder"],
+    "non_legal": [],
+}
+
+
+def _infer_domain_hint(text: str) -> Optional[Literal["criminal"]]:
+    """
+    Deterministic domain bias for the unified statute retrieval: "criminal"
+    only when explicit criminal-statute vocabulary is present AND no other
+    legal domain signal is competing for it without a *strong*, explicit
+    criminal-statute signal (section number, "punishable under", etc.).
+    Prevents IPC punishment clauses from contaminating civil/constitutional/
+    property/family/tech retrieval context — purely keyword-driven, so it
+    never depends on a classifier's guess being right.
+    """
+    has_criminal_signal = (
+        _fast_keyword_check(text, STATUTE_KEYWORDS)
+        or _fast_keyword_check(text, CRIMINAL_PROCEDURE_KEYWORDS)
+        or _count_keyword_matches(text, CRIME_TYPE_KEYWORDS) > 0
+    )
+    if not has_criminal_signal:
+        return None
+
+    has_other_domain_signal = (
+        _fast_keyword_check(text, CONSTITUTIONAL_KEYWORDS)
+        or _fast_keyword_check(text, CIVIL_LAW_KEYWORDS)
+        or _fast_keyword_check(text, PROPERTY_LAW_KEYWORDS)
+        or _fast_keyword_check(text, FAMILY_LAW_KEYWORDS)
+        or _fast_keyword_check(text, TECH_LAW_KEYWORDS)
+    )
+    has_strong_criminal_signal = _fast_keyword_check(
+        text, STRONG_CRIMINAL_SIGNAL_KEYWORDS
+    )
+
+    if has_other_domain_signal and not has_strong_criminal_signal:
+        return None
+    return "criminal"
+
+
+_GROUNDING_UNAVAILABLE_DISCLAIMER = (
+    "⚠️ **I was unable to retrieve authoritative legal references for this query.** "
+    "The response below is based on general knowledge and may not contain accurate "
+    "statutory citations. Please verify with a qualified legal practitioner.\n\n"
+)
+
+_GROUNDING_UNAVAILABLE_PROMPT_WARNING = """
+
+🚨 CRITICAL WARNING: Legal database searches returned NO RELEVANT RESULTS for this query.
+
+You MUST follow these rules strictly:
+1. DO NOT cite ANY specific IPC/CrPC section numbers (e.g., DO NOT say "Section 420 IPC" or "Section 438 CrPC")
+2. DO NOT cite specific Article numbers from the Constitution
+3. DO NOT cite specific case names or citations
+4. Refer to laws ONLY by their full Act name (e.g., "Indian Penal Code, 1860" or "Code of Criminal Procedure, 1973")
+5. Use general legal principles and concepts ONLY
+6. Start your answer with: "I could not retrieve specific statutory references from my legal database for this query."
+7. ALWAYS recommend: "Please consult a qualified lawyer registered with the Bar Council of India for specific statutory citations and authoritative legal advice."
+
+If you cite ANY specific section number, article number, or case citation, you are HALLUCINATING."""
+
+
+def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
+    """
+    Single shared implementation of the "grounding unavailable" pattern,
+    used identically across handle_document_analysis, handle_crime_report,
+    and handle_general_query. Returns (disclaimer_prefix, prompt_warning):
+    - disclaimer_prefix: prepend to the final response when rag_succeeded
+      is False (empty string when grounding succeeded — prepend is a no-op).
+    - prompt_warning: append to the generation prompt when rag_succeeded is
+      False, instructing the LLM not to fabricate citations it wasn't given.
+    """
+    if rag_succeeded:
+        return "", ""
+    return _GROUNDING_UNAVAILABLE_DISCLAIMER, _GROUNDING_UNAVAILABLE_PROMPT_WARNING
+
+
 async def classify_intent(state: ChatState) -> ChatState:
     """
-    Hybrid Intent Classification with Hierarchical Routing.
+    Intent classification and tool selection.
 
     Architecture:
-    1. Fast Keyword-Based Pre-Classification (Zero-Latency)
-    2. Stage 1: Domain Check (Legal vs Non-Legal)
-    3. Stage 2: Specialization (Document/Crime/Lawyer/General)
-    4. Confidence-Based LLM Fallback (for ambiguous cases)
-    5. Tool Selection based on intent and query analysis
+    1. Fast path: document + very short query -> document_analysis
+    2. Zero-latency keyword pre-filter: non-legal short-circuit (skips the
+       embedding classifier entirely for casual chat)
+    3. Primary router: embedding nearest-centroid classification
+       (classify_intent_embedding) — no LLM anywhere in this path
+    4. Deterministic domain_hint inference (_infer_domain_hint), independent
+       of the classifier
+    5. History-aware query rewrite for retrieval (unchanged)
 
     Returns enriched state with:
     - intent: Primary classification
     - routing_confidence: Confidence score (0-1)
     - routing_reasoning: Explanation
     - secondary_intents: For multi-intent queries
-    - selected_tools: Tools to be used by handlers
+    - selected_tools: Tools to be used by handlers (from INTENT_TOOL_MAP)
+    - domain_hint: Soft bias for unified statute retrieval
     - extracted_entities: Legal terms found
     """
     user_input = state["current_input"]
@@ -1584,71 +853,53 @@ async def classify_intent(state: ChatState) -> ChatState:
     # FAST PATH: Document with short query → Document Analysis
     # =========================================================================
     if has_document and len(user_input.split()) < 5:
-        tools = _determine_tools_needed(user_input, "document_analysis", has_document)
         print(f"[Router] Fast path: document_analysis (short query with document)")
         return {
             **state,
             "intent": "document_analysis",
             "routing_confidence": 0.95,
             "routing_reasoning": "Document present with brief query",
-            "selected_tools": ["document_analyzer", "indian_kanoon"],
+            "selected_tools": INTENT_TOOL_MAP["document_analysis"],
+            "domain_hint": None,
             "active_document_context": True,
             "is_ambiguous": False,
         }
 
     # =========================================================================
-    # STAGE 1: Domain Check (Legal vs Non-Legal)
+    # ZERO-LATENCY PRE-FILTER: Domain Check (Legal vs Non-Legal)
     # =========================================================================
     domain = await _stage1_domain_check(user_input)
     print(
         f"[Router] Stage 1 - Domain: is_legal={domain.is_legal}, confidence={domain.confidence:.2f}"
     )
+    if not domain.is_legal:
+        print(f"[Router] Non-legal short-circuit — skipping embedding classifier")
+        return {
+            **state,
+            "intent": "non_legal",
+            "routing_confidence": domain.confidence,
+            "routing_reasoning": "Query is not related to legal matters",
+            "selected_tools": [],
+            "domain_hint": None,
+            "active_document_context": has_document,
+        }
 
     # =========================================================================
-    # STAGE 2: Specialization
+    # PRIMARY ROUTER: embedding nearest-centroid classification
     # =========================================================================
-    decision = _stage2_specialization(user_input, has_document, domain)
+    result = await classify_intent_embedding(user_input, has_document)
+    # Ambiguous classifications default to general_query (still grounded,
+    # just not the specific handler) rather than falling back to an LLM —
+    # no model call anywhere in this routing path.
+    intent = "general_query" if result.is_ambiguous else result.primary_intent
+
+    domain_hint = _infer_domain_hint(user_input)
+    entities = _extract_legal_entities(user_input)
     print(
-        f"[Router] Stage 2 - Decision: {decision.primary_intent}, confidence={decision.confidence:.2f}"
+        f"[Router] Decision: intent={intent}, confidence={result.confidence:.3f}, "
+        f"margin={result.margin:.3f}, ambiguous={result.is_ambiguous}, "
+        f"domain_hint={domain_hint}, secondary={result.secondary_intents}"
     )
-    print(f"[Router] Reasoning: {decision.reasoning}")
-    print(f"[Router] Tools: {decision.requires_tools}")
-
-    # =========================================================================
-    # CONFIDENCE-BASED LLM FALLBACK
-    # =========================================================================
-    if decision.confidence < 0.6:
-        print(
-            f"[Router] Low confidence ({decision.confidence:.2f}), using LLM fallback..."
-        )
-        llm_decision = await _llm_routing_fallback(user_input, messages, has_document)
-
-        # Use LLM decision if it has higher confidence
-        if llm_decision.confidence > decision.confidence:
-            print(
-                f"[Router] LLM improved: {llm_decision.primary_intent}, confidence={llm_decision.confidence:.2f}"
-            )
-            decision = llm_decision
-        else:
-            print(f"[Router] Keeping keyword-based decision")
-
-    # =========================================================================
-    # TOOL SELECTION (refine based on final decision)
-    # =========================================================================
-    tools = _determine_tools_needed(user_input, decision.primary_intent, has_document)
-
-    # Merge tool lists
-    selected_tools = list(
-        set(
-            decision.requires_tools
-            + (["indian_kanoon"] if tools.use_indian_kanoon else [])
-            + (["crime_rag"] if tools.use_crime_rag else [])
-            + (["lawyer_finder"] if tools.use_lawyer_finder else [])
-            + (["document_analyzer"] if tools.use_document_analyzer else [])
-        )
-    )
-
-    print(f"[Router] Final: intent={decision.primary_intent}, tools={selected_tools}")
 
     # =========================================================================
     # HISTORY-AWARE QUERY REWRITE (multi-turn only; no-op on first turns)
@@ -1661,13 +912,14 @@ async def classify_intent(state: ChatState) -> ChatState:
     return {
         **state,
         "retrieval_query": retrieval_query,
-        "intent": decision.primary_intent,
-        "routing_confidence": decision.confidence,
-        "routing_reasoning": decision.reasoning,
-        "is_ambiguous": decision.confidence < 0.6,
-        "secondary_intents": decision.secondary_intents,
-        "extracted_entities": decision.extracted_entities,
-        "selected_tools": selected_tools,
+        "intent": intent,
+        "routing_confidence": result.confidence,
+        "routing_reasoning": result.reasoning,
+        "is_ambiguous": result.is_ambiguous,
+        "secondary_intents": result.secondary_intents,
+        "extracted_entities": entities,
+        "selected_tools": INTENT_TOOL_MAP.get(intent, []),
+        "domain_hint": domain_hint,
         "active_document_context": has_document,
     }
 
@@ -1732,8 +984,8 @@ You can upload your document using the upload feature."""
             indian_kanoon_tool = get_indian_kanoon_tool()
             await indian_kanoon_tool.initialize()
             doc_summary = document_content[:500]
-            ik_result = await indian_kanoon_tool.search_and_analyze(doc_summary)
-            results = ik_result.get("documents", [])
+            ik_result = await RAG_TOOL_REGISTRY["indian_kanoon"](doc_summary)
+            results = ik_result.raw.get("results", []) if ik_result.raw else []
             print(
                 f"Indian Kanoon found {len(results)} relevant legal references for document"
             )
@@ -1903,57 +1155,13 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     # Detect crime type using keyword matching
     identified_crime = detect_crime_type(crime_details)
 
-    # Two-stage RAG: retrieve IPC/BNS sections via FAISS semantic search
-    rag_sections_text = ""
-    rag_result = None
-    rag_succeeded = False  # Compulsory RAG tracking
-    try:
-        # ── Use CriminalRAGSystem (not the old monolithic CrimeRAGSystem) ──
-        from app.tools.criminal_rag import (
-            extract_crime_features,
-            get_criminal_rag_system,
-        )
-
-        rag_system = get_criminal_rag_system()
-        await rag_system.initialize()
-
-        if rag_system.initialized:
-            # Extract crime features for metadata-aware retrieval
-            features = extract_crime_features(crime_details)
-            print(
-                f"Crime features: violence={features.violence}, death={features.death}, "
-                f"weapon={features.weapon}, intent={features.intent}, "
-                f"property={features.property_loss}, trespass={features.trespass}, "
-                f"threat={features.threat}"
-            )
-
-            # Legal retrieval with minimality (fewer, more accurate sections)
-            rag_result = await rag_system.retrieve_sections(
-                crime_details,
-                crime_type=identified_crime,
-                features=features,
-                k=2,  # Legal minimality: 1-2 primary chargeable sections
-            )
-
-            if rag_result.ipc_sections:
-                rag_succeeded = True  # RAG returned results
-                # Build section reference with title and punishment for the LLM
-                section_lines = []
-                for match in rag_result.ipc_sections:
-                    section_lines.append(
-                        f"• IPC Section {match.section} ({match.title})\n  Punishment: {match.punishment}"
-                    )
-                rag_sections_text = "\n".join(section_lines)
-                print(
-                    f"RAG retrieved {len(rag_result.ipc_sections)} IPC sections for '{identified_crime}' "
-                    f"(avg confidence: {rag_result.confidence:.0%}, "
-                    f"sections: {[m.section for m in rag_result.ipc_sections]})"
-                )
-    except Exception as e:
-        print(f"RAG lookup error (non-critical): {e}")
-        import traceback
-
-        traceback.print_exc()
+    # Retrieve IPC/BNS sections via the shared dispatcher (legal minimality:
+    # k=2, fewer/more-accurate chargeable sections)
+    ik_result = await RAG_TOOL_REGISTRY["crime_sections"](
+        crime_details, crime_type=identified_crime, k=2
+    )
+    rag_sections_text = ik_result.context_text
+    rag_succeeded = ik_result.succeeded
 
     # Build prompt for the finetuned LLM
     llm = get_llm()
@@ -1964,14 +1172,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
 {rag_sections_text}"""
 
     # Compulsory RAG: when RAG failed, instruct LLM not to fabricate sections
-    no_rag_warning = ""
-    if not rag_succeeded:
-        no_rag_warning = (
-            "\n\nWARNING: Legal statute retrieval was unavailable. "
-            "Do NOT fabricate or guess specific IPC/CrPC section numbers. "
-            "Instead, refer to offences by name and recommend consulting a lawyer "
-            "for precise statutory references."
-        )
+    disclaimer_prefix, no_rag_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
     prompt = f"""Indian law assistant. User reporting a crime. You MUST respond with ALL 4 sections in this EXACT format:
 
@@ -2001,13 +1202,8 @@ IMPORTANT: All 4 sections (Crime, Statute, Punishment, Further Steps) are REQUIR
 **Further Steps to be Taken:** If in immediate danger, call 100 (Police) or 112 (Emergency). Visit the nearest police station to file an FIR under CrPC Section 154. Preserve all evidence including photographs, documents, and witness contact information. Consult a criminal lawyer for legal guidance."""
 
     # Compulsory RAG: if RAG failed, prepend visible disclaimer
-    if not rag_succeeded:
-        final_response = (
-            "⚠️ **Legal statute retrieval was unavailable.** The following guidance "
-            "is general and may not cite accurate IPC/CrPC section numbers. "
-            "Please consult a lawyer for precise statutory references.\n\n"
-            + final_response
-        )
+    if disclaimer_prefix:
+        final_response = disclaimer_prefix + final_response
 
     return {
         **state,
@@ -2036,27 +1232,24 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     lawyers = finder.search_by_query(lawyer_query, limit=5)
     formatted_results = finder.format_lawyer_results(lawyers)
 
-    # Optionally use Indian Kanoon to provide legal context for lawyer search
+    # Optionally use Indian Kanoon to provide legal context for lawyer search —
+    # purely locational searches ("find a lawyer near me") get no benefit
+    # from case-law retrieval, so this stays gated on a cheap keyword check
+    # rather than running unconditionally like general_query's tools.
     legal_context = ""
     query_lower = lawyer_query.lower()
     if any(
         kw in query_lower
         for kw in ["criminal", "civil", "family", "property", "divorce", "ipc", "case"]
     ):
-        try:
-            ik_tool = get_indian_kanoon_tool()
-            await ik_tool.initialize()
-
-            # Get relevant legal context
-            ik_result = await ik_tool.search_and_analyze(lawyer_query, max_results=2)
-            docs = ik_result.get("documents", [])
+        ik_result = await RAG_TOOL_REGISTRY["indian_kanoon"](lawyer_query)
+        if ik_result.succeeded:
+            docs = ik_result.raw.get("results", [])
             if docs:
                 legal_context = "\n\n**Relevant Legal Context:**\n"
                 for doc in docs[:2]:
                     legal_context += f"• {doc.title}\n"
                 print(f"Added Indian Kanoon legal context to lawyer search")
-        except Exception as e:
-            print(f"Indian Kanoon error for lawyer search: {e}")
 
     # Enhance with LLM for personalized recommendations
     try:
@@ -2132,53 +1325,14 @@ async def _verify_response_citations(response_text: str) -> str:
         return response_text
 
 
-def _format_case_law(cases, max_chars: int = 4000, per_case_chars: int = 1200) -> str:
-    """Format curated landmark judgments in authority order for the prompt."""
-    parts = []
-    used = 0
-    for c in cases:
-        entry = (
-            f"• **{c.case_name}** ({c.citation or c.court}, {c.date[:4] if c.date else '?'})"
-            f" — {c.court}\n{c.text[:per_case_chars]}"
-        )
-        if used + len(entry) > max_chars and parts:
-            break
-        parts.append(entry)
-        used += len(entry)
-    return "\n\n".join(parts)
-
-
-def _budget_context(chunks, max_chars: int = 12000, per_chunk_chars: int = 2500) -> str:
-    """
-    Format retrieved statute chunks for the prompt in rerank order, filling
-    a fixed character budget (≈3k tokens inside the 6k num_ctx window)
-    instead of blindly truncating every chunk to a few hundred characters.
-    """
-    parts = []
-    used = 0
-    for chunk in chunks:
-        sec = chunk.section_number
-        sec_label = sec if sec.lower().startswith("article") else f"§ {sec}"
-        text = chunk.text[:per_chunk_chars]
-        entry = (
-            f"• **{chunk.act_name} {sec_label}** — {chunk.title} "
-            f"[{chunk.domain}]\n{text}"
-        )
-        if used + len(entry) > max_chars and parts:
-            break
-        parts.append(entry)
-        used += len(entry)
-    return "\n\n".join(parts)
-
-
 async def handle_general_query(state: ChatState) -> ChatState:
     """
     Handle general legal questions and complex legal analysis.
 
-    Uses the selected_tools from routing to determine which tools to invoke:
-    - indian_kanoon: Case law, precedents, court decisions
-    - crime_rag: IPC/CrPC sections, punishments, procedures
-    - LLM only: General explanations (when selected_tools is empty)
+    Always runs both Indian Kanoon case-law search and unified statute
+    retrieval — general_query's tool set is hard-wired (INTENT_TOOL_MAP),
+    not decided per-query, since the unified index already covers every
+    legal domain and always ran unconditionally in practice.
 
     This handles:
     - Multi-offense scenarios (forgery + assault + threat + trespass)
@@ -2192,13 +1346,10 @@ async def handle_general_query(state: ChatState) -> ChatState:
     # Standalone query for retrieval (rewritten from conversation history
     # when this is a follow-up turn); generation still sees the raw input.
     retrieval_query = state.get("retrieval_query") or user_input
-
-    # Get tools selected by the router
-    selected_tools = state.get("selected_tools", [])
+    domain_hint = state.get("domain_hint")
     extracted_entities = state.get("extracted_entities", [])
 
-    print(f"[GeneralQuery] Selected tools: {selected_tools}")
-    print(f"[GeneralQuery] Extracted entities: {extracted_entities}")
+    print(f"[GeneralQuery] domain_hint={domain_hint} extracted_entities={extracted_entities}")
 
     # Build conversation context from recent messages (last 3-4 exchanges)
     conversation_context = ""
@@ -2211,329 +1362,58 @@ async def handle_general_query(state: ChatState) -> ChatState:
             context_parts.append(f"{role.upper()}: {content}")
         conversation_context = "\n".join(context_parts)
 
-    input_lower = user_input.lower()
-
-    # =========================================================================
-    # TOOL EXECUTION BASED ON ROUTER SELECTION
-    # =========================================================================
-
-    # Determine which tools to use from selected_tools (from router)
-    use_indian_kanoon = "indian_kanoon" in selected_tools
-    use_crime_rag = "crime_rag" in selected_tools
-    # New domain-specific flags (set by _determine_tools_needed via ToolSelection)
-    use_civil_rag = state.get("use_civil_rag", False)
-    use_constitutional_rag = state.get("use_constitutional_rag", False)
-
-    # If civil/constitutional flags were captured in ToolSelection but not propagated
-    # to state yet, fall back to keyword matching.
-    if not use_civil_rag and not use_constitutional_rag and not use_crime_rag:
-        use_civil_rag = (
-            _fast_keyword_check(user_input, CIVIL_LAW_KEYWORDS)
-            or _fast_keyword_check(user_input, PROPERTY_LAW_KEYWORDS)
-            or _fast_keyword_check(user_input, TECH_LAW_KEYWORDS)
-        )
-        use_constitutional_rag = _fast_keyword_check(
-            user_input, CONSTITUTIONAL_KEYWORDS
-        )
-
-    # Fallback: If no tools selected but query has legal substance, force tools
-    if not selected_tools:
-        # Check all substantive law domains
-        has_substantive_law = (
-            _fast_keyword_check(user_input, CONSTITUTIONAL_KEYWORDS)
-            or _fast_keyword_check(user_input, CIVIL_LAW_KEYWORDS)
-            or _fast_keyword_check(user_input, PROPERTY_LAW_KEYWORDS)
-            or _fast_keyword_check(user_input, FAMILY_LAW_KEYWORDS)
-            or _fast_keyword_check(user_input, TECH_LAW_KEYWORDS)
-            or _fast_keyword_check(user_input, CASE_SEARCH_KEYWORDS)
-            or _fast_keyword_check(user_input, LEGAL_DOMAIN_KEYWORDS)
-        )
-        # Check criminal law domain
-        has_criminal_law = _fast_keyword_check(
-            user_input, STATUTE_KEYWORDS
-        ) or _fast_keyword_check(user_input, CRIMINAL_PROCEDURE_KEYWORDS)
-        crime_count = _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS)
-
-        # Force Indian Kanoon for any substantive legal question
-        if has_substantive_law:
-            use_indian_kanoon = True
-        # Force Crime RAG for criminal matters
-        if has_criminal_law or crime_count >= 2:
-            use_crime_rag = True
-        # If nothing matched but it's routed to general_query, still try IK
-        if not use_indian_kanoon and not use_crime_rag:
-            use_indian_kanoon = True  # Default: use IK for any legal query
-
-    print(
-        f"[GeneralQuery] Tool execution: indian_kanoon={use_indian_kanoon}, crime_rag={use_crime_rag}"
-    )
-
-    # Calculate multi-offense for RAG k parameter
+    # Multi-offense bumps the statute-retrieval k parameter
     crime_count = _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS)
     is_multi_offense = crime_count >= 2
 
+    async def _fast_llm_invoke(prompt: str) -> str:
+        loop = asyncio.get_event_loop()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                None, lambda: get_fast_llm().invoke([HumanMessage(content=prompt)])
+            ),
+            timeout=8.0,
+        )
+        return str(response.content)
+
     # =========================================================================
-    # PARALLEL TOOL EXECUTION
+    # PARALLEL TOOL EXECUTION — both tools always run for general_query
     # =========================================================================
+    context_type = infer_indian_kanoon_context_type(user_input)
+    ik_task = RAG_TOOL_REGISTRY["indian_kanoon"](retrieval_query, context_type)
+    statute_task = RAG_TOOL_REGISTRY["statute_context"](
+        retrieval_query,
+        k=10 if is_multi_offense else 8,
+        domain_hint=["criminal"] if domain_hint == "criminal" else None,
+        fast_llm_invoke=_fast_llm_invoke,
+    )
+    ik_result, statute_result = await asyncio.gather(
+        ik_task, statute_task, return_exceptions=True
+    )
 
     indian_kanoon_results = ""
     rag_sections_text = ""
-
-    async def fetch_indian_kanoon():
-        """Fetch case law from Indian Kanoon."""
-        try:
-            ik_tool = get_indian_kanoon_tool()
-            await ik_tool.initialize()
-
-            # Determine context type for targeted search
-            context_type = "general"
-            if "ipc" in input_lower or "penal code" in input_lower:
-                context_type = "ipc"
-            elif "crpc" in input_lower or "criminal procedure" in input_lower:
-                context_type = "crpc"
-            elif any(
-                kw in input_lower
-                for kw in (
-                    "article",
-                    "constitution",
-                    "fundamental right",
-                    "directive principle",
-                    "writ",
-                    "preamble",
-                    "amendment",
-                    "right to privacy",
-                    "right to life",
-                    "right to equality",
-                    "freedom of speech",
-                    "puttaswamy",
-                    "kesavananda",
-                    "parliament",
-                    "basic structure",
-                    "public order",
-                    "central law",
-                    "state government",
-                    "surveillance",
-                )
-            ):
-                context_type = "constitution"
-            elif any(
-                kw in input_lower
-                for kw in (
-                    "bail",
-                    "anticipatory bail",
-                    "fir",
-                    "quash",
-                    "cognizable",
-                    "complainant",
-                    "criminal case",
-                    "compoundable",
-                    "withdraw",
-                    "marital rape",
-                    "rape",
-                    "economic offence",
-                )
-            ):
-                context_type = "crpc"
-            elif any(
-                kw in input_lower
-                for kw in (
-                    "contract",
-                    "agreement",
-                    "oral agreement",
-                    "force majeure",
-                    "non-compete",
-                    "restraint of trade",
-                    "breach",
-                    "coercion",
-                    "undue influence",
-                    "enforceable",
-                    "voidable",
-                    "consideration",
-                    "sale of goods",
-                    "partnership",
-                    "negotiable instrument",
-                    "specific relief",
-                    "limitation act",
-                    "arbitration",
-                    "consumer protection",
-                    "insolvency",
-                )
-            ):
-                context_type = "statute"
-            elif any(
-                kw in input_lower
-                for kw in (
-                    "property",
-                    "ancestral",
-                    "heir",
-                    "coparcener",
-                    "partition",
-                    "transfer of property",
-                    "registration act",
-                    "easement",
-                    "succession",
-                    "hindu marriage",
-                    "special marriage",
-                    "maintenance",
-                    "divorce",
-                    "custody",
-                    "adoption",
-                    "domestic violence",
-                    "dowry",
-                    "live-in",
-                    "family",
-                )
-            ):
-                context_type = "statute"
-            elif any(
-                kw in input_lower
-                for kw in (
-                    "evidence",
-                    "admissible",
-                    "whatsapp",
-                    "electronic record",
-                    "certificate",
-                    "witness",
-                )
-            ):
-                context_type = "statute"
-            elif any(
-                kw in input_lower
-                for kw in (
-                    "crypto",
-                    "cryptocurrency",
-                    "cyber",
-                    "data protection",
-                    "it act",
-                    "information technology",
-                    "ai system",
-                    "artificial intelligence",
-                    "online",
-                    "digital",
-                    "photos shared",
-                    "privacy",
-                    "fema",
-                    "pmla",
-                    "rbi",
-                    "sebi",
-                    "companies act",
-                    "prevention of corruption",
-                )
-            ):
-                context_type = "statute"
-
-            result = await ik_tool.answer_legal_query(retrieval_query, context_type)
-            return result.get("formatted_results", "")
-        except Exception as e:
-            print(f"Indian Kanoon error: {e}")
-            return ""
-
-    async def fetch_statute_context():
-        """
-        Understanding-first statute + case-law retrieval: parse the legal
-        question (citations + doctrine ontology + fast-LLM assist),
-        deterministically pin known governing sections, fill via the
-        unified hybrid index, then hop to the curated landmark-judgment
-        corpus for cases interpreting those same provisions.
-
-        Returns (statute_text, case_law_text).
-        """
-        try:
-            from app.tools.legal_retrieval import retrieve_case_law, retrieve_statutes
-
-            # Soft domain hint: only when the criminal signal fires alone.
-            # Civil/constitutional keyword flags historically also covered
-            # property/family/tech queries, so a hard filter there would
-            # exclude the very domains those keywords represent — let the
-            # reranker decide instead.
-            domain_hint = None
-            if use_crime_rag and not (use_civil_rag or use_constitutional_rag):
-                domain_hint = ["criminal"]
-
-            async def _fast_llm_invoke(prompt: str) -> str:
-                loop = asyncio.get_event_loop()
-                response = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: get_fast_llm().invoke([HumanMessage(content=prompt)]),
-                    ),
-                    timeout=8.0,
-                )
-                return str(response.content)
-
-            k = 10 if is_multi_offense else 8
-            context, parsed = await retrieve_statutes(
-                retrieval_query,
-                k=k,
-                domains_hint=domain_hint,
-                llm_invoke=_fast_llm_invoke,
-            )
-            if not context.chunks:
-                return "", ""
-
-            text = _budget_context(context.chunks)
-            print(
-                f"Unified RAG: {len(context.chunks)} provisions retrieved "
-                f"(confidence: {context.confidence:.2%}): "
-                f"{[f'{c.act_name} §{c.section_number}' for c in context.chunks]}"
-            )
-
-            case_text = ""
-            try:
-                cases = await retrieve_case_law(retrieval_query, parsed, context.chunks)
-                if cases:
-                    case_text = _format_case_law(cases)
-                    print(
-                        f"Case law: {len(cases)} judgments retrieved: "
-                        f"{[c.case_name for c in cases]}"
-                    )
-            except Exception as e:
-                print(f"Case law lookup error: {e}")
-
-            return text, case_text
-        except Exception as e:
-            print(f"Unified RAG lookup error: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return "", ""
-
-    # Execute tools in parallel based on router selection
-    tasks = []
-    task_names = []
-    rag_succeeded = False  # Compulsory RAG tracking
     case_law_text = ""
+    rag_succeeded = False  # Compulsory RAG tracking
 
-    if use_indian_kanoon:
-        tasks.append(fetch_indian_kanoon())
-        task_names.append("indian_kanoon")
+    if isinstance(ik_result, Exception):
+        print(f"Tool indian_kanoon failed: {ik_result}")
+    else:
+        indian_kanoon_results = ik_result.context_text
+        rag_succeeded = rag_succeeded or ik_result.succeeded
 
-    # The unified index covers every legal domain, so statute retrieval
-    # always runs for general legal queries — routing flags only shape the
-    # optional domain hint inside fetch_statute_context().
-    tasks.append(fetch_statute_context())
-    task_names.append("statute_rag")
-
-    if tasks:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                print(f"Tool {task_names[i]} failed: {result}")
-                continue
-
-            if task_names[i] == "indian_kanoon":
-                indian_kanoon_results = result if result else ""
-                if indian_kanoon_results:
-                    rag_succeeded = True
-            elif task_names[i] == "statute_rag":
-                rag_sections_text, case_law_text = result if result else ("", "")
-                if rag_sections_text:
-                    rag_succeeded = True
+    if isinstance(statute_result, Exception):
+        print(f"Tool statute_context failed: {statute_result}")
+    else:
+        rag_sections_text = statute_result.context_text
+        case_law_text = (statute_result.raw or {}).get("case_law_text", "")
+        rag_succeeded = rag_succeeded or statute_result.succeeded
 
     # =========================================================================
     # BUILD PROMPT WITH RETRIEVED CONTEXT
     # =========================================================================
+
+    disclaimer_prefix, prompt_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
     try:
         llm = get_llm()
@@ -2590,25 +1470,9 @@ Provide a comprehensive, well-structured answer. Use headers and bullet points f
 End with: "This is general legal information. For specific advice on your situation, please consult a lawyer registered with the Bar Council of India."
 """
         else:
-            # No retrieved context — tools returned empty or were not used.
+            # No retrieved context — tools returned empty.
             # Use general prompt with extra caution about ungrounded claims.
-            prompt = GENERAL_QUERY_PROMPT.format(query=user_input)
-            # Statute retrieval always runs and returned no results —
-            # CRITICAL anti-hallucination warning
-            prompt += """
-
-🚨 CRITICAL WARNING: Legal database searches returned NO RELEVANT RESULTS for this query.
-
-You MUST follow these rules strictly:
-1. DO NOT cite ANY specific IPC/CrPC section numbers (e.g., DO NOT say "Section 420 IPC" or "Section 438 CrPC")
-2. DO NOT cite specific Article numbers from the Constitution
-3. DO NOT cite specific case names or citations
-4. Refer to laws ONLY by their full Act name (e.g., "Indian Penal Code, 1860" or "Code of Criminal Procedure, 1973")
-5. Use general legal principles and concepts ONLY
-6. Start your answer with: "I could not retrieve specific statutory references from my legal database for this query."
-7. ALWAYS recommend: "Please consult a qualified lawyer registered with the Bar Council of India for specific statutory citations and authoritative legal advice."
-
-If you cite ANY specific section number, article number, or case citation, you are HALLUCINATING."""
+            prompt = GENERAL_QUERY_PROMPT.format(query=user_input) + prompt_warning
 
         # Add conversation context if available
         if conversation_context:
@@ -2631,13 +1495,8 @@ In the meantime, I can help you with:
 Please try rephrasing your question or selecting one of the options above."""
 
     # Compulsory RAG: if retrieval failed across all sources, prepend disclaimer
-    if not rag_succeeded:
-        final_response = (
-            "⚠️ **I was unable to retrieve authoritative legal references for this query.** "
-            "The response below is based on general knowledge and may not contain "
-            "accurate statutory citations. Please verify with a qualified legal practitioner.\n\n"
-            + final_response
-        )
+    if disclaimer_prefix:
+        final_response = disclaimer_prefix + final_response
     elif rag_sections_text:
         # Only check citations when statute context was actually retrieved —
         # the no-context path already forbids specific citations by prompt.
