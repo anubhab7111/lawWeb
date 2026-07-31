@@ -7,10 +7,7 @@ import { PaymentGateway } from "./components/PaymentGateway";
 import { SignIn } from "./components/SignIn";
 import { SignUp } from "./components/SignUp";
 import { Scale, MessageSquare, Users, Home, LogIn, LogOut, User as UserIcon, CalendarCheck } from "lucide-react";
-import { fetchUserProfile } from "./api";
-
-// 1. Set your backend port to 5001 as per your terminal logs
-const API_BASE = "http://localhost:5001/api";
+import { fetchUserProfile, fetchUserBookings } from "./api";
 
 type View = "home" | "chat" | "recommend" | "directory" | "profile" | "payment" | "signin" | "signup" | "appointments";
 
@@ -62,19 +59,18 @@ export default function App() {
     checkAuth();
   }, []);
 
-  // 2. Fetch Bookings from MongoDB Atlas
+  // Fetch the signed-in user's confirmed bookings when the view opens
   useEffect(() => {
-    const fetchBookings = async () => {
+    const loadBookings = async () => {
       if (!currentUser || currentView !== "appointments") return;
       try {
-        const res = await fetch(`${API_BASE}/bookings/user-bookings/${currentUser.id}`);
-        const data = await res.json();
+        const data = await fetchUserBookings(currentUser.id);
         setUserBookings(data);
       } catch (error) {
         console.error("Failed to fetch bookings:", error);
       }
     };
-    fetchBookings();
+    loadBookings();
   }, [currentView, currentUser]);
 
   const handleSelectLawyer = (lawyer: Lawyer) => {
@@ -196,7 +192,7 @@ export default function App() {
                        </div>
                        <div>
                           <p className="font-bold text-lg">Legal Consultation</p>
-                          <p className="text-sm text-gray-500">Order ID: {b.razorpayOrderId || b.transactionId}</p>
+                          <p className="text-sm text-gray-500">Order ID: {b.transactionId}</p>
                        </div>
                     </div>
                     <div className="text-right">

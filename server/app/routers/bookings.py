@@ -4,6 +4,7 @@ ported from the old Express server/src/routes/bookings.ts.
 Credentials come strictly from settings (.env) — no hardcoded fallbacks.
 """
 
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Optional
 
@@ -15,7 +16,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.db.engine import get_session
-from app.db.models import Booking, BookingStatus
+from app.db.models import Booking, BookingStatus, Lawyer
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
@@ -57,39 +58,79 @@ def client_token():
 @router.post("/checkout")
 def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
     """Charge the nonce received from the client and record the booking."""
+    # ── Validate BEFORE charging so a bad request never captures money ──
+    if not body.amount or not body.paymentMethodNonce or not body.userId or not body.lawyerId:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Missing required checkout fields"},
+        )
+    try:
+        amount = Decimal(str(body.amount))
+    except (InvalidOperation, TypeError):
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Invalid amount"},
+        )
+    # Catch the most common cause of a post-charge FK failure before charging.
+    if session.get(Lawyer, body.lawyerId) is None:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Lawyer not found"},
+        )
+
+    # ── Charge (own error scope: a failure here means no money captured) ──
     try:
         result = get_gateway().transaction.sale(
             {
-                "amount": str(body.amount),
+                "amount": str(amount),
                 "payment_method_nonce": body.paymentMethodNonce,
                 "options": {"submit_for_settlement": True},
             }
         )
-
-        if result.is_success:
-            booking = Booking(
-                user_id=body.userId,
-                lawyer_id=body.lawyerId,
-                amount=body.amount,
-                status=BookingStatus.confirmed,
-                transaction_id=result.transaction.id,
-            )
-            session.add(booking)
-            session.commit()
-
-            print(f"✅ Success: Payment settled for User {body.userId}")
-            return {"status": "success", "transactionId": result.transaction.id}
-
-        print(f"❌ Braintree Transaction Failed: {result.message}")
-        return JSONResponse(
-            status_code=400, content={"status": "error", "message": result.message}
-        )
     except Exception as e:
-        print(f"Checkout Error: {e}")
+        print(f"Checkout charge error: {e}")
         return JSONResponse(
             status_code=500,
             content={"message": "Internal Server Error during checkout"},
         )
+
+    if not result.is_success:
+        print(f"❌ Braintree Transaction Failed: {result.message}")
+        return JSONResponse(
+            status_code=400, content={"status": "error", "message": result.message}
+        )
+
+    # ── Charge succeeded: record the booking in a SEPARATE error scope ──
+    # A DB failure here must NOT be reported as a failed payment (the card was
+    # already charged), or the user will retry and be double-charged. Persist
+    # what we can, flag for reconciliation, and still report success.
+    transaction_id = result.transaction.id
+    try:
+        booking = Booking(
+            user_id=body.userId,
+            lawyer_id=body.lawyerId,
+            amount=amount,
+            status=BookingStatus.confirmed,
+            transaction_id=transaction_id,
+        )
+        session.add(booking)
+        session.commit()
+        print(f"✅ Success: Payment settled for User {body.userId}")
+        return {"status": "success", "transactionId": transaction_id}
+    except Exception as e:
+        session.rollback()
+        # RECONCILIATION: money captured but booking not saved. Log loudly so
+        # this can be reconciled manually against Braintree settlements.
+        print(
+            f"⚠️ RECONCILIATION NEEDED: charged transaction {transaction_id} "
+            f"for user {body.userId} / lawyer {body.lawyerId} but booking write "
+            f"failed: {e}"
+        )
+        return {
+            "status": "success",
+            "transactionId": transaction_id,
+            "warning": "booking_record_failed",
+        }
 
 
 @router.get("/user-bookings/{user_id}")

@@ -22,10 +22,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS middleware for frontend integration
+# CORS middleware for frontend integration. Origins are an explicit allowlist
+# (not "*") because allow_credentials=True combined with a wildcard would let
+# any origin make credentialed requests.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_settings().cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,7 +72,7 @@ async def global_exception_handler(request, exc):
         content={
             "error": "Internal server error",
             "detail": (
-                str(exc) if get_settings().llm_temperature > 0 else "An error occurred"
+                str(exc) if get_settings().debug else "An error occurred"
             ),
         },
     )

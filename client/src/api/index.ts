@@ -285,6 +285,28 @@ export async function getChatSessionHistory(sessionId: string) {
  */
 export async function checkChatHealth() {
     const response = await fetch(`${API_BASE_URL}/chat/health`);
+    if (!response.ok) {
+        throw new Error('Failed to check chat health');
+    }
+    return response.json();
+}
+
+// ============================================================================
+// Bookings API
+// ============================================================================
+
+/**
+ * Fetch a user's confirmed bookings
+ */
+export async function fetchUserBookings(userId: string) {
+    const response = await fetch(`${API_BASE_URL}/bookings/user-bookings/${userId}`, {
+        headers: {
+            ...getAuthHeaders(),
+        },
+    });
+    if (!response.ok) {
+        throw new Error('Failed to fetch bookings');
+    }
     return response.json();
 }
 
