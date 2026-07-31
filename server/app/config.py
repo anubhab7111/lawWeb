@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     python_port: int = 8000
 
+    # When True, unhandled errors return their message to the client (dev only).
+    # Default False so 500 responses never leak internal exception details.
+    debug: bool = False
+
+    # Allowed CORS origins (comma-separated). Kept explicit rather than "*"
+    # because allow_credentials=True + wildcard lets any origin make
+    # credentialed requests. Default is the local Vite dev server.
+    cors_allow_origins: str = "http://localhost:5173"
+
     # PostgreSQL connection string
     database_url: str = ""
 
@@ -77,6 +86,11 @@ class Settings(BaseSettings):
     def port(self) -> int:
         """Return the Python server port."""
         return self.python_port
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse the comma-separated CORS origins into a list."""
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
 
 @lru_cache()
