@@ -1,3 +1,6 @@
+-- CreateExtension
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- CreateEnum
 CREATE TYPE "BookingStatus" AS ENUM ('pending', 'confirmed', 'failed');
 
@@ -27,6 +30,7 @@ CREATE TABLE "lawyers" (
     "education" TEXT NOT NULL,
     "languages" TEXT[],
     "availability" TEXT NOT NULL,
+    "bio_embedding" vector(1024),
 
     CONSTRAINT "lawyers_pkey" PRIMARY KEY ("id")
 );
