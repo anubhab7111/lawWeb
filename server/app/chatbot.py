@@ -18,11 +18,38 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.prompts import (
+    CASE_LAW_CONTEXT_BLOCK,
+    CRIME_REPORT_FALLBACK,
+    CRIME_REPORT_PROMPT,
+    DOC_RAG_UNAVAILABLE_DISCLAIMER,
     DOCUMENT_ANALYSIS_PROMPT,
+    DOCUMENT_UPLOAD_HELP,
     DOCUMENT_VALIDATION_UPLOAD_PROMPT,
+    GENERAL_QUERY_ERROR,
     GENERAL_QUERY_PROMPT,
+    GROUNDED_QUERY_PROMPT,
+    GROUNDING_UNAVAILABLE_DISCLAIMER,
+    GROUNDING_UNAVAILABLE_PROMPT_WARNING,
+    INDIAN_KANOON_CONTEXT_BLOCK,
+    LAWYER_SEARCH_FALLBACK,
     LAWYER_SEARCH_PROMPT,
+    NON_LEGAL_RESPONSE,
     QUERY_REWRITE_PROMPT,
+    STATUTE_CONTEXT_BLOCK,
+)
+from app.routing_keywords import (
+    CIVIL_LAW_KEYWORDS,
+    CONSTITUTIONAL_KEYWORDS,
+    CRIME_TYPE_KEYWORDS,
+    CRIMINAL_PROCEDURE_KEYWORDS,
+    FAMILY_LAW_KEYWORDS,
+    LEGAL_DOMAIN_KEYWORDS,
+    NON_LEGAL_PATTERNS,
+    PROPERTY_LAW_KEYWORDS,
+    STATUTE_KEYWORDS,
+    STRONG_CRIMINAL_SIGNAL_KEYWORDS,
+    TECH_LAW_KEYWORDS,
+    VALIDATION_KEYWORDS,
 )
 from app.state import (
     ChatState,
@@ -56,450 +83,6 @@ class DomainClassification(BaseModel):
     legal_indicators: List[str] = Field(
         default_factory=list, description="Legal terms or concepts found in the query"
     )
-
-
-# ============================================================================
-# Keyword Banks for Fast Routing (Zero-Latency Layer)
-# ============================================================================
-
-# Non-legal patterns (casual conversation)
-NON_LEGAL_PATTERNS = frozenset(
-    [
-        "my favorite",
-        "my favourite",
-        "i like",
-        "i love",
-        "favorite color",
-        "favourite color",
-        "best food",
-        "favorite movie",
-        "what is your",
-        "how are you",
-        "good morning",
-        "good night",
-        "hello",
-        "hi there",
-        "weather today",
-        "tell me a joke",
-        "sing a song",
-        "who are you",
-        "your name",
-        "thank you",
-        "thanks",
-        "bye",
-        "goodbye",
-    ]
-)
-
-# Legal domain indicators
-LEGAL_DOMAIN_KEYWORDS = frozenset(
-    [
-        "law",
-        "legal",
-        "court",
-        "judge",
-        "crime",
-        "police",
-        "lawyer",
-        "attorney",
-        "ipc",
-        "crpc",
-        "section",
-        "act",
-        "right",
-        "constitution",
-        "case",
-        "fir",
-        "bail",
-        "arrest",
-        "prosecution",
-        "verdict",
-        "judgment",
-        "statute",
-        "offence",
-        "offense",
-        "punishment",
-        "penalty",
-        "fine",
-        "imprisonment",
-        "contract",
-        "agreement",
-        "deed",
-        "property",
-        "tenant",
-        "landlord",
-        "divorce",
-        "custody",
-        "maintenance",
-        "alimony",
-        "will",
-        "testament",
-        "inheritance",
-        "defamation",
-        "fraud",
-        "cheating",
-        "theft",
-        "robbery",
-    ]
-)
-
-# Document validation keywords
-VALIDATION_KEYWORDS = frozenset(
-    [
-        "validate",
-        "validity",
-        "check validity",
-        "verify",
-        "statutory compliance",
-        "defects",
-        "legal defects",
-        "is this valid",
-        "check compliance",
-        "missing elements",
-        "properly drafted",
-        "drafting defects",
-        "formal defects",
-        "mandatory requirements",
-        "stamp duty compliance",
-        "review this document",
-        "check this document",
-        "is this correct",
-        "is this proper",
-    ]
-)
-
-# IPC/CrPC/Statute keywords (→ Crime RAG)
-STATUTE_KEYWORDS = frozenset(
-    [
-        "ipc",
-        "indian penal code",
-        "crpc",
-        "criminal procedure",
-        "punishment",
-        "imprisonment",
-        "fine",
-        "penalty",
-        "forgery",
-        "trespass",
-        "assault",
-        "threat",
-        "intimidation",
-        "fraud",
-        "cheating",
-        "theft",
-        "robbery",
-        "bribery",
-        "cyber",
-        "hacking",
-        "identity theft",
-        "money laundering",
-        "defamation",
-        "kidnapping",
-        "murder",
-        "hurt",
-        "grievous",
-        "it act",
-        "information technology",
-        "prevention of corruption",
-        "poca",
-        "pmla",
-    ]
-)
-
-# Crime type keywords for multi-offense detection
-CRIME_TYPE_KEYWORDS = frozenset(
-    [
-        "forgery",
-        "forged",
-        "trespass",
-        "trespassed",
-        "assault",
-        "assaulted",
-        "threat",
-        "threatened",
-        "bribe",
-        "bribery",
-        "fraud",
-        "cyber",
-        "identity theft",
-        "launder",
-        "laundering",
-        "cheating",
-        "theft",
-        "robbery",
-        "murder",
-        "kidnapping",
-        "extortion",
-        "blackmail",
-        "defamation",
-        "harassment",
-        "stalking",
-        "dowry",
-        "domestic violence",
-    ]
-)
-
-# ============================================================================
-# Domain keyword banks — sole remaining consumer is _infer_domain_hint
-# ============================================================================
-
-# Constitutional & fundamental rights keywords (→ Indian Kanoon)
-CONSTITUTIONAL_KEYWORDS = frozenset(
-    [
-        "article",
-        "fundamental right",
-        "fundamental rights",
-        "constitution",
-        "constitutional",
-        "amendment",
-        "basic structure",
-        "parliament",
-        "legislature",
-        "writ",
-        "habeas corpus",
-        "mandamus",
-        "certiorari",
-        "prohibition",
-        "quo warranto",
-        "right to privacy",
-        "right to life",
-        "right to equality",
-        "free speech",
-        "freedom of speech",
-        "freedom of expression",
-        "public order",
-        "reasonable restriction",
-        "directive principles",
-        "dpsp",
-        "preamble",
-        "federalism",
-        "president",
-        "governor",
-        "president's rule",
-        "article 356",
-        "article 19",
-        "article 21",
-        "article 14",
-        "article 32",
-        "article 226",
-        "article 370",
-        "article 370",
-        "ninth schedule",
-        "seventh schedule",
-        "union list",
-        "concurrent list",
-        "state list",
-        "surveillance",
-        "proportionality",
-        "puttaswamy",
-        "kesavananda",
-        "minerva mills",
-        "maneka gandhi",
-        "golaknath",
-    ]
-)
-
-# Civil / Contract law keywords (→ Indian Kanoon)
-CIVIL_LAW_KEYWORDS = frozenset(
-    [
-        "contract",
-        "agreement",
-        "enforceable",
-        "void",
-        "voidable",
-        "consideration",
-        "breach",
-        "specific performance",
-        "damages",
-        "indemnity",
-        "guarantee",
-        "coercion",
-        "undue influence",
-        "misrepresentation",
-        "mistake",
-        "frustration",
-        "force majeure",
-        "non-compete",
-        "restraint of trade",
-        "liquidated damages",
-        "injunction",
-        "arbitration",
-        "mediation",
-        "consumer protection",
-        "tort",
-        "negligence",
-        "defamation",
-        "nuisance",
-        "indian contract act",
-        "section 10",
-        "section 23",
-        "section 25",
-        "section 27",
-        "section 56",
-        "section 73",
-        "section 74",
-        "sale of goods",
-        "negotiable instruments",
-        "partnership",
-        "llp",
-        "oral agreement",
-        "oral contract",
-        "stamp duty",
-        "registration",
-        "admissible",
-        "admissibility",
-        "evidence",
-        "section 65b",
-        "electronic evidence",
-        "digital evidence",
-        "whatsapp",
-        "electronic record",
-    ]
-)
-
-# Property law keywords (→ Indian Kanoon)
-PROPERTY_LAW_KEYWORDS = frozenset(
-    [
-        "property",
-        "ancestral property",
-        "coparcenary",
-        "partition",
-        "sale deed",
-        "gift deed",
-        "will",
-        "testament",
-        "succession",
-        "inheritance",
-        "legal heir",
-        "legal heirs",
-        "hindu succession",
-        "transfer of property",
-        "easement",
-        "mortgage",
-        "lease",
-        "tenancy",
-        "tenant",
-        "landlord",
-        "rent control",
-        "eviction",
-        "encumbrance",
-        "benami",
-        "rera",
-        "real estate",
-        "mutation",
-        "land revenue",
-        "stridhan",
-        "joint family",
-        "huf",
-    ]
-)
-
-# Family law keywords (→ Indian Kanoon)
-FAMILY_LAW_KEYWORDS = frozenset(
-    [
-        "divorce",
-        "custody",
-        "maintenance",
-        "alimony",
-        "domestic violence",
-        "dowry",
-        "marriage",
-        "matrimonial",
-        "judicial separation",
-        "mutual consent",
-        "cruelty",
-        "desertion",
-        "restitution of conjugal rights",
-        "live-in",
-        "live in partner",
-        "cohabitation",
-        "hindu marriage act",
-        "special marriage act",
-        "muslim personal law",
-        "guardianship",
-        "adoption",
-        "juvenile",
-        "child marriage",
-        "marital rape",
-        "section 498a",
-        "protection of women",
-        "dv act",
-    ]
-)
-
-# Technology & modern law keywords (→ Indian Kanoon)
-TECH_LAW_KEYWORDS = frozenset(
-    [
-        "cryptocurrency",
-        "crypto",
-        "bitcoin",
-        "blockchain",
-        "artificial intelligence",
-        "ai liability",
-        "data protection",
-        "personal data",
-        "gdpr",
-        "pdp bill",
-        "dpdp",
-        "social media",
-        "online",
-        "internet",
-        "deepfake",
-        "it act",
-        "information technology act",
-        "section 66a",
-        "section 67",
-        "section 43",
-        "intermediary",
-        "safe harbour",
-        "takedown",
-        "right to be forgotten",
-        "aadhaar",
-        "rbi",
-        "fema",
-        "pmla",
-        "sebi",
-    ]
-)
-
-# Criminal procedure & bail keywords (→ Crime RAG + Indian Kanoon)
-CRIMINAL_PROCEDURE_KEYWORDS = frozenset(
-    [
-        "fir",
-        "bail",
-        "anticipatory bail",
-        "regular bail",
-        "quash",
-        "quashing",
-        "section 482",
-        "section 438",
-        "section 439",
-        "section 154",
-        "section 200",
-        "section 320",
-        "compoundable",
-        "non-compoundable",
-        "chargesheet",
-        "investigation",
-        "cognizable",
-        "non-cognizable",
-        "complainant",
-        "withdrawal",
-        "compound",
-        "plea bargaining",
-        "discharge",
-        "acquittal",
-        "conviction",
-        "appeal",
-        "revision",
-        "review",
-        "habeas corpus",
-        "remand",
-        "police custody",
-        "judicial custody",
-        "bhajan lal",
-    ]
-)
 
 
 # Main-LLM context window / output reservation. Kept as module constants so the
@@ -742,38 +325,6 @@ async def _rewrite_query_for_retrieval(
 # Primary Router (embedding-based) + deterministic policy layer
 # ============================================================================
 
-# The only keyword signals treated as "strong, unambiguous criminal" for
-# _infer_domain_hint below — explicit section/procedure references, not
-# generic crime-adjacent words. Deliberately narrow.
-STRONG_CRIMINAL_SIGNAL_KEYWORDS = frozenset(
-    [
-        "which section",
-        "what section",
-        "applicable section",
-        "sections apply",
-        "ipc section",
-        "crpc section",
-        "under which",
-        "punishable under",
-        "punishment for",
-        "penalty for",
-        "imprisonment for",
-        "fine for",
-        "cognizable",
-        "non-cognizable",
-        "bailable",
-        "non-bailable",
-        "compoundable",
-        "non-compoundable",
-        "triable by",
-        "investigation",
-        "chargesheet",
-        "fir for",
-        "file fir",
-        "police complaint",
-    ]
-)
-
 # Hard-wired per-intent tool sets — metadata for state["selected_tools"];
 # each handler still calls its specific tool_dispatch.invoke_* function(s)
 # directly (bespoke prompt assembly per handler), it doesn't loop over this
@@ -823,28 +374,6 @@ def _infer_domain_hint(text: str) -> Optional[Literal["criminal"]]:
     return "criminal"
 
 
-_GROUNDING_UNAVAILABLE_DISCLAIMER = (
-    "⚠️ **I was unable to retrieve authoritative legal references for this query.** "
-    "The response below is based on general knowledge and may not contain accurate "
-    "statutory citations. Please verify with a qualified legal practitioner.\n\n"
-)
-
-_GROUNDING_UNAVAILABLE_PROMPT_WARNING = """
-
-🚨 CRITICAL WARNING: Legal database searches returned NO RELEVANT RESULTS for this query.
-
-You MUST follow these rules strictly:
-1. DO NOT cite ANY specific IPC/CrPC section numbers (e.g., DO NOT say "Section 420 IPC" or "Section 438 CrPC")
-2. DO NOT cite specific Article numbers from the Constitution
-3. DO NOT cite specific case names or citations
-4. Refer to laws ONLY by their full Act name (e.g., "Indian Penal Code, 1860" or "Code of Criminal Procedure, 1973")
-5. Use general legal principles and concepts ONLY
-6. Start your answer with: "I could not retrieve specific statutory references from my legal database for this query."
-7. ALWAYS recommend: "Please consult a qualified lawyer registered with the Bar Council of India for specific statutory citations and authoritative legal advice."
-
-If you cite ANY specific section number, article number, or case citation, you are HALLUCINATING."""
-
-
 def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
     """
     Single shared implementation of the "grounding unavailable" pattern,
@@ -857,7 +386,7 @@ def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
     """
     if rag_succeeded:
         return "", ""
-    return _GROUNDING_UNAVAILABLE_DISCLAIMER, _GROUNDING_UNAVAILABLE_PROMPT_WARNING
+    return GROUNDING_UNAVAILABLE_DISCLAIMER, GROUNDING_UNAVAILABLE_PROMPT_WARNING
 
 
 async def classify_intent(state: ChatState) -> ChatState:
@@ -985,18 +514,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             kw in input_lower
             for kw in ["upload", "i will upload", "how to upload", "can i upload"]
         ):
-            response = """I can help you analyze and validate legal documents and images!
-
-Please upload a document (PDF, DOCX, TXT) or image (JPG, PNG) and I'll provide:
-- Document type identification and OCR extraction (for images)
-- Summary of key points
-- Relevant legal references from IndianKanoon
-- Statutory compliance validation and defect analysis
-- Crime reporting guidance (if applicable)
-- Legal implications and concerns
-- Suggested next steps
-
-You can upload your document using the upload feature."""
+            response = DOCUMENT_UPLOAD_HELP
 
             return {
                 **state,
@@ -1113,11 +631,7 @@ You can upload your document using the upload feature."""
 
         # Compulsory RAG: if retrieval failed, prepend disclaimer
         if not rag_succeeded:
-            response = (
-                "⚠️ **Legal database retrieval was unavailable.** The following analysis "
-                "is based on the document text alone without authoritative legal references. "
-                "Please retry or consult a qualified legal practitioner.\n\n" + response
-            )
+            response = DOC_RAG_UNAVAILABLE_DISCLAIMER + response
 
         return {
             **state,
@@ -1155,11 +669,7 @@ You can upload your document using the upload feature."""
         analysis = await invoke_llm_safely(llm, prompt)
 
         # Compulsory RAG: always prepend disclaimer when using fallback path
-        analysis = (
-            "⚠️ **Legal database retrieval was unavailable.** The following analysis "
-            "is based on the document text alone without authoritative legal references. "
-            "Please retry or consult a qualified legal practitioner.\n\n" + analysis
-        )
+        analysis = DOC_RAG_UNAVAILABLE_DISCLAIMER + analysis
 
         return {
             **state,
@@ -1215,32 +725,20 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     # Compulsory RAG: when RAG failed, instruct LLM not to fabricate sections
     disclaimer_prefix, no_rag_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
-    prompt = f"""Indian law assistant. User reporting a crime. You MUST respond with ALL 4 sections in this EXACT format:
-
-**Crime:** [2-4 word crime name]
-
-**Statute:** [IPC sections from data below, e.g. "IPC Section 379 (Theft)"]
-
-**Punishment:** [Copy punishment from data below]
-
-**Further Steps:** [Steps: call 100/112, file FIR, preserve evidence]
-
-Crime reported: {crime_details[:_MAX_QUERY_CHARS]}
-Type: {identified_crime}{rag_section}{no_rag_warning}
-
-IMPORTANT: All 4 sections (Crime, Statute, Punishment, Further Steps) are REQUIRED. Use the IPC sections provided above."""
+    prompt = CRIME_REPORT_PROMPT.format(
+        crime_details=crime_details[:_MAX_QUERY_CHARS],
+        identified_crime=identified_crime,
+        rag_section=rag_section,
+        no_rag_warning=no_rag_warning,
+    )
 
     try:
         final_response = await invoke_llm_safely(llm, prompt)
     except Exception as e:
         print(f"LLM error in crime report: {e}")
-        final_response = f"""**Crime:** {identified_crime.replace("_", " ").title()}
-
-**Statute:** Please consult with police or a lawyer for applicable IPC/CrPC sections.
-
-**Punishment:** Varies based on the specific offense and severity. Consult a lawyer for details.
-
-**Further Steps to be Taken:** If in immediate danger, call 100 (Police) or 112 (Emergency). Visit the nearest police station to file an FIR under CrPC Section 154. Preserve all evidence including photographs, documents, and witness contact information. Consult a criminal lawyer for legal guidance."""
+        final_response = CRIME_REPORT_FALLBACK.format(
+            crime_name=identified_crime.replace("_", " ").title()
+        )
 
     # Compulsory RAG: if RAG failed, prepend visible disclaimer
     if disclaimer_prefix:
@@ -1309,17 +807,9 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
         final_response = await invoke_llm_safely(llm, prompt)
     except Exception:
         # Use formatted results directly if LLM fails
-        final_response = f"""Based on your request, I found some lawyers who might be able to help:
-
-{formatted_results}
-
-**Tips for choosing a lawyer:**
-1. Schedule consultations with 2-3 lawyers before deciding
-2. Ask about their experience with cases like yours
-3. Discuss fees and payment structure upfront
-4. Trust your instincts about communication style
-
-Would you like me to search with different criteria?"""
+        final_response = LAWYER_SEARCH_FALLBACK.format(
+            formatted_results=formatted_results
+        )
 
     # Convert to LawyerInfo format
     lawyers_info: List[LawyerInfo] = [
@@ -1475,21 +965,20 @@ async def handle_general_query(state: ChatState) -> ChatState:
 
         if rag_sections_text:
             context_parts.append(
-                f"""**Applicable Statutory Provisions** (each is tagged with its legal domain, e.g. [criminal], [civil], [family]):
-{rag_sections_text}
-
-NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/constitutional/other provisions govern rights, remedies, and obligations — do NOT describe them as criminal offences."""
+                STATUTE_CONTEXT_BLOCK.format(rag_sections_text=rag_sections_text)
             )
 
         if case_law_text:
             context_parts.append(
-                f"""**Judicial Interpretation** (curated landmark judgments, ordered by court authority — cite the case NAME, do not invent citations beyond what's shown):
-{case_law_text}"""
+                CASE_LAW_CONTEXT_BLOCK.format(case_law_text=case_law_text)
             )
 
         if indian_kanoon_results:
-            context_parts.append(f"""**Relevant Case Law & Precedents:**
-{indian_kanoon_results[:3000]}""")
+            context_parts.append(
+                INDIAN_KANOON_CONTEXT_BLOCK.format(
+                    indian_kanoon_results=indian_kanoon_results[:3000]
+                )
+            )
 
         from app.metrics.engineering_metrics import count_tokens_approx
 
@@ -1509,32 +998,10 @@ NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/c
         # Choose appropriate prompt based on context
         if retrieved_context:
             # Use enhanced prompt with retrieved legal context
-            prompt = f"""You are a knowledgeable Indian legal assistant. Answer the following legal query comprehensively using ONLY the retrieved legal context below.
-
-**User Query:** {user_input_for_prompt}
-
-{retrieved_context}
-
-**CRITICAL ACCURACY RULES:**
-- You MUST base your answer on the retrieved context above. Cite specific sections, articles, case names, and provisions that appear in the context.
-- If the retrieved context does not cover a particular aspect of the query, say "I don't have specific references for this aspect" rather than guessing.
-- NEVER fabricate or guess section numbers, article numbers, or case citations.
-- Do NOT state any punishment term, fine, monetary threshold, age limit, or other numeric condition unless it appears in the retrieved provisions above. If a specific figure is not in the context, say the retrieved provisions do not specify it rather than recalling a number from memory.
-- If the legal position has changed or is contested, explicitly state that.
-- Cite landmark cases BY NAME when they appear in the retrieved context.
-
-**Instructions:**
-1. Directly answer the user's question using information from the retrieved context
-2. Cite the specific legal provisions, sections, or case law from the context that support your answer
-3. Explain the legal principles and reasoning clearly
-4. If multiple provisions or cases apply, explain how they relate to each other
-5. Note any exceptions, limitations, or conditions that apply
-6. If the retrieved context includes case law, reference the relevant holdings
-
-Provide a comprehensive, well-structured answer. Use headers and bullet points for clarity.
-
-End with: "This is general legal information. For specific advice on your situation, please consult a lawyer registered with the Bar Council of India."
-"""
+            prompt = GROUNDED_QUERY_PROMPT.format(
+                user_query=user_input_for_prompt,
+                retrieved_context=retrieved_context,
+            )
         else:
             # No retrieved context — tools returned empty.
             # Use general prompt with extra caution about ungrounded claims.
@@ -1554,14 +1021,7 @@ End with: "This is general legal information. For specific advice on your situat
 
     except Exception as e:
         print(f"LLM error in general query: {e}")
-        final_response = """I apologize, but I'm having trouble processing your request right now.
-
-In the meantime, I can help you with:
-1. **Document Analysis** - Upload a legal document for analysis
-2. **Crime Reporting** - Get guidance on reporting crimes and next steps
-3. **Find a Lawyer** - Search for attorneys based on your needs
-
-Please try rephrasing your question or selecting one of the options above."""
+        final_response = GENERAL_QUERY_ERROR
 
     # Compulsory RAG: if retrieval failed across all sources, prepend disclaimer
     if disclaimer_prefix:
@@ -1786,15 +1246,7 @@ async def handle_non_legal_query(state: ChatState) -> ChatState:
     """
     Handle non-legal queries with a polite rejection message.
     """
-    response = """I'm a legal assistance chatbot specializing in Indian law. I can help you with:
-
-• Legal questions and advice
-• Crime reporting guidance
-• Document analysis (contracts, agreements, etc.)
-• Finding lawyers
-• Understanding Indian laws (IPC, CrPC, IT Act, etc.)
-
-For other topics, I may not be the best resource. Please ask me a legal question!"""
+    response = NON_LEGAL_RESPONSE
 
     return {
         **state,
