@@ -8,3 +8,9 @@ __pycache__
 dist
 app/metrics/.judge_cache.json
 app/metrics/.judge_usage.json
+
+# Legal Document Vault local-disk storage fallback (dev only — production
+# target is Cloudflare R2, see app/services/object_storage.py). Same
+# treatment as app/data/faiss_index/: machine-local runtime state, not
+# checked in.
+app/data/vault/

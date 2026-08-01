@@ -360,8 +360,32 @@ async def invoke_crime_sections(
         return ToolInvocationResult(name="crime_sections", succeeded=False, context_text="")
 
 
+# ============================================================================
+# Bare Act Explorer (bonus chatbot reachability — primary UX is the
+# standalone /api/bare-acts router; see app/tools/bare_act_explorer.py)
+# ============================================================================
+
+
+async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
+    try:
+        from app.tools.bare_act_explorer import explore_bare_act
+
+        result = await explore_bare_act(query, explain=False)
+        if not result.matches:
+            return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
+
+        text = _budget_context(result.matches)
+        return ToolInvocationResult(
+            name="bare_act_lookup", succeeded=True, context_text=text, raw=result
+        )
+    except Exception as e:
+        print(f"Bare act lookup error: {e}")
+        return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
+
+
 RAG_TOOL_REGISTRY: Dict[str, Callable] = {
     "indian_kanoon": invoke_indian_kanoon,
     "statute_context": invoke_statute_context,
     "crime_sections": invoke_crime_sections,
+    "bare_act_lookup": invoke_bare_act_lookup,
 }

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { View } from "../App";
 import { initials, type UserProfile } from "../lib/ui";
+import { NotificationBell } from "./NotificationBell";
 
 interface NavProps {
   view: View;
@@ -13,6 +14,9 @@ interface NavProps {
 const TABS: { key: View; label: string; auth?: boolean }[] = [
   { key: "chat", label: "Ask AI" },
   { key: "lawyers", label: "Find Lawyers" },
+  { key: "bare-acts", label: "Bare Acts" },
+  { key: "similar-cases", label: "Similar Cases" },
+  { key: "cause-list", label: "Cause List" },
   { key: "bookings", label: "My Bookings", auth: true },
 ];
 
@@ -49,7 +53,8 @@ export function Nav({ view, user, marketing, onNavigate, onLogout }: NavProps) {
         </div>
       )}
 
-      <div className="nav-right">
+      <div className="nav-right" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {user && <NotificationBell user={user} />}
         {user ? (
           <div ref={menuRef} style={{ position: "relative" }}>
             <button
@@ -70,9 +75,12 @@ export function Nav({ view, user, marketing, onNavigate, onLogout }: NavProps) {
             {menuOpen && (
               <div
                 className="modal"
-                style={{ position: "absolute", right: 0, top: 42, width: 180, padding: 6, boxShadow: "var(--shadow-hover)" }}
+                style={{ position: "absolute", right: 0, top: 42, width: 200, padding: 6, boxShadow: "var(--shadow-hover)" }}
               >
                 <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("bookings"); }}>My Bookings</button>
+                <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("my-cases"); }}>My Cases</button>
+                <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("vault"); }}>Document Vault</button>
+                <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("calendar"); }}>Calendar</button>
                 <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("documents"); }}>Analyze a Document</button>
                 <div className="divider" style={{ margin: "6px 0" }} />
                 <button className="menu-row danger" onClick={() => { setMenuOpen(false); onLogout(); }}>Sign out</button>

@@ -9,14 +9,21 @@ import { MyBookings } from "./components/MyBookings";
 import { DocumentAnalysis } from "./components/DocumentAnalysis";
 import { SignIn } from "./components/SignIn";
 import { SignUp } from "./components/SignUp";
+import { BareActExplorer } from "./components/BareActExplorer";
+import { SimilarCaseSearch } from "./components/SimilarCaseSearch";
+import { MyCases } from "./components/MyCases";
+import { CauseListSearch } from "./components/CauseListSearch";
+import { Vault } from "./components/Vault";
+import { LegalCalendar } from "./components/LegalCalendar";
 import { fetchUserProfile } from "./api";
 import type { Lawyer, UserProfile } from "./lib/ui";
 
 export type View =
   | "home" | "chat" | "lawyers" | "profile" | "payment"
-  | "bookings" | "documents" | "signin" | "signup";
+  | "bookings" | "documents" | "signin" | "signup"
+  | "bare-acts" | "similar-cases" | "my-cases" | "cause-list" | "vault" | "calendar";
 
-const AUTH_REQUIRED: View[] = ["bookings", "payment", "profile"];
+const AUTH_REQUIRED: View[] = ["bookings", "payment", "profile", "my-cases", "vault", "calendar"];
 
 export default function App() {
   const [view, setView] = useState<View>("home");
@@ -113,6 +120,18 @@ export default function App() {
       {view === "bookings" && <MyBookings user={user} onNavigate={navigate} />}
 
       {view === "documents" && <DocumentAnalysis />}
+
+      {view === "bare-acts" && <BareActExplorer />}
+
+      {view === "similar-cases" && <SimilarCaseSearch />}
+
+      {view === "my-cases" && <MyCases user={user} />}
+
+      {view === "cause-list" && <CauseListSearch />}
+
+      {view === "vault" && <Vault user={user} />}
+
+      {view === "calendar" && <LegalCalendar user={user} />}
 
       {view === "signin" && (
         <SignIn onSuccess={handleLoginSuccess} onNavigateToSignUp={() => setView("signup")} />
