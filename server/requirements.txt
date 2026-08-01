@@ -40,6 +40,12 @@ aiofiles>=24.1.0
 # Caching for performance
 cachetools>=5.5.0
 
+# In-process job scheduler (hearing reminders, cause-list polling, notifications)
+APScheduler>=3.10,<4.0
+
+# S3-compatible object storage client (Legal Document Vault -> Cloudflare R2)
+boto3>=1.34.0
+
 # Database (PostgreSQL)
 sqlmodel>=0.0.22
 psycopg[binary]>=3.2

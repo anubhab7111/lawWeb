@@ -63,6 +63,33 @@ class Settings(BaseSettings):
     lawyer_api_key: str = ""
     indian_kanoon_api_key: str = ""
 
+    # Case-data provider (My Cases / Hearing Reminders / Cause List Search).
+    # "mock" (default) uses an in-memory fixture provider for local dev —
+    # see app/tools/case_data_provider.py — until a licensed vendor
+    # (e.g. eCourtsIndia) is contracted and its credentials set here.
+    case_data_provider: str = "mock"
+    case_data_api_key: str = ""
+    case_data_api_base_url: str = ""
+
+    # Notifications (Hearing Reminders / Smart Notifications). Left blank ->
+    # notification_dispatch logs instead of sending (safe local-dev default).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_address: str = "no-reply@lawweb.local"
+    fcm_service_account_json: str = ""
+
+    # Legal Document Vault object storage (Cloudflare R2, S3-compatible).
+    # If unset, vault falls back to local disk under app/data/vault/ so the
+    # feature is testable without live R2 credentials — see
+    # app/services/object_storage.py.
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = "lawweb-vault"
+    r2_endpoint_url: str = ""
+
     # OpenRouter (LLM-as-judge for RAG evaluation — see app/metrics/llm_judge.py)
     openrouter_api_key: str = ""
     # Free-tier model; check https://openrouter.ai/models?max_price=0 for the

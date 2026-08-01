@@ -4,6 +4,7 @@ Single Python backend: chatbot/RAG plus auth, lawyers, and bookings
 (previously served by the Express server).
 """
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,7 +13,37 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import auth, bookings, chat, lawyers
+from app.deps.errors import MessageHTTPException
+from app.routers import (
+    auth,
+    bare_acts,
+    bookings,
+    calendar,
+    cases,
+    cause_list,
+    chat,
+    lawyers,
+    notifications,
+    similar_cases,
+    vault,
+)
+from app.scheduler import get_scheduler, register_jobs
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # First-ever startup hook in this app. Scheduler jobs are durable
+    # (SQLAlchemy jobstore) so restarts don't need to recreate DB state, but
+    # add_job(..., replace_existing=True) inside register_jobs() still runs
+    # every boot to pick up code changes to job schedules.
+    scheduler = get_scheduler()
+    register_jobs(scheduler)
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+
 
 app = FastAPI(
     title="Legal Platform API",
@@ -20,6 +51,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # CORS middleware for frontend integration. Origins are an explicit allowlist
@@ -42,6 +74,13 @@ app.include_router(auth.router)
 app.include_router(lawyers.router)
 app.include_router(bookings.router)
 app.include_router(chat.router)
+app.include_router(bare_acts.router)
+app.include_router(similar_cases.router)
+app.include_router(cases.router)
+app.include_router(notifications.router)
+app.include_router(cause_list.router)
+app.include_router(vault.router)
+app.include_router(calendar.router)
 
 
 @app.get("/")
@@ -62,6 +101,14 @@ async def health_check():
 # ============================================================================
 # Exception Handlers
 # ============================================================================
+
+
+@app.exception_handler(MessageHTTPException)
+async def message_http_exception_handler(request, exc: MessageHTTPException):
+    """Scoped to MessageHTTPException only (raised by app.deps.auth and the
+    new feature routers) so existing HTTPException usage elsewhere (e.g.
+    app.routers.chat) keeps its current {"detail": ...} response shape."""
+    return JSONResponse(status_code=exc.status_code, content={"message": exc.detail})
 
 
 @app.exception_handler(Exception)

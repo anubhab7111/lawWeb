@@ -430,3 +430,200 @@ export async function fetchUserBookings(userId: string): Promise<Booking[]> {
     }
     return response.json();
 }
+
+// ============================================================================
+// Shared error helper for the new-feature endpoints below, which return
+// {"message": ...} bodies (see server/CLAUDE.md's API compatibility rules).
+// ============================================================================
+
+async function requestJson(path: string, options: RequestInit = {}) {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        ...options,
+        headers: { ...(options.headers || {}), ...getAuthHeaders() },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.message || 'Request failed');
+    }
+    return data;
+}
+
+// ============================================================================
+// Bare Act Explorer
+// ============================================================================
+
+export async function searchBareAct(query: string, actHint?: string) {
+    const params = new URLSearchParams({ q: query });
+    if (actHint) params.set('act', actHint);
+    return requestJson(`/bare-acts/search?${params.toString()}`);
+}
+
+// ============================================================================
+// Similar Case Search
+// ============================================================================
+
+export async function searchSimilarCases(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return requestJson('/similar-cases/search', { method: 'POST', body: formData });
+}
+
+export async function searchSimilarCasesByText(text: string) {
+    return requestJson('/similar-cases/search-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+    });
+}
+
+// ============================================================================
+// My Cases
+// ============================================================================
+
+export interface SavedCase {
+    id: string;
+    cnr: string | null;
+    court: string | null;
+    caseNumber: string | null;
+    year: number | null;
+    title: string | null;
+    status: string | null;
+    lastSyncedAt: string | null;
+    createdAt: string | null;
+}
+
+export async function saveCase(payload: { cnr?: string; court?: string; caseNumber?: string; year?: number }) {
+    return requestJson('/cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function fetchSavedCases(): Promise<SavedCase[]> {
+    return requestJson('/cases');
+}
+
+export async function fetchCaseDetail(caseId: string) {
+    return requestJson(`/cases/${caseId}`);
+}
+
+export async function addCaseNote(caseId: string, noteText: string) {
+    return requestJson(`/cases/${caseId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ noteText }),
+    });
+}
+
+export async function syncCase(caseId: string) {
+    return requestJson(`/cases/${caseId}/sync`, { method: 'POST' });
+}
+
+export async function deleteCase(caseId: string) {
+    return requestJson(`/cases/${caseId}`, { method: 'DELETE' });
+}
+
+// ============================================================================
+// Court Cause List Search
+// ============================================================================
+
+export async function searchCauseList(params: { court: string; date: string; advocate?: string; judge?: string; caseNumber?: string }) {
+    const qs = new URLSearchParams({ court: params.court, date: params.date });
+    if (params.advocate) qs.set('advocate', params.advocate);
+    if (params.judge) qs.set('judge', params.judge);
+    if (params.caseNumber) qs.set('caseNumber', params.caseNumber);
+    return requestJson(`/cause-list/search?${qs.toString()}`);
+}
+
+// ============================================================================
+// Legal Document Vault
+// ============================================================================
+
+export interface VaultDocument {
+    id: string;
+    title: string;
+    documentType: string;
+    fileSizeBytes: number;
+    mimeType: string;
+    relatedCaseId: string | null;
+    indexingStatus: string;
+    createdAt: string | null;
+}
+
+export async function uploadVaultDocument(file: File, title: string, documentType: string, relatedCaseId?: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title);
+    formData.append('documentType', documentType);
+    if (relatedCaseId) formData.append('relatedCaseId', relatedCaseId);
+    return requestJson('/vault/documents', { method: 'POST', body: formData });
+}
+
+export async function fetchVaultDocuments(): Promise<VaultDocument[]> {
+    return requestJson('/vault/documents');
+}
+
+export async function searchVaultDocuments(query: string) {
+    return requestJson('/vault/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+    });
+}
+
+export async function deleteVaultDocument(documentId: string) {
+    return requestJson(`/vault/documents/${documentId}`, { method: 'DELETE' });
+}
+
+// ============================================================================
+// Personal Legal Calendar
+// ============================================================================
+
+export interface CalendarEvent {
+    id: string;
+    title: string;
+    eventType: string;
+    startAt: string;
+    endAt: string | null;
+    relatedCaseId: string | null;
+}
+
+export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
+    return requestJson('/calendar/events');
+}
+
+export async function createCalendarEvent(payload: { title: string; eventType: string; startAt: string; endAt?: string }) {
+    return requestJson('/calendar/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function deleteCalendarEvent(eventId: string) {
+    return requestJson(`/calendar/events/${eventId}`, { method: 'DELETE' });
+}
+
+// ============================================================================
+// Smart Notifications
+// ============================================================================
+
+export interface AppNotification {
+    id: string;
+    type: string;
+    title: string;
+    body: string;
+    channel: string;
+    status: string;
+    readAt: string | null;
+    createdAt: string | null;
+}
+
+export async function fetchNotifications(): Promise<AppNotification[]> {
+    return requestJson('/notifications');
+}
+
+export async function markNotificationRead(notificationId: string) {
+    return requestJson(`/notifications/${notificationId}/read`, { method: 'PATCH' });
+}

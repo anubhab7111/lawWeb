@@ -11,6 +11,7 @@ from sqlalchemy import inspect
 from sqlmodel import Session
 
 from app.db.engine import get_engine
+from app.db.migrations import run_migrations
 from app.db.models import Lawyer
 
 SCHEMA_FILE = Path(__file__).parent / "schema.sql"
@@ -96,20 +97,6 @@ SEED_LAWYERS = [
 ]
 
 
-def ensure_lawyer_embedding_column(engine) -> None:
-    """
-    Idempotent migration for the pgvector column on `lawyers`. schema.sql only
-    runs on a fresh DB (see the has_table check below), so existing dev DBs
-    need this to pick up the extension/column without a full reset. There is
-    no Alembic in this project — this is the lightweight equivalent.
-    """
-    with engine.begin() as conn:
-        conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector;")
-        conn.exec_driver_sql(
-            "ALTER TABLE lawyers ADD COLUMN IF NOT EXISTS bio_embedding vector(1024);"
-        )
-
-
 def init_db() -> None:
     engine = get_engine()
 
@@ -121,7 +108,9 @@ def init_db() -> None:
     else:
         print("Tables already exist, skipping schema.sql")
 
-    ensure_lawyer_embedding_column(engine)
+    # Incremental changes for existing dev DBs — see app/db/migrations.py
+    # for the convention (there is no Alembic in this project).
+    run_migrations(engine)
 
     with Session(engine) as session:
         seeded = 0

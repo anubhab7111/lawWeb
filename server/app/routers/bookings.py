@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.db.engine import get_session
-from app.db.models import Booking, BookingStatus, Lawyer
+from app.db.models import Booking, BookingStatus, CalendarEvent, Lawyer
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
@@ -116,6 +116,34 @@ def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
         session.add(booking)
         session.commit()
         print(f"✅ Success: Payment settled for User {body.userId}")
+
+        # Personal Legal Calendar: auto-add a "lawyer meeting" event for this
+        # booking. Best-effort and isolated from the payment/booking result
+        # above — a calendar-write failure must never turn a successful
+        # payment into an error response. appointment_date/appointment_time
+        # aren't collected by this endpoint yet, so this is a no-op until a
+        # scheduling step is added to checkout.
+        if booking.appointment_date and booking.appointment_time:
+            try:
+                from datetime import datetime
+
+                start_at = datetime.fromisoformat(
+                    f"{booking.appointment_date}T{booking.appointment_time}"
+                )
+                session.add(
+                    CalendarEvent(
+                        user_id=booking.user_id,
+                        title=f"Consultation with lawyer {booking.lawyer_id}",
+                        event_type="lawyer_meeting",
+                        start_at=start_at,
+                        related_booking_id=booking.id,
+                    )
+                )
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                print(f"[Calendar] failed to auto-create event for booking {booking.id}: {e}")
+
         return {"status": "success", "transactionId": transaction_id}
     except Exception as e:
         session.rollback()
