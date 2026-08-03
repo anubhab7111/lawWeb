@@ -509,10 +509,13 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
         ik_task, rag_task
     )
 
-    # Track whether at least one RAG source succeeded (compulsory RAG)
-    rag_succeeded = bool(indian_kanoon_results) or (
-        crime_rag is not None and crime_rag.initialized
-    )
+    # Track whether at least one RAG source succeeded (compulsory RAG).
+    # Provisional: crime_rag's own per-document grounding (result.crime_context,
+    # below) isn't available yet — it's folded in once the pipeline returns,
+    # since crime_rag.initialized only means "the shared index loaded at
+    # some point in this process's life," not "retrieved something for this
+    # document."
+    rag_succeeded = bool(indian_kanoon_results)
 
     # Use the enhanced document analysis pipeline
     try:
@@ -564,6 +567,12 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
                 response_parts.append(f"⚠️ {warning}")
 
         response = "\n".join(response_parts)
+
+        # Fold in crime RAG's actual per-document grounding now that the
+        # pipeline has run, instead of the process-lifetime .initialized flag.
+        rag_succeeded = rag_succeeded or bool(
+            result.crime_context and result.crime_context.get("relevant_passages")
+        )
 
         # Compulsory RAG: if retrieval failed, prepend disclaimer
         if not rag_succeeded:
@@ -962,10 +971,19 @@ async def handle_general_query(state: ChatState) -> ChatState:
     # Compulsory RAG: if retrieval failed across all sources, prepend disclaimer
     if disclaimer_prefix:
         final_response = disclaimer_prefix + final_response
-    elif rag_sections_text:
-        # Only check citations when statute context was actually retrieved —
-        # the no-context path already forbids specific citations by prompt.
-        retrieved_sections = (statute_result.raw or {}).get("retrieved_sections")
+    else:
+        # Check citations whenever any RAG source succeeded — not just
+        # when statute context specifically was retrieved. When only
+        # Indian Kanoon case-law search succeeded, retrieved_sections is
+        # None (no statute chunks to compare against), so this still
+        # existence-checks any "Section N"/"Article N" claim in the answer
+        # against the indexed corpus without the "was it actually
+        # retrieved" check that requires a real statute_result.
+        retrieved_sections = (
+            (statute_result.raw or {}).get("retrieved_sections")
+            if not isinstance(statute_result, Exception)
+            else None
+        )
         final_response = await _verify_response_citations(
             final_response, retrieved_sections
         )
@@ -1336,8 +1354,10 @@ class LegalChatbot:
         Stream chat response token by token.
         Yields dicts: {"type": "token", "content": "..."} or {"type": "done", ...}
         """
-        # Get session history
-        messages = self._get_session_messages(session_id)
+        # Get session history — snapshot into a new list so a concurrent
+        # request for the same session_id (double-submit/retry) appending
+        # via _add_message() can't mutate the list this run is still reading.
+        messages = list(self._get_session_messages(session_id))
 
         # Add user message to history
         user_message: Message = {"role": "user", "content": message}
@@ -1406,6 +1426,7 @@ class LegalChatbot:
 
         accumulated = ""
         stopped = False
+        superseded = False
         try:
             # Yield tokens as they arrive
             while True:
@@ -1429,6 +1450,12 @@ class LegalChatbot:
         finally:
             if self._active_stream_tasks.get(session_id) is task:
                 self._active_stream_tasks.pop(session_id, None)
+            else:
+                # A newer stream_chat() call for this session_id superseded
+                # us (and cancelled us) before we finished — don't let our
+                # stale partial response land in history after the newer,
+                # already-completed turn.
+                superseded = True
 
         # If no tokens were streamed (non-LLM path), yield full response
         if not tokens_streamed and result.get("response"):
@@ -1436,7 +1463,7 @@ class LegalChatbot:
 
         # Add assistant response (or partial, if stopped) to session history
         response_text = result.get("response", "") or accumulated
-        if response_text:
+        if response_text and not superseded:
             assistant_message: Message = {
                 "role": "assistant",
                 "content": response_text,
@@ -1495,8 +1522,10 @@ class LegalChatbot:
         Returns:
             Dict containing response and any additional data
         """
-        # Get session history
-        messages = self._get_session_messages(session_id)
+        # Get session history — snapshot into a new list so a concurrent
+        # request for the same session_id can't mutate the list this run
+        # is still reading (see stream_chat for the same fix).
+        messages = list(self._get_session_messages(session_id))
 
         # Add user message to history
         user_message: Message = {"role": "user", "content": message}

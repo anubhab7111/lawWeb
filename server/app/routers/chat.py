@@ -323,13 +323,24 @@ class StopStreamRequest(BaseModel):
 
 
 @router.post("/stream/stop")
-async def stop_stream(request: StopStreamRequest):
+async def stop_stream(
+    request: StopStreamRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
     """
     Stop button: cancels an in-flight /stream generation for this session.
     Closing the client's fetch/EventSource alone would not do this — the
     handler runs as a detached asyncio task so it keeps generating (and
     burning LLM compute) even after the HTTP response is abandoned.
     """
+    chat_session = session.get(ChatSession, request.session_id)
+    if chat_session is not None and (user is None or chat_session.user_id != user.id):
+        # Same ownership guard as clear_session: don't let an unrelated
+        # caller who knows/guesses this session_id cancel another
+        # account's in-flight generation.
+        return {"stopped": False}
+
     stopped = get_chatbot().stop_stream(request.session_id)
     return {"stopped": stopped}
 

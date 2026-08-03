@@ -64,9 +64,23 @@ async def save_case(
     except CaseDataProviderError as e:
         raise MessageHTTPException(status_code=404, detail=str(e))
 
-    existing = session.exec(
-        select(SavedCase).where(SavedCase.user_id == current_user.id, SavedCase.cnr == record.cnr)
-    ).first()
+    if record.cnr:
+        existing = session.exec(
+            select(SavedCase).where(SavedCase.user_id == current_user.id, SavedCase.cnr == record.cnr)
+        ).first()
+    else:
+        # No CNR from the provider — cnr alone can't identify a duplicate
+        # (the DB's own partial unique index allows multiple NULL-cnr rows
+        # per user), so fall back to the court+case_number+year natural key.
+        existing = session.exec(
+            select(SavedCase).where(
+                SavedCase.user_id == current_user.id,
+                SavedCase.cnr.is_(None),
+                SavedCase.court == record.court,
+                SavedCase.case_number == record.case_number,
+                SavedCase.year == record.year,
+            )
+        ).first()
     if existing is not None:
         raise MessageHTTPException(status_code=400, detail="Case already saved")
 
