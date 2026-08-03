@@ -101,6 +101,13 @@ INTENT_REFERENCE_EXAMPLES: Dict[str, List[str]] = {
 
 TOP_K_MEAN = 3  # aggregate = mean of the top-3 example similarities
 DOCUMENT_ANALYSIS_BOOST = 0.15  # additive prior on document_analysis when has_document
+DOCUMENT_ANALYSIS_ABSENCE_PENALTY = 0.05  # symmetric prior: no document attached
+# makes "please check/review this" phrasing an unlikely read, since there's
+# nothing to check. Without this, document_analysis's reference set (all
+# short imperative sentences: "Check this document...", "Please review...")
+# spuriously wins thin-signal, has_document=False queries that share that
+# imperative *structure* without the semantic content -- e.g. "where is my
+# bike" edges out non_legal by a hair (0.0012) with no penalty applied.
 AMBIGUITY_MARGIN = 0.03  # top-vs-runner-up margin below which routing is ambiguous
 MIN_CONFIDENT_SCORE = 0.35  # top score below this is ambiguous regardless of margin
 SECONDARY_INTENT_MARGIN = 0.05  # runner-ups within this of top score -> secondary_intents
@@ -185,6 +192,8 @@ async def classify_intent_embedding(
     }
     if has_document:
         scores["document_analysis"] += DOCUMENT_ANALYSIS_BOOST
+    else:
+        scores["document_analysis"] -= DOCUMENT_ANALYSIS_ABSENCE_PENALTY
 
     ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
     top_intent, top_score = ranked[0]
