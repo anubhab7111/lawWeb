@@ -1385,6 +1385,7 @@ class LegalChatbot:
         self.graph = workflow.compile()
         self._sessions: Dict[str, List[Message]] = {}
         self._session_last_access: Dict[str, float] = {}
+        self._active_stream_tasks: Dict[str, asyncio.Task] = {}
 
     def _evict_stale_sessions(self):
         """Drop sessions idle beyond the TTL and cap the total session count."""
@@ -1497,30 +1498,54 @@ class LegalChatbot:
                 await queue.put(None)  # Signal completion
 
         task = asyncio.create_task(run_handler())
+        self._active_stream_tasks[session_id] = task
 
-        # Yield tokens as they arrive
-        while True:
-            chunk = await queue.get()
-            if chunk is None:
-                break
-            tokens_streamed = True
-            yield {"type": "token", "content": chunk}
+        accumulated = ""
+        stopped = False
+        try:
+            # Yield tokens as they arrive
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                tokens_streamed = True
+                accumulated += chunk
+                yield {"type": "token", "content": chunk}
 
-        # Wait for handler to complete and get result
-        result = await task
+            # Wait for handler to complete and get result
+            try:
+                result = await task
+            except asyncio.CancelledError:
+                # stop_stream() cancelled the handler mid-generation — the
+                # tokens already yielded above are everything the user saw,
+                # so save that partial text as the assistant turn instead of
+                # dropping it (keeps conversation context coherent).
+                stopped = True
+                result = {"intent": intent, "response": accumulated}
+        finally:
+            if self._active_stream_tasks.get(session_id) is task:
+                self._active_stream_tasks.pop(session_id, None)
 
         # If no tokens were streamed (non-LLM path), yield full response
         if not tokens_streamed and result.get("response"):
             yield {"type": "token", "content": result["response"]}
 
-        # Add assistant response to session history
-        response_text = result.get("response", "")
+        # Add assistant response (or partial, if stopped) to session history
+        response_text = result.get("response", "") or accumulated
         if response_text:
             assistant_message: Message = {
                 "role": "assistant",
                 "content": response_text,
             }
             self._add_message(session_id, assistant_message)
+
+        if stopped:
+            yield {
+                "type": "stopped",
+                "session_id": session_id,
+                "intent": result.get("intent") or intent,
+            }
+            return
 
         # Yield completion event with metadata
         yield {
@@ -1532,6 +1557,18 @@ class LegalChatbot:
             "document_validation": result.get("document_validation"),
             "crime_report": result.get("crime_report"),
         }
+
+    def stop_stream(self, session_id: str) -> bool:
+        """Cancel an in-flight stream_chat() generation for this session, if
+        any. Called from the /api/chat/stream/stop endpoint (the Stop button)
+        rather than relying on HTTP disconnect detection, since the handler
+        task is a detached asyncio task that a closed response body alone
+        would not cancel."""
+        task = self._active_stream_tasks.get(session_id)
+        if task is not None and not task.done():
+            task.cancel()
+            return True
+        return False
 
     async def chat(
         self,

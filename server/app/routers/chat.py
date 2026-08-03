@@ -172,6 +172,22 @@ async def chat_stream(request: ChatRequest):
     )
 
 
+class StopStreamRequest(BaseModel):
+    session_id: str = Field(..., description="Session whose in-flight stream to cancel")
+
+
+@router.post("/stream/stop")
+async def stop_stream(request: StopStreamRequest):
+    """
+    Stop button: cancels an in-flight /stream generation for this session.
+    Closing the client's fetch/EventSource alone would not do this — the
+    handler runs as a detached asyncio task so it keeps generating (and
+    burning LLM compute) even after the HTTP response is abandoned.
+    """
+    stopped = get_chatbot().stop_stream(request.session_id)
+    return {"stopped": stopped}
+
+
 @router.post("/upload", response_model=ChatResponse)
 async def chat_with_document(
     file: UploadFile = File(
