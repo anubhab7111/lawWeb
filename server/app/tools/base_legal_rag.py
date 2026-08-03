@@ -768,16 +768,34 @@ class BaseLegalRAGSystem(ABC):
     # ── Private: Vector Store Lifecycle ────────────────────────
 
     async def _should_rebuild(self) -> bool:
-        """True if the index is absent, stale, or the source PDFs changed."""
+        """True if the index is absent, stale, or the source PDFs changed.
+
+        Staleness is decided by a (relative_path -> size) fingerprint stored
+        in meta.pkl, not filesystem mtimes: a fresh `git checkout`/clone/
+        worktree resets every file's mtime to checkout time even when its
+        content is unchanged, which would otherwise force a full re-embed
+        on every environment that just checked the repo out.
+        """
         if not self._faiss_dir.exists() or not self._meta_path.exists():
             return True
         if not self._cache_path.exists():
             return True
-        meta_mtime = self._meta_path.stat().st_mtime
-        for pdf in self._bare_acts_dir.rglob("*.pdf"):
-            if pdf.stat().st_mtime > meta_mtime:
-                return True
-        return False
+        try:
+            with open(self._meta_path, "rb") as f:
+                meta = pickle.load(f)
+        except Exception:
+            return True
+        stored_fingerprint = meta.get("pdf_fingerprint")
+        if stored_fingerprint is None:
+            return True  # meta.pkl predates fingerprinting — rebuild once
+        return stored_fingerprint != self._current_pdf_fingerprint()
+
+    def _current_pdf_fingerprint(self) -> Dict[str, int]:
+        """(relative_path -> byte size) for every source PDF, cheap to compute."""
+        return {
+            str(p.relative_to(self._bare_acts_dir)): p.stat().st_size
+            for p in self._bare_acts_dir.rglob("*.pdf")
+        }
 
     def _collect_pdf_sources(self) -> List[Tuple[Path, str, List[str]]]:
         """
@@ -979,7 +997,13 @@ class BaseLegalRAGSystem(ABC):
             lambda: self.vector_store.save_local(str(self._faiss_dir)),
         )
         with open(self._meta_path, "wb") as f:
-            pickle.dump({"domain": self.domain_name}, f)
+            pickle.dump(
+                {
+                    "domain": self.domain_name,
+                    "pdf_fingerprint": self._current_pdf_fingerprint(),
+                },
+                f,
+            )
         print(f"[{self.domain_name}] FAISS index saved to {self._faiss_dir}")
 
     async def _load_vectorstore(self):

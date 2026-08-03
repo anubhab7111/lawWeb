@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -88,13 +89,29 @@ class CaseLawRAGSystem:
                 return False
 
     async def _should_rebuild(self) -> bool:
+        """True if the index is absent or the source case JSON changed.
+
+        Fingerprint-based (path -> size), not mtime-based: a fresh
+        checkout/worktree resets file mtimes to checkout time even when
+        content is unchanged, which would otherwise force a spurious
+        full re-embed.
+        """
         meta_path = FAISS_DIR / "meta.pkl"
         if not FAISS_DIR.exists() or not meta_path.exists():
             return True
-        meta_mtime = meta_path.stat().st_mtime
-        return any(
-            p.stat().st_mtime > meta_mtime for p in CASE_LAW_DIR.glob("*.json")
-        )
+        try:
+            with open(meta_path, "rb") as f:
+                meta = pickle.load(f)
+        except Exception:
+            return True
+        stored_fingerprint = meta.get("case_fingerprint")
+        if stored_fingerprint is None:
+            return True  # meta.pkl predates fingerprinting — rebuild once
+        return stored_fingerprint != self._current_case_fingerprint()
+
+    @staticmethod
+    def _current_case_fingerprint() -> Dict[str, int]:
+        return {p.name: p.stat().st_size for p in CASE_LAW_DIR.glob("*.json")}
 
     async def _build_vectorstore(self):
         from langchain_community.vectorstores import FAISS
@@ -152,10 +169,14 @@ class CaseLawRAGSystem:
         await loop.run_in_executor(
             None, lambda: self.vector_store.save_local(str(FAISS_DIR))
         )
-        import pickle
-
         with open(FAISS_DIR / "meta.pkl", "wb") as f:
-            pickle.dump({"n_cases": len(case_files)}, f)
+            pickle.dump(
+                {
+                    "n_cases": len(case_files),
+                    "case_fingerprint": self._current_case_fingerprint(),
+                },
+                f,
+            )
         print(f"[case_law] Vector store built and saved ({len(case_files)} cases).")
 
     def _save_chunk_cache(self):

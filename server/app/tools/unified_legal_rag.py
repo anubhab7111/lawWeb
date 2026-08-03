@@ -247,17 +247,16 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             for n, part in enumerate(_split_long_text(text), 1)
         ]
 
-    async def _should_rebuild(self) -> bool:
-        if await super()._should_rebuild():
-            return True
-        meta_mtime = self._meta_path.stat().st_mtime
+    def _current_pdf_fingerprint(self) -> Dict[str, int]:
+        fingerprint = super()._current_pdf_fingerprint()
         for domain in self.PROSE_DIRS:
             prose_dir = self.data_dir / domain
             if prose_dir.exists():
                 for pdf in prose_dir.rglob("*.pdf"):
-                    if pdf.stat().st_mtime > meta_mtime:
-                        return True
-        return False
+                    fingerprint[f"{domain}/{pdf.relative_to(prose_dir)}"] = (
+                        pdf.stat().st_size
+                    )
+        return fingerprint
 
     # ── Query-time hook ─────────────────────────────────────────
 
