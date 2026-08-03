@@ -5,17 +5,18 @@ client keeps the exact paths it used through the old Express proxy.
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.chatbot import get_chatbot
 from app.config import get_settings
-from app.db.engine import get_session
+from app.db.engine import get_engine, get_session
 from app.db.models import ChatMessage, ChatSession, MessageRole, User
 from app.deps.auth import get_current_user, get_current_user_optional
 from app.tools.crime_reporter import CRIME_TYPES
@@ -115,12 +116,30 @@ class HealthResponse(BaseModel):
 # ============================================================================
 
 
+async def _resolve_session_id(session: Session, user: Optional[User], session_id: str) -> str:
+    """If session_id belongs to a different account, mint a fresh one instead
+    of reusing it. This must run before the chatbot is ever invoked: the
+    in-memory LangGraph cache (LegalChatbot._sessions) is a single
+    process-wide dict keyed only by session_id, with no per-user isolation —
+    so silently skipping the DB write on a collision (as _persist_turn does)
+    isn't enough on its own, it would still hand one account's live
+    conversation context to whoever guessed/reused the id."""
+    if user is None:
+        return session_id
+    chat_session = session.get(ChatSession, session_id)
+    if chat_session is not None and chat_session.user_id != user.id:
+        return str(uuid.uuid4())
+    return session_id
+
+
 async def _seed_from_db_if_needed(
     session: Session, chatbot, user: Optional[User], session_id: str
 ) -> None:
     """Load prior DB history into the in-memory cache for an authenticated
     user whose session_id isn't already live in this process (e.g. after a
-    server restart)."""
+    server restart). Assumes session_id has already been through
+    _resolve_session_id, so any DB row found here is guaranteed owned by
+    `user`."""
     if user is None or chatbot.has_session(session_id):
         return
     chat_session = session.get(ChatSession, session_id)
@@ -144,9 +163,9 @@ async def _persist_turn(
     assistant_message: str,
 ) -> None:
     """No-op for guests. For authenticated users: create the chat_sessions
-    row if absent, then append both turns to chat_messages. If session_id
-    already belongs to a different user (collision/reuse across accounts),
-    silently skip persistence — the chat call itself must still succeed."""
+    row if absent, then append both turns to chat_messages. Assumes
+    session_id has already been through _resolve_session_id; the ownership
+    check below is a defensive backstop, not the primary guard."""
     if user is None or not assistant_message:
         return
 
@@ -157,18 +176,48 @@ async def _persist_turn(
     if chat_session is None:
         chat_session = ChatSession(id=session_id, user_id=user.id, title=user_message[:80])
         session.add(chat_session)
-        # Without a declared relationship() between ChatSession and
-        # ChatMessage, SQLAlchemy's unit-of-work doesn't order inserts by the
-        # plain FK column alone — flush the parent row explicitly so the
-        # chat_messages insert below doesn't violate the FK constraint.
-        session.flush()
+        try:
+            # Without a declared relationship() between ChatSession and
+            # ChatMessage, SQLAlchemy's unit-of-work doesn't order inserts by
+            # the plain FK column alone — flush the parent row explicitly so
+            # the chat_messages insert below doesn't violate the FK
+            # constraint.
+            session.flush()
+        except IntegrityError:
+            # Two concurrent first-turns for the same brand-new session_id
+            # (double submit / client retry) both pass the `chat_session is
+            # None` check above; the loser's insert hits the primary-key
+            # conflict here. Recover by rolling back and picking up the
+            # winner's row instead of surfacing a 500 for an otherwise
+            # successful chat response.
+            session.rollback()
+            chat_session = session.get(ChatSession, session_id)
+            if chat_session is None or chat_session.user_id != user.id:
+                return
 
-    session.add(ChatMessage(session_id=session_id, role=MessageRole.user, content=user_message))
+    # user/assistant messages are inserted in one transaction, and Postgres's
+    # now()/CURRENT_TIMESTAMP returns the transaction start time for every
+    # statement in it — both rows would otherwise get an identical
+    # created_at, leaving their relative order (used when reseeding history)
+    # unspecified. Set explicit, strictly-increasing timestamps instead.
+    user_turn_at = datetime.now(timezone.utc)
     session.add(
-        ChatMessage(session_id=session_id, role=MessageRole.assistant, content=assistant_message)
+        ChatMessage(
+            session_id=session_id,
+            role=MessageRole.user,
+            content=user_message,
+            created_at=user_turn_at,
+        )
+    )
+    session.add(
+        ChatMessage(
+            session_id=session_id,
+            role=MessageRole.assistant,
+            content=assistant_message,
+            created_at=user_turn_at + timedelta(microseconds=1),
+        )
     )
     chat_session.updated_at = datetime.now(timezone.utc)
-    session.add(chat_session)
     session.commit()
 
 
@@ -196,6 +245,7 @@ async def chat(
     try:
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
+        session_id = await _resolve_session_id(session, user, session_id)
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(message=request.message, session_id=session_id)
@@ -218,26 +268,37 @@ async def chat(
 async def chat_stream(
     request: ChatRequest,
     user: Optional[User] = Depends(get_current_user_optional),
-    session: Session = Depends(get_session),
 ):
     """
     Streaming chat endpoint using Server-Sent Events.
     Streams LLM response tokens as they are generated.
     """
     session_id = request.session_id or str(uuid.uuid4())
-    chatbot = get_chatbot()
-    await _seed_from_db_if_needed(session, chatbot, user, session_id)
 
     async def event_generator():
         try:
+            chatbot = get_chatbot()
+            # Short-lived DB sessions instead of a Depends(get_session) held
+            # for the whole SSE response: an LLM stream can run for minutes,
+            # and holding a pooled connection open that long risks starving
+            # every other endpoint's connection pool for the duration.
+            with Session(get_engine()) as db_session:
+                resolved_session_id = await _resolve_session_id(db_session, user, session_id)
+                await _seed_from_db_if_needed(db_session, chatbot, user, resolved_session_id)
+
             async for event in chatbot.stream_chat(
                 message=request.message,
-                session_id=session_id,
+                session_id=resolved_session_id,
             ):
                 if event.get("type") == "done":
-                    await _persist_turn(
-                        session, user, session_id, request.message, event.get("response", "")
-                    )
+                    with Session(get_engine()) as db_session:
+                        await _persist_turn(
+                            db_session,
+                            user,
+                            resolved_session_id,
+                            request.message,
+                            event.get("response", ""),
+                        )
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
@@ -314,6 +375,7 @@ async def chat_with_document(
         # Process with chatbot - pass document_type for enhanced analysis
         chatbot = get_chatbot()
         session_id = session_id or str(uuid.uuid4())
+        session_id = await _resolve_session_id(session, user, session_id)
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
@@ -357,6 +419,7 @@ async def analyze_document_text(
     try:
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
+        session_id = await _resolve_session_id(session, user, session_id)
         analyze_message = "Please analyze this document thoroughly."
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
@@ -398,6 +461,7 @@ async def validate_document_text(
     try:
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
+        session_id = await _resolve_session_id(session, user, session_id)
         validate_message = "Please validate this document for statutory compliance."
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
@@ -471,6 +535,7 @@ async def validate_document_upload(
 
         chatbot = get_chatbot()
         session_id = session_id or str(uuid.uuid4())
+        session_id = await _resolve_session_id(session, user, session_id)
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
@@ -514,6 +579,7 @@ async def get_crime_report_guidance(
     try:
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
+        session_id = await _resolve_session_id(session, user, session_id)
         crime_message = f"I need help reporting a crime: {request.description}"
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
@@ -599,14 +665,23 @@ async def clear_session(
     """Clear a chat session's history (in-memory always; DB rows too if the
     session is owned by the requesting user)."""
     try:
+        chat_session = session.get(ChatSession, session_id)
+        if chat_session is not None and (user is None or chat_session.user_id != user.id):
+            # Tied to someone else's account (or the caller isn't
+            # authenticated at all) — don't let an unrelated caller who
+            # knows/guesses this session_id wipe another account's live
+            # in-memory conversation. Report success anyway (same response
+            # shape either way) since from the caller's point of view "this
+            # session_id has no state I can see" is indistinguishable from
+            # "cleared".
+            return {"message": f"Session {session_id} cleared"}
+
         chatbot = get_chatbot()
         chatbot.clear_session(session_id)
 
-        if user is not None:
-            chat_session = session.get(ChatSession, session_id)
-            if chat_session is not None and chat_session.user_id == user.id:
-                session.delete(chat_session)  # cascades to chat_messages
-                session.commit()
+        if chat_session is not None:
+            session.delete(chat_session)  # cascades to chat_messages
+            session.commit()
 
         return {"message": f"Session {session_id} cleared"}
     except Exception as e:
@@ -620,19 +695,24 @@ async def get_session_history(
     session: Session = Depends(get_session),
 ):
     """Get the message history for a session. Returns the full DB transcript
-    for a session the current user owns; otherwise falls back to the
-    in-memory (20-message-capped) history, same as before this feature."""
+    for a session the current user owns; falls back to the in-memory
+    (20-message-capped) history only for a session_id with no DB row at all
+    (i.e. genuinely never tied to any account) — never for a session_id that
+    belongs to a different account, since _seed_from_db_if_needed may have
+    already loaded that account's real transcript into the shared in-memory
+    cache."""
     try:
-        if user is not None:
-            chat_session = session.get(ChatSession, session_id)
-            if chat_session is not None and chat_session.user_id == user.id:
-                rows = session.exec(
-                    select(ChatMessage)
-                    .where(ChatMessage.session_id == session_id)
-                    .order_by(ChatMessage.created_at)
-                ).all()
-                messages = [{"role": r.role.value, "content": r.content} for r in rows]
-                return {"session_id": session_id, "messages": messages, "count": len(messages)}
+        chat_session = session.get(ChatSession, session_id)
+        if chat_session is not None:
+            if user is None or chat_session.user_id != user.id:
+                return {"session_id": session_id, "messages": [], "count": 0}
+            rows = session.exec(
+                select(ChatMessage)
+                .where(ChatMessage.session_id == session_id)
+                .order_by(ChatMessage.created_at)
+            ).all()
+            messages = [{"role": r.role.value, "content": r.content} for r in rows]
+            return {"session_id": session_id, "messages": messages, "count": len(messages)}
 
         chatbot = get_chatbot()
         history = chatbot.get_session_history(session_id)
