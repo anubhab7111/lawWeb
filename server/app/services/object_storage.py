@@ -25,7 +25,7 @@ class ObjectStorage(ABC):
     def upload_object(self, key: str, data: bytes, content_type: str) -> None: ...
 
     @abstractmethod
-    def get_download_url(self, key: str, expires_in: int = 3600) -> str: ...
+    def get_download_url(self, key: str, document_id: str, expires_in: int = 3600) -> str: ...
 
     @abstractmethod
     def delete_object(self, key: str) -> None: ...
@@ -54,7 +54,7 @@ class R2ObjectStorage(ObjectStorage):
     def upload_object(self, key: str, data: bytes, content_type: str) -> None:
         self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
 
-    def get_download_url(self, key: str, expires_in: int = 3600) -> str:
+    def get_download_url(self, key: str, document_id: str, expires_in: int = 3600) -> str:
         return self._client.generate_presigned_url(
             "get_object",
             Params={"Bucket": self._bucket, "Key": key},
@@ -92,11 +92,13 @@ class LocalDiskObjectStorage(ObjectStorage):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
-    def get_download_url(self, key: str, expires_in: int = 3600) -> str:
+    def get_download_url(self, key: str, document_id: str, expires_in: int = 3600) -> str:
         # No real presigned-URL story for local disk; the vault router
-        # serves this key directly via GET /api/vault/documents/{id}/download
-        # in dev mode instead of redirecting to it.
-        return f"/api/vault/documents/local-download/{key}"
+        # serves this by document_id (not the raw key) via
+        # GET /api/vault/documents/local-download/{document_id} in dev mode,
+        # so the download endpoint can re-check ownership/sharing before
+        # reading the file from disk.
+        return f"/api/vault/documents/local-download/{document_id}"
 
     def delete_object(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)

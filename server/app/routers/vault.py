@@ -157,20 +157,27 @@ def get_document(
     storage = get_object_storage()
     return {
         **document.to_dict(),
-        "downloadUrl": storage.get_download_url(document.object_key),
+        "downloadUrl": storage.get_download_url(document.object_key, document.id),
     }
 
 
-@router.get("/documents/local-download/{key:path}")
-def local_download(key: str, current_user: User = Depends(get_current_user)):
+@router.get("/documents/local-download/{document_id}")
+def local_download(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
     """Dev-only: serves files from the local-disk storage fallback. Not used
     when R2 is configured (get_download_url() returns a real presigned URL
-    instead of this path)."""
+    instead of this path). Takes a document_id (not the raw storage key) so
+    the same ownership/share check as every other document endpoint applies
+    before any bytes are served."""
     storage = get_object_storage()
     if not isinstance(storage, LocalDiskObjectStorage):
         raise MessageHTTPException(status_code=404, detail="Not found")
+    document = _get_accessible_document(session, document_id, current_user)
     try:
-        data = storage.read_object(key)
+        data = storage.read_object(document.object_key)
     except (FileNotFoundError, ValueError):
         # ValueError == the key escaped LOCAL_VAULT_DIR (path-traversal attempt).
         raise MessageHTTPException(status_code=404, detail="Not found")
@@ -233,6 +240,10 @@ def share_document(
     document = session.get(VaultDocument, document_id)
     if document is None or document.user_id != current_user.id:
         raise MessageHTTPException(status_code=404, detail="Document not found")
+
+    target_user = session.get(User, body.sharedWithUserId)
+    if target_user is None:
+        raise MessageHTTPException(status_code=404, detail="User not found")
 
     permission = VaultDocumentPermission(
         vault_document_id=document_id,

@@ -154,11 +154,24 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
 
       try {
         if (upload) {
-          const data = await uploadDocumentForAnalysis(upload, text || "Please analyze this document", sessionId);
-          if (data.session_id) setSessionId(data.session_id);
-          setMessages((m) => m.map((msg) => msg.id === botId ? {
-            ...msg, streaming: false, content: data.response || "", meta: data as StreamEvent,
-          } : msg));
+          const controller = new AbortController();
+          abortRef.current = controller;
+          try {
+            const data = await uploadDocumentForAnalysis(
+              upload,
+              text || "Please analyze this document",
+              sessionId,
+              controller.signal
+            );
+            if (data.session_id) setSessionId(data.session_id);
+            setMessages((m) => m.map((msg) => msg.id === botId && !msg.stopped ? {
+              ...msg, streaming: false, content: data.response || "", meta: data as StreamEvent,
+            } : msg));
+          } catch (e: any) {
+            if (e?.name !== "AbortError") throw e;
+            // stopGenerating() already marked this message stopped; the
+            // request was cancelled client-side, nothing more to update.
+          }
         } else {
           // Known upfront (not just learned from the "done" event) so the
           // Stop button can cancel the server-side generation even if the

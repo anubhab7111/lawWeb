@@ -168,7 +168,8 @@ export async function stopChatStream(sessionId: string): Promise<void> {
 export async function uploadDocumentForAnalysis(
     file: File,
     message?: string,
-    sessionId?: string
+    sessionId?: string,
+    signal?: AbortSignal
 ): Promise<ChatResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -181,6 +182,7 @@ export async function uploadDocumentForAnalysis(
             ...getAuthHeaders(),
         },
         body: formData,
+        signal,
     });
     if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Failed to upload document' }));
