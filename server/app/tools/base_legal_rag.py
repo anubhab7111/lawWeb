@@ -161,6 +161,17 @@ def _is_noise_match(title: str, raw: str) -> bool:
     return bool(_NOISE_RE.search(title) or _NOISE_RE.search(raw[:250]))
 
 
+def _make_bge_embeddings(device: str) -> Any:
+    return HuggingFaceBgeEmbeddings(
+        model_name="BAAI/bge-large-en-v1.5",
+        model_kwargs={"device": device},
+        # Small batch_size: a few thousand legal-section chunks at
+        # once can OOM a consumer GPU (e.g. 4GB VRAM) if encoded
+        # in one big batch.
+        encode_kwargs={"normalize_embeddings": True, "batch_size": 16},
+    )
+
+
 _shared_embeddings: Optional[Any] = None
 _shared_embeddings_lock = asyncio.Lock()
 
@@ -185,7 +196,9 @@ async def _get_shared_embeddings() -> Any:
                 # auto: only claim the GPU when it's big enough to also leave
                 # Ollama room for LLM layer offload. On a ~4GB card, giving
                 # the VRAM to the LLM instead cuts answer latency far more
-                # than GPU query-embedding saves.
+                # than GPU query-embedding saves. (Bulk index *building* is a
+                # different workload — see build_offline() below, which runs
+                # before the LLM claims any VRAM and forces GPU regardless.)
                 device = "cpu"
                 try:
                     import torch
@@ -197,14 +210,7 @@ async def _get_shared_embeddings() -> Any:
                 except ImportError:
                     pass
             print(f"[rag] Embeddings device: {device}")
-            _shared_embeddings = HuggingFaceBgeEmbeddings(
-                model_name="BAAI/bge-large-en-v1.5",
-                model_kwargs={"device": device},
-                # Small batch_size: a few thousand legal-section chunks at
-                # once can OOM a consumer GPU (e.g. 4GB VRAM) if encoded
-                # in one big batch.
-                encode_kwargs={"normalize_embeddings": True, "batch_size": 16},
-            )
+            _shared_embeddings = _make_bge_embeddings(device)
         return _shared_embeddings
 
 
@@ -407,6 +413,46 @@ class BaseLegalRAGSystem(ABC):
 
                 traceback.print_exc()
                 return False
+
+    async def build_offline(self, device: str) -> bool:
+        """
+        Force-build (or confirm up-to-date) this domain's index using an
+        explicit, throwaway embeddings instance — independent of the shared
+        query-time singleton (`_get_shared_embeddings`).
+
+        Used by the offline-indexing startup step: it's called with
+        device="cuda" while the LLM hasn't claimed any VRAM yet, then the
+        embeddings instance is dropped and GPU memory freed before the
+        server starts serving, so Ollama gets the full card afterward.
+        Query-time embedding later still goes through the normal shared
+        singleton (CPU on small GPUs, per _get_shared_embeddings), unaffected
+        by whatever happened here.
+        """
+        if not HAS_RAG_DEPS:
+            return False
+        if not await self._should_rebuild():
+            print(f"[{self.domain_name}] Index already up to date — skipping build.")
+            return True
+        embeddings = _make_bge_embeddings(device)
+        self.embeddings = embeddings
+        try:
+            print(f"[{self.domain_name}] Offline build on {device} …")
+            await self._build_vectorstore()
+            return self.vector_store is not None
+        finally:
+            self.embeddings = None
+            self.vector_store = None
+            del embeddings
+            import gc
+
+            gc.collect()
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
 
     async def retrieve(
         self,
