@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 
 from app.db.engine import get_engine
@@ -31,7 +32,10 @@ async def search(
     try:
         parsed_date = date.fromisoformat(list_date)
     except ValueError:
-        return {"message": "Invalid date, expected YYYY-MM-DD"}
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Invalid date, expected YYYY-MM-DD"},
+        )
 
     with Session(get_engine()) as session:
         cached = session.exec(

@@ -1498,6 +1498,12 @@ class LegalChatbot:
                 await queue.put(None)  # Signal completion
 
         task = asyncio.create_task(run_handler())
+        # A new stream supersedes any still-running one for this session — cancel
+        # the old task first so it isn't orphaned (unstoppable, still burning
+        # LLM compute) by the dict overwrite below.
+        previous = self._active_stream_tasks.get(session_id)
+        if previous is not None and not previous.done():
+            previous.cancel()
         self._active_stream_tasks[session_id] = task
 
         accumulated = ""

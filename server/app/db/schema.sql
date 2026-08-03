@@ -176,6 +176,7 @@ CREATE TABLE "notifications" (
     "title" TEXT NOT NULL,
     "body" TEXT NOT NULL,
     "related_case_id" TEXT,
+    "related_case_event_id" TEXT,
     "channel" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "scheduled_for" TIMESTAMPTZ(6),
@@ -185,7 +186,8 @@ CREATE TABLE "notifications" (
 
     CONSTRAINT "notifications_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "notifications_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE,
-    CONSTRAINT "notifications_related_case_id_fkey" FOREIGN KEY ("related_case_id") REFERENCES "saved_cases"("id") ON DELETE SET NULL
+    CONSTRAINT "notifications_related_case_id_fkey" FOREIGN KEY ("related_case_id") REFERENCES "saved_cases"("id") ON DELETE SET NULL,
+    CONSTRAINT "notifications_related_case_event_id_fkey" FOREIGN KEY ("related_case_event_id") REFERENCES "case_events"("id") ON DELETE SET NULL
 );
 
 CREATE INDEX "notifications_user_id_created_at_idx" ON "notifications"("user_id", "created_at");

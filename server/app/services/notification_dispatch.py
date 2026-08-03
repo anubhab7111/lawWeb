@@ -38,6 +38,7 @@ def send_notification(
     title: str,
     body: str,
     related_case_id: Optional[str] = None,
+    related_case_event_id: Optional[str] = None,
     channels: Optional[List[str]] = None,
 ) -> List[Notification]:
     """Writes one `notifications` row per channel, then dispatches
@@ -68,6 +69,7 @@ def send_notification(
             title=title,
             body=body,
             related_case_id=related_case_id,
+            related_case_event_id=related_case_event_id,
             channel=channel,
             status="pending",
         )
@@ -91,7 +93,7 @@ def send_notification(
     return created
 
 
-async def send_notification_async(session: Session, **kwargs) -> List[Notification]:
+async def send_notification_async(**kwargs) -> List[Notification]:
     """Awaitable wrapper around send_notification() for callers running on
     the shared FastAPI/APScheduler event loop (app/jobs/_case_sync.py).
     send_email() is a blocking smtplib call with a 10s timeout — calling
@@ -99,6 +101,17 @@ async def send_notification_async(session: Session, **kwargs) -> List[Notificati
     every concurrent HTTP request for up to that long once SMTP is actually
     configured. Sync request handlers (e.g. app/routers/vault.py's
     share_document) can keep calling send_notification() directly — FastAPI
-    already runs those in its own thread pool."""
+    already runs those in its own thread pool.
+
+    Opens its OWN Session inside the worker thread rather than reusing the
+    caller's: a SQLAlchemy Session isn't thread-safe, and the caller's session
+    lives on the event-loop thread. Notifications are best-effort and
+    self-committing, so a separate transaction is correct here."""
+    from app.db.engine import get_engine
+
+    def _run() -> List[Notification]:
+        with Session(get_engine()) as session:
+            return send_notification(session, **kwargs)
+
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, lambda: send_notification(session, **kwargs))
+    return await loop.run_in_executor(None, _run)

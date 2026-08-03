@@ -4,6 +4,7 @@ ported from the old Express server/src/routes/bookings.ts.
 Credentials come strictly from settings (.env) — no hardcoded fallbacks.
 """
 
+import math
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Optional
@@ -16,7 +17,9 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.db.engine import get_session
-from app.db.models import Booking, BookingStatus, CalendarEvent, Lawyer
+from app.db.models import Booking, BookingStatus, CalendarEvent, Lawyer, User
+from app.deps.auth import get_current_user
+from app.deps.errors import MessageHTTPException
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
@@ -56,10 +59,19 @@ def client_token():
 
 
 @router.post("/checkout")
-def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
-    """Charge the nonce received from the client and record the booking."""
+def checkout(
+    body: CheckoutRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Charge the nonce received from the client and record the booking.
+
+    The booking is always attributed to the authenticated caller — body.userId
+    is ignored — so a caller can't create/charge bookings on someone else's
+    behalf. The amount is recomputed server-side (see below) rather than trusted.
+    """
     # ── Validate BEFORE charging so a bad request never captures money ──
-    if not body.amount or not body.paymentMethodNonce or not body.userId or not body.lawyerId:
+    if not body.amount or not body.paymentMethodNonce or not body.lawyerId:
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Missing required checkout fields"},
@@ -72,10 +84,23 @@ def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
             content={"status": "error", "message": "Invalid amount"},
         )
     # Catch the most common cause of a post-charge FK failure before charging.
-    if session.get(Lawyer, body.lawyerId) is None:
+    lawyer = session.get(Lawyer, body.lawyerId)
+    if lawyer is None:
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Lawyer not found"},
+        )
+
+    # The client charges hourly_rate + a 5% platform fee (client Payment.tsx).
+    # Recompute the total here and reject any mismatch so the client can't
+    # dictate the price. Mirror JS Math.round (round-half-up) with floor(x+0.5)
+    # rather than Python's banker's rounding, or an even .5 fee would diverge.
+    fee = math.floor(lawyer.hourly_rate * 0.05 + 0.5)
+    expected_total = Decimal(lawyer.hourly_rate + fee)
+    if amount != expected_total:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Amount does not match the lawyer's rate"},
         )
 
     # ── Charge (own error scope: a failure here means no money captured) ──
@@ -107,7 +132,7 @@ def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
     transaction_id = result.transaction.id
     try:
         booking = Booking(
-            user_id=body.userId,
+            user_id=current_user.id,
             lawyer_id=body.lawyerId,
             amount=amount,
             status=BookingStatus.confirmed,
@@ -115,7 +140,7 @@ def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
         )
         session.add(booking)
         session.commit()
-        print(f"✅ Success: Payment settled for User {body.userId}")
+        print(f"✅ Success: Payment settled for User {current_user.id}")
 
         # Personal Legal Calendar: auto-add a "lawyer meeting" event for this
         # booking. Best-effort and isolated from the payment/booking result
@@ -151,7 +176,7 @@ def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
         # this can be reconciled manually against Braintree settlements.
         print(
             f"⚠️ RECONCILIATION NEEDED: charged transaction {transaction_id} "
-            f"for user {body.userId} / lawyer {body.lawyerId} but booking write "
+            f"for user {current_user.id} / lawyer {body.lawyerId} but booking write "
             f"failed: {e}"
         )
         return {
@@ -162,8 +187,15 @@ def checkout(body: CheckoutRequest, session: Session = Depends(get_session)):
 
 
 @router.get("/user-bookings/{user_id}")
-def user_bookings(user_id: str, session: Session = Depends(get_session)):
-    """Confirmed appointments for a user, newest first."""
+def user_bookings(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Confirmed appointments for a user, newest first. Scoped to the caller —
+    the path id must match the authenticated user (no cross-user reads)."""
+    if user_id != current_user.id:
+        raise MessageHTTPException(status_code=404, detail="Not found")
     try:
         bookings = session.exec(
             select(Booking)

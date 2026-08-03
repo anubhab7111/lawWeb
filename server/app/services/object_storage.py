@@ -77,9 +77,15 @@ class LocalDiskObjectStorage(ObjectStorage):
         LOCAL_VAULT_DIR.mkdir(parents=True, exist_ok=True)
 
     def _path(self, key: str) -> Path:
-        # key is always a server-generated UUID-based path (see vault.py) —
-        # never derived from user-supplied filenames — so no traversal risk.
-        return LOCAL_VAULT_DIR / key
+        # The key embeds the (server-sanitized) upload filename, and
+        # local_download takes the key straight from the URL, so containment
+        # must be enforced here rather than assumed: resolve the joined path
+        # and reject anything that escapes LOCAL_VAULT_DIR via `..`.
+        base = LOCAL_VAULT_DIR.resolve()
+        path = (base / key).resolve()
+        if not path.is_relative_to(base):
+            raise ValueError("invalid object key")
+        return path
 
     def upload_object(self, key: str, data: bytes, content_type: str) -> None:
         path = self._path(key)
