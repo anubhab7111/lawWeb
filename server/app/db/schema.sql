@@ -249,6 +249,38 @@ CREATE TABLE "vault_document_permissions" (
 );
 
 -- ============================================================================
+-- Chat History
+-- ============================================================================
+
+CREATE TYPE "MessageRole" AS ENUM ('user', 'assistant', 'system');
+
+CREATE TABLE "chat_sessions" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "title" TEXT,
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "chat_sessions_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "chat_sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE
+);
+
+CREATE INDEX "chat_sessions_user_id_updated_at_idx" ON "chat_sessions"("user_id", "updated_at" DESC);
+
+CREATE TABLE "chat_messages" (
+    "id" TEXT NOT NULL,
+    "session_id" TEXT NOT NULL,
+    "role" "MessageRole" NOT NULL,
+    "content" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "chat_messages_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "chat_messages_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "chat_sessions"("id") ON DELETE CASCADE
+);
+
+CREATE INDEX "chat_messages_session_id_created_at_idx" ON "chat_messages"("session_id", "created_at");
+
+-- ============================================================================
 -- Personal Legal Calendar (Phase 4)
 -- ============================================================================
 

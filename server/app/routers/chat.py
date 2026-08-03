@@ -5,16 +5,19 @@ client keeps the exact paths it used through the old Express proxy.
 
 import json
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.chatbot import get_chatbot
 from app.config import get_settings
 from app.db.engine import get_session
+from app.db.models import ChatMessage, ChatSession, MessageRole, User
+from app.deps.auth import get_current_user, get_current_user_optional
 from app.tools.crime_reporter import CRIME_TYPES
 from app.tools.document_extractor import get_document_extractor
 from app.tools.lawyer_recommender import (
@@ -107,6 +110,69 @@ class HealthResponse(BaseModel):
 
 
 # ============================================================================
+# DB-backed history (logged-in users only; guests stay in-memory-only, see
+# app.chatbot.LegalChatbot._sessions)
+# ============================================================================
+
+
+async def _seed_from_db_if_needed(
+    session: Session, chatbot, user: Optional[User], session_id: str
+) -> None:
+    """Load prior DB history into the in-memory cache for an authenticated
+    user whose session_id isn't already live in this process (e.g. after a
+    server restart)."""
+    if user is None or chatbot.has_session(session_id):
+        return
+    chat_session = session.get(ChatSession, session_id)
+    if chat_session is None or chat_session.user_id != user.id:
+        return
+    rows = session.exec(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at)
+    ).all()
+    chatbot.seed_session(
+        session_id, [{"role": r.role.value, "content": r.content} for r in rows]
+    )
+
+
+async def _persist_turn(
+    session: Session,
+    user: Optional[User],
+    session_id: str,
+    user_message: str,
+    assistant_message: str,
+) -> None:
+    """No-op for guests. For authenticated users: create the chat_sessions
+    row if absent, then append both turns to chat_messages. If session_id
+    already belongs to a different user (collision/reuse across accounts),
+    silently skip persistence — the chat call itself must still succeed."""
+    if user is None or not assistant_message:
+        return
+
+    chat_session = session.get(ChatSession, session_id)
+    if chat_session is not None and chat_session.user_id != user.id:
+        return
+
+    if chat_session is None:
+        chat_session = ChatSession(id=session_id, user_id=user.id, title=user_message[:80])
+        session.add(chat_session)
+        # Without a declared relationship() between ChatSession and
+        # ChatMessage, SQLAlchemy's unit-of-work doesn't order inserts by the
+        # plain FK column alone — flush the parent row explicitly so the
+        # chat_messages insert below doesn't violate the FK constraint.
+        session.flush()
+
+    session.add(ChatMessage(session_id=session_id, role=MessageRole.user, content=user_message))
+    session.add(
+        ChatMessage(session_id=session_id, role=MessageRole.assistant, content=assistant_message)
+    )
+    chat_session.updated_at = datetime.now(timezone.utc)
+    session.add(chat_session)
+    session.commit()
+
+
+# ============================================================================
 # Endpoints
 # ============================================================================
 
@@ -118,7 +184,11 @@ async def health_check():
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
     """
     Main chat endpoint.
     Processes user messages and returns AI responses.
@@ -127,7 +197,9 @@ async def chat(request: ChatRequest):
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
 
+        await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(message=request.message, session_id=session_id)
+        await _persist_turn(session, user, session_id, request.message, result.get("response", ""))
 
         return ChatResponse(
             response=result["response"],
@@ -143,20 +215,29 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(
+    request: ChatRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
     """
     Streaming chat endpoint using Server-Sent Events.
     Streams LLM response tokens as they are generated.
     """
     session_id = request.session_id or str(uuid.uuid4())
+    chatbot = get_chatbot()
+    await _seed_from_db_if_needed(session, chatbot, user, session_id)
 
     async def event_generator():
         try:
-            chatbot = get_chatbot()
             async for event in chatbot.stream_chat(
                 message=request.message,
                 session_id=session_id,
             ):
+                if event.get("type") == "done":
+                    await _persist_turn(
+                        session, user, session_id, request.message, event.get("response", "")
+                    )
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
@@ -197,6 +278,8 @@ async def chat_with_document(
         default="Please analyze this document", description="User message"
     ),
     session_id: Optional[str] = Form(default=None, description="Session ID"),
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
 ):
     """
     Chat endpoint with document/image upload.
@@ -232,12 +315,14 @@ async def chat_with_document(
         chatbot = get_chatbot()
         session_id = session_id or str(uuid.uuid4())
 
+        await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
             message=message,
             session_id=session_id,
             document_content=document_text,
             document_type=doc_type,  # Pass document type for pipeline
         )
+        await _persist_turn(session, user, session_id, message, result.get("response", ""))
 
         return ChatResponse(
             response=result["response"],
@@ -260,7 +345,11 @@ async def chat_with_document(
 
 
 @router.post("/analyze-document", response_model=ChatResponse)
-async def analyze_document_text(request: DocumentAnalysisRequest):
+async def analyze_document_text(
+    request: DocumentAnalysisRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
     """
     Analyze document text directly without file upload.
     Useful when document text is already extracted.
@@ -268,12 +357,15 @@ async def analyze_document_text(request: DocumentAnalysisRequest):
     try:
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
+        analyze_message = "Please analyze this document thoroughly."
 
+        await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
-            message="Please analyze this document thoroughly.",
+            message=analyze_message,
             session_id=session_id,
             document_content=request.document_text,
         )
+        await _persist_turn(session, user, session_id, analyze_message, result.get("response", ""))
 
         return ChatResponse(
             response=result["response"],
@@ -289,7 +381,11 @@ async def analyze_document_text(request: DocumentAnalysisRequest):
 
 
 @router.post("/validate-document", response_model=ChatResponse)
-async def validate_document_text(request: DocumentValidationRequest):
+async def validate_document_text(
+    request: DocumentValidationRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
     """
     Validate a legal document for statutory compliance using the 3-layer pipeline.
 
@@ -302,13 +398,16 @@ async def validate_document_text(request: DocumentValidationRequest):
     try:
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
+        validate_message = "Please validate this document for statutory compliance."
 
+        await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
-            message="Please validate this document for statutory compliance.",
+            message=validate_message,
             session_id=session_id,
             document_content=request.document_text,
             document_type="text",
         )
+        await _persist_turn(session, user, session_id, validate_message, result.get("response", ""))
 
         return ChatResponse(
             response=result["response"],
@@ -333,6 +432,8 @@ async def validate_document_upload(
         description="User message",
     ),
     session_id: Optional[str] = Form(default=None, description="Session ID"),
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
 ):
     """
     Upload a document for statutory compliance validation.
@@ -371,12 +472,14 @@ async def validate_document_upload(
         chatbot = get_chatbot()
         session_id = session_id or str(uuid.uuid4())
 
+        await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
             message=validation_message,
             session_id=session_id,
             document_content=document_text,
             document_type=doc_type,
         )
+        await _persist_turn(session, user, session_id, validation_message, result.get("response", ""))
 
         return ChatResponse(
             response=result["response"],
@@ -399,7 +502,11 @@ async def validate_document_upload(
 
 
 @router.post("/crime-report", response_model=ChatResponse)
-async def get_crime_report_guidance(request: CrimeReportRequest):
+async def get_crime_report_guidance(
+    request: CrimeReportRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
     """
     Get guidance for reporting a crime.
     Returns structured steps and resources.
@@ -407,11 +514,14 @@ async def get_crime_report_guidance(request: CrimeReportRequest):
     try:
         chatbot = get_chatbot()
         session_id = request.session_id or str(uuid.uuid4())
+        crime_message = f"I need help reporting a crime: {request.description}"
 
+        await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
-            message=f"I need help reporting a crime: {request.description}",
+            message=crime_message,
             session_id=session_id,
         )
+        await _persist_turn(session, user, session_id, crime_message, result.get("response", ""))
 
         return ChatResponse(
             response=result["response"],
@@ -463,21 +573,67 @@ async def get_crime_types():
     return {"crime_types": CRIME_TYPES}
 
 
+@router.get("/sessions")
+async def list_sessions(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """List the current user's persisted chat sessions, most recent first."""
+    try:
+        rows = session.exec(
+            select(ChatSession)
+            .where(ChatSession.user_id == user.id)
+            .order_by(ChatSession.updated_at.desc())
+        ).all()
+        return {"sessions": [s.to_dict() for s in rows], "count": len(rows)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing sessions: {str(e)}")
+
+
 @router.delete("/session/{session_id}")
-async def clear_session(session_id: str):
-    """Clear a chat session's history."""
+async def clear_session(
+    session_id: str,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
+    """Clear a chat session's history (in-memory always; DB rows too if the
+    session is owned by the requesting user)."""
     try:
         chatbot = get_chatbot()
         chatbot.clear_session(session_id)
+
+        if user is not None:
+            chat_session = session.get(ChatSession, session_id)
+            if chat_session is not None and chat_session.user_id == user.id:
+                session.delete(chat_session)  # cascades to chat_messages
+                session.commit()
+
         return {"message": f"Session {session_id} cleared"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error clearing session: {str(e)}")
 
 
 @router.get("/session/{session_id}/history")
-async def get_session_history(session_id: str):
-    """Get the message history for a session."""
+async def get_session_history(
+    session_id: str,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+):
+    """Get the message history for a session. Returns the full DB transcript
+    for a session the current user owns; otherwise falls back to the
+    in-memory (20-message-capped) history, same as before this feature."""
     try:
+        if user is not None:
+            chat_session = session.get(ChatSession, session_id)
+            if chat_session is not None and chat_session.user_id == user.id:
+                rows = session.exec(
+                    select(ChatMessage)
+                    .where(ChatMessage.session_id == session_id)
+                    .order_by(ChatMessage.created_at)
+                ).all()
+                messages = [{"role": r.role.value, "content": r.content} for r in rows]
+                return {"session_id": session_id, "messages": messages, "count": len(messages)}
+
         chatbot = get_chatbot()
         history = chatbot.get_session_history(session_id)
         return {"session_id": session_id, "messages": history, "count": len(history)}

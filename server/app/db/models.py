@@ -432,6 +432,67 @@ class VaultDocumentPermission(SQLModel, table=True):
 
 
 # ============================================================================
+# Chat History
+# ============================================================================
+
+
+class MessageRole(str, enum.Enum):
+    user = "user"
+    assistant = "assistant"
+    system = "system"
+
+
+class ChatSession(SQLModel, table=True):
+    __tablename__ = "chat_sessions"
+
+    # Caller-supplied session_id (the same id LegalChatbot's in-memory cache
+    # is keyed by, see app/chatbot.py) — not auto-generated here, so the
+    # LangGraph working-memory key and the durable row share one id.
+    id: str = Field(primary_key=True)
+    user_id: str = Field(foreign_key="users.id")
+    title: Optional[str] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "title": self.title,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ChatMessage(SQLModel, table=True):
+    __tablename__ = "chat_messages"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    session_id: str = Field(foreign_key="chat_sessions.id")
+    role: MessageRole = Field(sa_column=Column(SAEnum(MessageRole, name="MessageRole")))
+    content: str
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "sessionId": self.session_id,
+            "role": self.role.value if self.role else None,
+            "content": self.content,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
 # Personal Legal Calendar (Phase 4)
 # ============================================================================
 
