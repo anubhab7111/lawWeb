@@ -1651,6 +1651,7 @@ class LegalChatbot:
 
     def has_session(self, session_id: str) -> bool:
         """Whether session_id is already live in the in-memory cache."""
+        self._evict_stale_sessions()
         return session_id in self._sessions
 
     def seed_session(self, session_id: str, messages: List[Message]) -> None:

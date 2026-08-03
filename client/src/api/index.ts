@@ -63,6 +63,7 @@ export interface StreamEvent {
     type: 'token' | 'done' | 'error' | 'stopped';
     content?: string;
     session_id?: string;
+    response?: string;
     intent?: string;
     lawyers_found?: Array<Record<string, any>>;
     document_info?: Record<string, any>;
