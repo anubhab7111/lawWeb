@@ -97,7 +97,7 @@ async def _explain(chunk: LegalChunk) -> str:
     if cached is not None:
         return cached
 
-    from app.chatbot import get_fast_llm, invoke_llm_safely
+    from app.chatbot import get_fast_llm_prose, invoke_llm_safely, strip_reasoning_tags
 
     prompt = (
         "Explain the following statutory provision in plain, simple language "
@@ -107,8 +107,8 @@ async def _explain(chunk: LegalChunk) -> str:
         f"{chunk.text[:2000]}"
     )
     try:
-        explanation = await invoke_llm_safely(get_fast_llm(), prompt)
-        explanation = (explanation or "").strip()
+        explanation = await invoke_llm_safely(get_fast_llm_prose(), prompt)
+        explanation = strip_reasoning_tags(explanation or "")
     except Exception as e:
         print(f"[BareActExplorer] explanation LLM call failed: {e}")
         explanation = ""

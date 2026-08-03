@@ -571,6 +571,44 @@ def get_fast_llm() -> ChatOllama:
     )
 
 
+@lru_cache()
+def get_fast_llm_prose() -> ChatOllama:
+    """Same small model as get_fast_llm(), but for short natural-language
+    generation (case summaries, plain-language explanations) rather than
+    JSON classification. qwen3:4b keeps thinking even with reasoning=False
+    (verified directly against the Ollama API — `think: false` is not
+    honored by this model/build) and the thinking preamble alone commonly
+    runs 300-500 tokens before the real answer starts, so num_predict needs
+    real headroom above get_fast_llm()'s 128 or the response gets cut off
+    mid-thought before ever reaching the answer."""
+    settings = get_settings()
+    return ChatOllama(
+        model=settings.fast_llm_model,
+        temperature=0,
+        base_url=settings.ollama_base_url,
+        num_ctx=4096,
+        num_predict=900,
+        timeout=45.0,
+        reasoning=False,
+    )
+
+
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def strip_reasoning_tags(text: str) -> str:
+    """Strip a qwen3 thinking preamble from a response. Two shapes seen in
+    practice: a full <think>...</think> pair, or — what this model's chat
+    template actually produces — only the closing </think> tag, since the
+    opening tag is injected into the prompt template rather than generated
+    (confirmed against the raw Ollama API). In the latter case a naive
+    <think>...</think> regex matches nothing, so fall back to keeping only
+    what follows the last </think>."""
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[-1].strip()
+    return _THINK_TAG_RE.sub("", text).strip()
+
+
 # Context variable for streaming queue - when set, invoke_llm_safely streams tokens
 _stream_queue_var: contextvars.ContextVar[asyncio.Queue | None] = (
     contextvars.ContextVar("stream_queue", default=None)

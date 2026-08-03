@@ -261,6 +261,7 @@ CREATE TABLE "calendar_events" (
     "end_at" TIMESTAMPTZ(6),
     "related_case_id" TEXT,
     "related_booking_id" TEXT,
+    "related_case_event_id" TEXT,
     "google_calendar_event_id" TEXT,
     "outlook_event_id" TEXT,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -268,7 +269,13 @@ CREATE TABLE "calendar_events" (
     CONSTRAINT "calendar_events_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "calendar_events_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE,
     CONSTRAINT "calendar_events_related_case_id_fkey" FOREIGN KEY ("related_case_id") REFERENCES "saved_cases"("id") ON DELETE SET NULL,
-    CONSTRAINT "calendar_events_related_booking_id_fkey" FOREIGN KEY ("related_booking_id") REFERENCES "bookings"("id") ON DELETE SET NULL
+    CONSTRAINT "calendar_events_related_booking_id_fkey" FOREIGN KEY ("related_booking_id") REFERENCES "bookings"("id") ON DELETE SET NULL,
+    CONSTRAINT "calendar_events_related_case_event_id_fkey" FOREIGN KEY ("related_case_event_id") REFERENCES "case_events"("id") ON DELETE SET NULL
 );
+
+-- One calendar_events row per source case_events hearing row — lets
+-- sync_case_events() upsert instead of creating stale duplicates if a
+-- hearing's own case_event row is ever updated in place.
+CREATE UNIQUE INDEX "calendar_events_related_case_event_id_key" ON "calendar_events"("related_case_event_id") WHERE "related_case_event_id" IS NOT NULL;
 
 CREATE INDEX "calendar_events_user_id_start_at_idx" ON "calendar_events"("user_id", "start_at");

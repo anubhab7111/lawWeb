@@ -6,6 +6,7 @@ directly — see the implementation plan's Phase 2/4 for the full list of
 producers this generalizes to.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -88,3 +89,16 @@ def send_notification(
 
     session.commit()
     return created
+
+
+async def send_notification_async(session: Session, **kwargs) -> List[Notification]:
+    """Awaitable wrapper around send_notification() for callers running on
+    the shared FastAPI/APScheduler event loop (app/jobs/_case_sync.py).
+    send_email() is a blocking smtplib call with a 10s timeout — calling
+    send_notification() directly from an `async def` job body would freeze
+    every concurrent HTTP request for up to that long once SMTP is actually
+    configured. Sync request handlers (e.g. app/routers/vault.py's
+    share_document) can keep calling send_notification() directly — FastAPI
+    already runs those in its own thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: send_notification(session, **kwargs))
