@@ -25,6 +25,7 @@ from app.tools.base_legal_rag import (
     _bm25_tokenize,
     _get_shared_embeddings,
     _get_shared_reranker,
+    _make_bge_embeddings,
     _sigmoid,
     _split_long_text,
 )
@@ -87,6 +88,38 @@ class CaseLawRAGSystem:
 
                 traceback.print_exc()
                 return False
+
+    async def build_offline(self, device: str) -> bool:
+        """
+        Force-build (or confirm up-to-date) using a throwaway embeddings
+        instance independent of the shared query-time singleton. See
+        BaseLegalRAGSystem.build_offline for the full rationale — same
+        offline-indexing-then-free-GPU pattern, applied to the case-law
+        index.
+        """
+        if not await self._should_rebuild():
+            print("[case_law] Index already up to date — skipping build.")
+            return True
+        embeddings = _make_bge_embeddings(device)
+        self.embeddings = embeddings
+        try:
+            print(f"[case_law] Offline build on {device} …")
+            await self._build_vectorstore()
+            return self.vector_store is not None
+        finally:
+            self.embeddings = None
+            self.vector_store = None
+            del embeddings
+            import gc
+
+            gc.collect()
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
 
     async def _should_rebuild(self) -> bool:
         """True if the index is absent or the source case JSON changed.

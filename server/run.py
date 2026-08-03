@@ -3,13 +3,22 @@
 Run script for the legal chatbot server.
 """
 
+import asyncio
+
 import uvicorn
 from app.config import get_settings
+from app.tools.offline_index import ensure_indices_built
 
 
 def main():
     """Run the FastAPI server."""
     settings = get_settings()
+
+    # Offline indexing step: build/refresh any missing or stale RAG index
+    # with the embedding model on the GPU (safe here — Ollama hasn't loaded
+    # the LLM into VRAM yet), then free that GPU memory before the server
+    # starts. A no-op, disk-only check if every index is already current.
+    asyncio.run(ensure_indices_built())
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
