@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { View } from "../App";
 import {
   sendChatMessageStream,
+  stopChatStream,
   uploadDocumentForAnalysis,
   clearChatSession,
   type StreamEvent,
@@ -16,6 +17,7 @@ interface Message {
   meta?: StreamEvent;
   streaming?: boolean;
   error?: boolean;
+  stopped?: boolean;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -60,6 +62,8 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const streamingSessionIdRef = useRef<string | undefined>(undefined);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -93,31 +97,52 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
             ...msg, streaming: false, content: data.response || "", meta: data as StreamEvent,
           } : msg));
         } else {
+          // Known upfront (not just learned from the "done" event) so the
+          // Stop button can cancel the server-side generation even if the
+          // user clicks it before a single event has come back.
+          const activeSessionId = sessionId ?? crypto.randomUUID();
+          if (!sessionId) setSessionId(activeSessionId);
+          streamingSessionIdRef.current = activeSessionId;
+
+          const controller = new AbortController();
+          abortRef.current = controller;
+
           let acc = "";
           await sendChatMessageStream(
             text,
-            sessionId,
+            activeSessionId,
             (tok) => {
               acc += tok;
               setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: acc } : msg));
             },
             (meta) => {
               if (meta.session_id) setSessionId(meta.session_id);
-              setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, meta } : msg));
+              setMessages((m) => m.map((msg) => msg.id === botId ? {
+                ...msg, streaming: false, meta, stopped: meta.type === "stopped",
+              } : msg));
             },
             (err) => {
               setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, error: true, content: err } : msg));
             },
+            controller.signal,
           );
         }
       } catch (e: any) {
         setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, error: true, content: e.message || "Something went wrong." } : msg));
       } finally {
         setBusy(false);
+        abortRef.current = null;
+        streamingSessionIdRef.current = undefined;
       }
     },
     [busy, sessionId]
   );
+
+  const stopGenerating = useCallback(() => {
+    abortRef.current?.abort();
+    if (streamingSessionIdRef.current) stopChatStream(streamingSessionIdRef.current);
+    setMessages((m) => m.map((msg) => msg.streaming ? { ...msg, streaming: false, stopped: true } : msg));
+  }, []);
 
   // Consume a question passed in from the Home hero.
   useEffect(() => {
@@ -251,6 +276,7 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
 
                     {!m.streaming && !m.error && (
                       <div style={{ marginTop: 10, font: "400 12.5px var(--font-body)", color: "var(--muted-3)" }}>
+                        {m.stopped ? "stopped · " : ""}
                         {m.meta?.intent ? `${m.meta.intent.replace(/_/g, " ")} · ` : ""}educational information, not legal advice
                       </div>
                     )}
@@ -285,7 +311,13 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
               />
               <input ref={fileRef} type="file" hidden accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               <button type="button" onClick={() => fileRef.current?.click()} title="Attach a document" style={{ width: 34, height: 34, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-2)", cursor: "pointer", background: "none", border: "none", fontSize: 16 }}>📎</button>
-              <button type="submit" disabled={busy} className="composer-send" title="Send">{busy ? <span className="spinner" /> : "↑"}</button>
+              {busy ? (
+                <button type="button" onClick={stopGenerating} className="composer-send" title="Stop generating" style={{ background: "var(--text-strong)" }}>
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#fff" }} />
+                </button>
+              ) : (
+                <button type="submit" className="composer-send" title="Send">↑</button>
+              )}
             </form>
             <div style={{ textAlign: "center", marginTop: 10, font: "400 12px var(--font-body)", color: "var(--faint)" }}>
               Educational information, not a substitute for a lawyer

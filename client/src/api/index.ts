@@ -60,7 +60,7 @@ export async function sendChatMessage(message: string, sessionId?: string): Prom
 }
 
 export interface StreamEvent {
-    type: 'token' | 'done' | 'error';
+    type: 'token' | 'done' | 'error' | 'stopped';
     content?: string;
     session_id?: string;
     intent?: string;
@@ -73,6 +73,9 @@ export interface StreamEvent {
 /**
  * Send a chat message and stream the response token by token via SSE.
  * Calls `onToken` for each LLM token and `onDone` with metadata when complete.
+ * Pass `signal` (from an AbortController) to let the caller cancel client-side
+ * reading — call stopChatStream() as well to actually stop generation on the
+ * server, since aborting the fetch alone doesn't cancel the backend's task.
  */
 export async function sendChatMessageStream(
     message: string,
@@ -80,6 +83,7 @@ export async function sendChatMessageStream(
     onToken: (token: string) => void,
     onDone: (metadata: StreamEvent) => void,
     onError?: (error: string) => void,
+    signal?: AbortSignal,
 ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
@@ -88,6 +92,7 @@ export async function sendChatMessageStream(
             ...getAuthHeaders(),
         },
         body: JSON.stringify({ message, session_id: sessionId }),
+        signal,
     });
 
     if (!response.ok) {
@@ -101,36 +106,59 @@ export async function sendChatMessageStream(
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+            buffer += decoder.decode(value, { stream: true });
 
-        // Parse SSE lines from buffer
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            // Parse SSE lines from buffer
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data: ')) continue;
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) continue;
 
-            const jsonStr = trimmed.slice(6); // Remove "data: " prefix
-            try {
-                const event: StreamEvent = JSON.parse(jsonStr);
+                const jsonStr = trimmed.slice(6); // Remove "data: " prefix
+                try {
+                    const event: StreamEvent = JSON.parse(jsonStr);
 
-                if (event.type === 'token' && event.content) {
-                    onToken(event.content);
-                } else if (event.type === 'done') {
-                    onDone(event);
-                } else if (event.type === 'error') {
-                    onError?.(event.content || 'Unknown streaming error');
+                    if (event.type === 'token' && event.content) {
+                        onToken(event.content);
+                    } else if (event.type === 'done' || event.type === 'stopped') {
+                        onDone(event);
+                    } else if (event.type === 'error') {
+                        onError?.(event.content || 'Unknown streaming error');
+                    }
+                } catch {
+                    // Skip malformed JSON lines
                 }
-            } catch {
-                // Skip malformed JSON lines
             }
         }
+    } catch (e: any) {
+        // The user clicking Stop aborts the fetch — that's an intentional
+        // stop, not a failure, so don't surface it as an error.
+        if (e?.name === 'AbortError') return;
+        throw e;
     }
+}
+
+/**
+ * Stop button: tells the server to cancel the in-flight generation for this
+ * session (see /api/chat/stream/stop). Call alongside aborting the fetch —
+ * closing the client's connection alone does not stop server-side generation.
+ */
+export async function stopChatStream(sessionId: string): Promise<void> {
+    await fetch(`${API_BASE_URL}/chat/stream/stop`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {});
 }
 
 /**
