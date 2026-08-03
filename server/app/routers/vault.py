@@ -8,6 +8,7 @@ trivial SQL-side permission filtering).
 
 import asyncio
 import uuid
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
@@ -15,6 +16,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, or_, select
 
+from app.config import get_settings
 from app.db.engine import get_session
 from app.db.models import User, VaultDocument, VaultDocumentEmbedding, VaultDocumentPermission
 from app.deps.auth import get_current_user
@@ -74,7 +76,19 @@ async def upload_document(
     session: Session = Depends(get_session),
 ):
     file_bytes = await file.read()
-    object_key = f"{current_user.id}/{uuid.uuid4()}-{file.filename or 'document'}"
+
+    max_size = get_settings().max_document_size_mb * 1024 * 1024
+    if len(file_bytes) > max_size:
+        raise MessageHTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size is {get_settings().max_document_size_mb}MB",
+        )
+
+    # Basename only: strip any directory components from the client-supplied
+    # filename so it can't inject `..`/separators into the storage key (which
+    # the local-disk fallback resolves against LOCAL_VAULT_DIR).
+    safe_filename = Path(file.filename or "document").name or "document"
+    object_key = f"{current_user.id}/{uuid.uuid4()}-{safe_filename}"
 
     storage = get_object_storage()
     storage.upload_object(object_key, file_bytes, file.content_type or "application/octet-stream")
@@ -157,7 +171,8 @@ def local_download(key: str, current_user: User = Depends(get_current_user)):
         raise MessageHTTPException(status_code=404, detail="Not found")
     try:
         data = storage.read_object(key)
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
+        # ValueError == the key escaped LOCAL_VAULT_DIR (path-traversal attempt).
         raise MessageHTTPException(status_code=404, detail="Not found")
     return Response(content=data, media_type="application/octet-stream")
 

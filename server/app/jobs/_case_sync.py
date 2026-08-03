@@ -41,7 +41,6 @@ async def run_poll_cause_lists_and_sync_cases() -> None:
             for event in new_events:
                 if event.event_type == "order":
                     await send_notification_async(
-                        session,
                         user_id=case.user_id,
                         type_="new_order",
                         title=f"New order in {case.title or case.cnr}",
@@ -72,9 +71,11 @@ async def run_send_hearing_reminders() -> None:
             ).all()
 
             for event in upcoming:
+                # Dedup per hearing EVENT (not per case): a case with multiple
+                # hearings must get a reminder for each, so key on the event id.
                 already_sent = session.exec(
                     select(Notification).where(
-                        Notification.related_case_id == event.saved_case_id,
+                        Notification.related_case_event_id == event.id,
                         Notification.type == notif_type,
                     )
                 ).first()
@@ -86,11 +87,11 @@ async def run_send_hearing_reminders() -> None:
                     continue
 
                 await send_notification_async(
-                    session,
                     user_id=case.user_id,
                     type_=notif_type,
                     title=f"Upcoming hearing: {case.title or case.cnr}",
                     body=f"Hearing scheduled for {event.event_date.isoformat() if event.event_date else 'soon'}",
                     related_case_id=case.id,
+                    related_case_event_id=event.id,
                     channels=["in_app", "email"],
                 )

@@ -306,6 +306,10 @@ class Notification(SQLModel, table=True):
     title: str
     body: str
     related_case_id: Optional[str] = Field(default=None, foreign_key="saved_cases.id")
+    # Per-event link, used to dedup reminders per hearing (not per case) so a
+    # case with multiple hearings gets a reminder for each — see
+    # app/jobs/_case_sync.py.
+    related_case_event_id: Optional[str] = Field(default=None, foreign_key="case_events.id")
     channel: str  # "email" | "push" | "sms" | "in_app"
     status: str = Field(default="pending")  # "pending" | "sent" | "failed"
     scheduled_for: Optional[datetime] = Field(
@@ -326,6 +330,7 @@ class Notification(SQLModel, table=True):
             "title": self.title,
             "body": self.body,
             "relatedCaseId": self.related_case_id,
+            "relatedCaseEventId": self.related_case_event_id,
             "channel": self.channel,
             "status": self.status,
             "scheduledFor": self.scheduled_for.isoformat() if self.scheduled_for else None,

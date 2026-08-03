@@ -151,6 +151,7 @@ def ensure_notification_tables(engine: Engine) -> None:
                 title TEXT NOT NULL,
                 body TEXT NOT NULL,
                 related_case_id TEXT REFERENCES saved_cases(id) ON DELETE SET NULL,
+                related_case_event_id TEXT REFERENCES case_events(id) ON DELETE SET NULL,
                 channel TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
                 scheduled_for TIMESTAMPTZ(6),
@@ -311,6 +312,18 @@ def ensure_calendar_events_related_case_event_column(engine: Engine) -> None:
         )
 
 
+def ensure_notifications_related_case_event_column(engine: Engine) -> None:
+    """Per-hearing dedup key for reminders (added after `notifications` already
+    shipped without it). Without it, a case's later hearings were treated as
+    already-notified — see app/jobs/_case_sync.py. FK-references case_events, so
+    this runs after ensure_case_tables + ensure_notification_tables."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS "
+            "related_case_event_id TEXT REFERENCES case_events(id) ON DELETE SET NULL;"
+        )
+
+
 def run_migrations(engine: Engine) -> None:
     """Called unconditionally from init_db() after schema.sql (or on every
     run against an existing DB). Order matters: parent tables/columns first."""
@@ -320,6 +333,7 @@ def run_migrations(engine: Engine) -> None:
     ensure_similar_case_searches_table(engine)
     ensure_case_tables(engine)
     ensure_notification_tables(engine)
+    ensure_notifications_related_case_event_column(engine)
     ensure_cause_list_cache_table(engine)
     ensure_vault_tables(engine)
     ensure_calendar_events_table(engine)
