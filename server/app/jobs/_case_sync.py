@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from app.db.engine import get_engine
 from app.db.models import CaseEvent, Notification, SavedCase
-from app.services.notification_dispatch import send_notification
+from app.services.notification_dispatch import send_notification_async
 from app.tools.case_sync import sync_case_events
 
 _STALE_AFTER = timedelta(hours=6)
@@ -40,7 +40,7 @@ async def run_poll_cause_lists_and_sync_cases() -> None:
 
             for event in new_events:
                 if event.event_type == "order":
-                    send_notification(
+                    await send_notification_async(
                         session,
                         user_id=case.user_id,
                         type_="new_order",
@@ -85,7 +85,7 @@ async def run_send_hearing_reminders() -> None:
                 if case is None:
                     continue
 
-                send_notification(
+                await send_notification_async(
                     session,
                     user_id=case.user_id,
                     type_=notif_type,

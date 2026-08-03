@@ -447,6 +447,7 @@ class CalendarEvent(SQLModel, table=True):
     end_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     related_case_id: Optional[str] = Field(default=None, foreign_key="saved_cases.id")
     related_booking_id: Optional[str] = Field(default=None, foreign_key="bookings.id")
+    related_case_event_id: Optional[str] = Field(default=None, foreign_key="case_events.id")
     google_calendar_event_id: Optional[str] = None
     outlook_event_id: Optional[str] = None
     created_at: Optional[datetime] = Field(
@@ -464,5 +465,6 @@ class CalendarEvent(SQLModel, table=True):
             "endAt": self.end_at.isoformat() if self.end_at else None,
             "relatedCaseId": self.related_case_id,
             "relatedBookingId": self.related_booking_id,
+            "relatedCaseEventId": self.related_case_event_id,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }

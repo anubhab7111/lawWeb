@@ -4,7 +4,7 @@ loaded), invoked on-demand from app/routers/cases.py and from the scheduled
 sync job (app/jobs/_case_sync.py) whenever a new order event appears.
 """
 
-from app.chatbot import get_fast_llm, invoke_llm_safely
+from app.chatbot import get_fast_llm_prose, invoke_llm_safely, strip_reasoning_tags
 
 
 async def summarize_case_event(case_title: str, event_title: str, event_detail: str) -> str:
@@ -16,8 +16,8 @@ async def summarize_case_event(case_title: str, event_title: str, event_detail: 
         f"Detail: {event_detail or '(no further detail provided)'}"
     )
     try:
-        summary = await invoke_llm_safely(get_fast_llm(), prompt)
-        return (summary or "").strip()
+        summary = await invoke_llm_safely(get_fast_llm_prose(), prompt)
+        return strip_reasoning_tags(summary or "")
     except Exception as e:
         print(f"[CaseSummarizer] summary generation failed: {e}")
         return ""
