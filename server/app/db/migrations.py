@@ -229,6 +229,46 @@ def ensure_vault_tables(engine: Engine) -> None:
         )
 
 
+def ensure_chat_tables(engine: Engine) -> None:
+    """Per-user chat history: chat_sessions + chat_messages."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "DO $$ BEGIN "
+            "CREATE TYPE \"MessageRole\" AS ENUM ('user', 'assistant', 'system'); "
+            "EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT,
+                created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS chat_sessions_user_id_updated_at_idx "
+            "ON chat_sessions(user_id, updated_at DESC);"
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                role "MessageRole" NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS chat_messages_session_id_created_at_idx "
+            "ON chat_messages(session_id, created_at);"
+        )
+
+
 def ensure_calendar_events_table(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.exec_driver_sql(
@@ -284,3 +324,4 @@ def run_migrations(engine: Engine) -> None:
     ensure_vault_tables(engine)
     ensure_calendar_events_table(engine)
     ensure_calendar_events_related_case_event_column(engine)
+    ensure_chat_tables(engine)

@@ -1552,6 +1552,7 @@ class LegalChatbot:
             "type": "done",
             "session_id": session_id,
             "intent": result.get("intent") or intent,
+            "response": response_text,
             "lawyers_found": result.get("lawyers_found"),
             "document_info": result.get("document_info"),
             "document_validation": result.get("document_validation"),
@@ -1647,6 +1648,25 @@ class LegalChatbot:
     def get_session_history(self, session_id: str) -> List[Message]:
         """Get the message history for a session."""
         return self._get_session_messages(session_id).copy()
+
+    def has_session(self, session_id: str) -> bool:
+        """Whether session_id is already live in the in-memory cache."""
+        return session_id in self._sessions
+
+    def seed_session(self, session_id: str, messages: List[Message]) -> None:
+        """
+        Prime in-memory state from DB-loaded history, but only if this
+        session_id isn't already live (avoids clobbering an active
+        conversation with a stale DB read). Called by the chat router for an
+        authenticated user whose session_id isn't yet in this process (fresh
+        restart, or a session_id that predates this process's uptime).
+        """
+        self._evict_stale_sessions()
+        if session_id not in self._sessions:
+            # Matches _add_message's cap — DB may hold the full untruncated
+            # transcript, but the live LangGraph context window is unaffected.
+            self._sessions[session_id] = list(messages[-20:])
+            self._session_last_access[session_id] = time.monotonic()
 
 
 # Singleton instance
