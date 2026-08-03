@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     python_port: int = 8000
 
+    # When True, unhandled errors return their message to the client (dev only).
+    # Default False so 500 responses never leak internal exception details.
+    debug: bool = False
+
+    # Allowed CORS origins (comma-separated). Kept explicit rather than "*"
+    # because allow_credentials=True + wildcard lets any origin make
+    # credentialed requests. Default is the local Vite dev server.
+    cors_allow_origins: str = "http://localhost:5173"
+
     # PostgreSQL connection string
     database_url: str = ""
 
@@ -54,6 +63,44 @@ class Settings(BaseSettings):
     lawyer_api_key: str = ""
     indian_kanoon_api_key: str = ""
 
+    # Case-data provider (My Cases / Hearing Reminders / Cause List Search).
+    # "mock" (default) uses an in-memory fixture provider for local dev —
+    # see app/tools/case_data_provider.py — until a licensed vendor
+    # (e.g. eCourtsIndia) is contracted and its credentials set here.
+    case_data_provider: str = "mock"
+    case_data_api_key: str = ""
+    case_data_api_base_url: str = ""
+
+    # Notifications (Hearing Reminders / Smart Notifications). Left blank ->
+    # notification_dispatch logs instead of sending (safe local-dev default).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_address: str = "no-reply@lawweb.local"
+    fcm_service_account_json: str = ""
+
+    # Legal Document Vault object storage (Cloudflare R2, S3-compatible).
+    # If unset, vault falls back to local disk under app/data/vault/ so the
+    # feature is testable without live R2 credentials — see
+    # app/services/object_storage.py.
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = "lawweb-vault"
+    r2_endpoint_url: str = ""
+
+    # OpenRouter (LLM-as-judge for RAG evaluation — see app/metrics/llm_judge.py)
+    openrouter_api_key: str = ""
+    # Free-tier model; check https://openrouter.ai/models?max_price=0 for the
+    # current catalog since free model availability rotates.
+    openrouter_model: str = "openai/gpt-oss-20b:free"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # OpenRouter free models: 20 req/min, 50 req/day (1000/day once the
+    # account has $10+ in lifetime credit purchases). Bump via env var
+    # after topping up rather than editing this default.
+    openrouter_daily_limit: int = 50
+
     # Performance settings
     max_document_size_mb: int = 10
     cache_ttl_seconds: int = 3600
@@ -66,6 +113,11 @@ class Settings(BaseSettings):
     def port(self) -> int:
         """Return the Python server port."""
         return self.python_port
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse the comma-separated CORS origins into a list."""
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
 
 @lru_cache()

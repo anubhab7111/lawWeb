@@ -314,3 +314,172 @@ Conversation:
 Latest message: {question}
 
 Return ONLY the rewritten query text, nothing else."""
+
+
+# ============================================================================
+# Crime report generation
+# ============================================================================
+
+# Formatted by handle_crime_report. `rag_section` and `no_rag_warning` are
+# pre-built fragments (may be empty); `crime_details` is already length-clamped
+# by the caller.
+CRIME_REPORT_PROMPT = """Indian law assistant. User reporting a crime. You MUST respond with ALL 4 sections in this EXACT format:
+
+**Crime:** [2-4 word crime name]
+
+**Statute:** [IPC sections from data below, e.g. "IPC Section 379 (Theft)"]
+
+**Punishment:** [Copy punishment from data below]
+
+**Further Steps:** [Steps: call 100/112, file FIR, preserve evidence]
+
+Crime reported: {crime_details}
+Type: {identified_crime}{rag_section}{no_rag_warning}
+
+IMPORTANT: All 4 sections (Crime, Statute, Punishment, Further Steps) are REQUIRED. Use the IPC sections provided above."""
+
+
+# ============================================================================
+# Grounded general-query generation (retrieved-context path)
+# ============================================================================
+
+# Context-block wrappers for the retrieved material. Each is joined into the
+# prompt (in priority order) by handle_general_query via _fit_context_blocks.
+STATUTE_CONTEXT_BLOCK = """**Applicable Statutory Provisions** (each is tagged with its legal domain, e.g. [criminal], [civil], [family]):
+{rag_sections_text}
+
+NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/constitutional/other provisions govern rights, remedies, and obligations — do NOT describe them as criminal offences."""
+
+CASE_LAW_CONTEXT_BLOCK = """**Judicial Interpretation** (curated landmark judgments, ordered by court authority — cite the case NAME, do not invent citations beyond what's shown):
+{case_law_text}"""
+
+INDIAN_KANOON_CONTEXT_BLOCK = """**Relevant Case Law & Precedents:**
+{indian_kanoon_results}"""
+
+# Main grounded-answer prompt. `retrieved_context` is the fitted, priority-
+# ordered join of the blocks above; `user_query` is length-clamped.
+GROUNDED_QUERY_PROMPT = """You are a knowledgeable Indian legal assistant. Answer the following legal query comprehensively using ONLY the retrieved legal context below.
+
+**User Query:** {user_query}
+
+{retrieved_context}
+
+**CRITICAL ACCURACY RULES:**
+- You MUST base your answer on the retrieved context above. Cite specific sections, articles, case names, and provisions that appear in the context.
+- If the retrieved context does not cover a particular aspect of the query, say "I don't have specific references for this aspect" rather than guessing.
+- NEVER fabricate or guess section numbers, article numbers, or case citations.
+- Do NOT state any punishment term, fine, monetary threshold, age limit, or other numeric condition unless it appears in the retrieved provisions above. If a specific figure is not in the context, say the retrieved provisions do not specify it rather than recalling a number from memory.
+- If the legal position has changed or is contested, explicitly state that.
+- Cite landmark cases BY NAME when they appear in the retrieved context.
+
+**Instructions:**
+1. Directly answer the user's question using information from the retrieved context
+2. Cite the specific legal provisions, sections, or case law from the context that support your answer
+3. Explain the legal principles and reasoning clearly
+4. If multiple provisions or cases apply, explain how they relate to each other
+5. Note any exceptions, limitations, or conditions that apply
+6. If the retrieved context includes case law, reference the relevant holdings
+
+Provide a comprehensive, well-structured answer. Use headers and bullet points for clarity.
+
+End with: "This is general legal information. For specific advice on your situation, please consult a lawyer registered with the Bar Council of India."
+"""
+
+
+# ============================================================================
+# Compulsory-RAG grounding fallbacks (shared across handlers)
+# ============================================================================
+
+# Prepended to the final response when statute/case retrieval returned nothing.
+GROUNDING_UNAVAILABLE_DISCLAIMER = (
+    "⚠️ **I was unable to retrieve authoritative legal references for this query.** "
+    "The response below is based on general knowledge and may not contain accurate "
+    "statutory citations. Please verify with a qualified legal practitioner.\n\n"
+)
+
+# Appended to the generation prompt when retrieval failed, forbidding fabricated
+# citations the model was never given.
+GROUNDING_UNAVAILABLE_PROMPT_WARNING = """
+
+🚨 CRITICAL WARNING: Legal database searches returned NO RELEVANT RESULTS for this query.
+
+You MUST follow these rules strictly:
+1. DO NOT cite ANY specific IPC/CrPC section numbers (e.g., DO NOT say "Section 420 IPC" or "Section 438 CrPC")
+2. DO NOT cite specific Article numbers from the Constitution
+3. DO NOT cite specific case names or citations
+4. Refer to laws ONLY by their full Act name (e.g., "Indian Penal Code, 1860" or "Code of Criminal Procedure, 1973")
+5. Use general legal principles and concepts ONLY
+6. Start your answer with: "I could not retrieve specific statutory references from my legal database for this query."
+7. ALWAYS recommend: "Please consult a qualified lawyer registered with the Bar Council of India for specific statutory citations and authoritative legal advice."
+
+If you cite ANY specific section number, article number, or case citation, you are HALLUCINATING."""
+
+# Prepended to document-analysis output when the legal-DB retrieval step failed.
+DOC_RAG_UNAVAILABLE_DISCLAIMER = (
+    "⚠️ **Legal database retrieval was unavailable.** The following analysis "
+    "is based on the document text alone without authoritative legal references. "
+    "Please retry or consult a qualified legal practitioner.\n\n"
+)
+
+
+# ============================================================================
+# Canned (non-LLM) response messages
+# ============================================================================
+
+# Shown when handle_document_analysis is reached but the user explicitly asked
+# how to upload rather than attaching a document.
+DOCUMENT_UPLOAD_HELP = """I can help you analyze and validate legal documents and images!
+
+Please upload a document (PDF, DOCX, TXT) or image (JPG, PNG) and I'll provide:
+- Document type identification and OCR extraction (for images)
+- Summary of key points
+- Relevant legal references from IndianKanoon
+- Statutory compliance validation and defect analysis
+- Crime reporting guidance (if applicable)
+- Legal implications and concerns
+- Suggested next steps
+
+You can upload your document using the upload feature."""
+
+# Deterministic fallback when the crime-report LLM call fails.
+CRIME_REPORT_FALLBACK = """**Crime:** {crime_name}
+
+**Statute:** Please consult with police or a lawyer for applicable IPC/CrPC sections.
+
+**Punishment:** Varies based on the specific offense and severity. Consult a lawyer for details.
+
+**Further Steps to be Taken:** If in immediate danger, call 100 (Police) or 112 (Emergency). Visit the nearest police station to file an FIR under CrPC Section 154. Preserve all evidence including photographs, documents, and witness contact information. Consult a criminal lawyer for legal guidance."""
+
+# Fallback when the lawyer-search LLM enhancement fails; wraps the raw results.
+LAWYER_SEARCH_FALLBACK = """Based on your request, I found some lawyers who might be able to help:
+
+{formatted_results}
+
+**Tips for choosing a lawyer:**
+1. Schedule consultations with 2-3 lawyers before deciding
+2. Ask about their experience with cases like yours
+3. Discuss fees and payment structure upfront
+4. Trust your instincts about communication style
+
+Would you like me to search with different criteria?"""
+
+# Fallback when the general-query LLM call raises.
+GENERAL_QUERY_ERROR = """I apologize, but I'm having trouble processing your request right now.
+
+In the meantime, I can help you with:
+1. **Document Analysis** - Upload a legal document for analysis
+2. **Crime Reporting** - Get guidance on reporting crimes and next steps
+3. **Find a Lawyer** - Search for attorneys based on your needs
+
+Please try rephrasing your question or selecting one of the options above."""
+
+# Polite rejection for non-legal queries.
+NON_LEGAL_RESPONSE = """I'm a legal assistance chatbot specializing in Indian law. I can help you with:
+
+• Legal questions and advice
+• Crime reporting guidance
+• Document analysis (contracts, agreements, etc.)
+• Finding lawyers
+• Understanding Indian laws (IPC, CrPC, IT Act, etc.)
+
+For other topics, I may not be the best resource. Please ask me a legal question!"""

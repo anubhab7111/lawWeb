@@ -60,9 +60,10 @@ export async function sendChatMessage(message: string, sessionId?: string): Prom
 }
 
 export interface StreamEvent {
-    type: 'token' | 'done' | 'error';
+    type: 'token' | 'done' | 'error' | 'stopped';
     content?: string;
     session_id?: string;
+    response?: string;
     intent?: string;
     lawyers_found?: Array<Record<string, any>>;
     document_info?: Record<string, any>;
@@ -73,6 +74,9 @@ export interface StreamEvent {
 /**
  * Send a chat message and stream the response token by token via SSE.
  * Calls `onToken` for each LLM token and `onDone` with metadata when complete.
+ * Pass `signal` (from an AbortController) to let the caller cancel client-side
+ * reading — call stopChatStream() as well to actually stop generation on the
+ * server, since aborting the fetch alone doesn't cancel the backend's task.
  */
 export async function sendChatMessageStream(
     message: string,
@@ -80,6 +84,7 @@ export async function sendChatMessageStream(
     onToken: (token: string) => void,
     onDone: (metadata: StreamEvent) => void,
     onError?: (error: string) => void,
+    signal?: AbortSignal,
 ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
@@ -88,6 +93,7 @@ export async function sendChatMessageStream(
             ...getAuthHeaders(),
         },
         body: JSON.stringify({ message, session_id: sessionId }),
+        signal,
     });
 
     if (!response.ok) {
@@ -101,36 +107,59 @@ export async function sendChatMessageStream(
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+            buffer += decoder.decode(value, { stream: true });
 
-        // Parse SSE lines from buffer
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            // Parse SSE lines from buffer
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data: ')) continue;
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) continue;
 
-            const jsonStr = trimmed.slice(6); // Remove "data: " prefix
-            try {
-                const event: StreamEvent = JSON.parse(jsonStr);
+                const jsonStr = trimmed.slice(6); // Remove "data: " prefix
+                try {
+                    const event: StreamEvent = JSON.parse(jsonStr);
 
-                if (event.type === 'token' && event.content) {
-                    onToken(event.content);
-                } else if (event.type === 'done') {
-                    onDone(event);
-                } else if (event.type === 'error') {
-                    onError?.(event.content || 'Unknown streaming error');
+                    if (event.type === 'token' && event.content) {
+                        onToken(event.content);
+                    } else if (event.type === 'done' || event.type === 'stopped') {
+                        onDone(event);
+                    } else if (event.type === 'error') {
+                        onError?.(event.content || 'Unknown streaming error');
+                    }
+                } catch {
+                    // Skip malformed JSON lines
                 }
-            } catch {
-                // Skip malformed JSON lines
             }
         }
+    } catch (e: any) {
+        // The user clicking Stop aborts the fetch — that's an intentional
+        // stop, not a failure, so don't surface it as an error.
+        if (e?.name === 'AbortError') return;
+        throw e;
     }
+}
+
+/**
+ * Stop button: tells the server to cancel the in-flight generation for this
+ * session (see /api/chat/stream/stop). Call alongside aborting the fetch —
+ * closing the client's connection alone does not stop server-side generation.
+ */
+export async function stopChatStream(sessionId: string): Promise<void> {
+    await fetch(`${API_BASE_URL}/chat/stream/stop`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {});
 }
 
 /**
@@ -285,6 +314,9 @@ export async function getChatSessionHistory(sessionId: string) {
  */
 export async function checkChatHealth() {
     const response = await fetch(`${API_BASE_URL}/chat/health`);
+    if (!response.ok) {
+        throw new Error('Failed to check chat health');
+    }
     return response.json();
 }
 
@@ -366,4 +398,261 @@ export async function fetchUserProfile() {
         throw new Error('Failed to fetch profile');
     }
     return response.json();
+}
+
+// ============================================================================
+// Bookings API (Braintree sandbox + Postgres)
+// ============================================================================
+
+export interface Booking {
+    id: string;
+    userId: string;
+    lawyerId: string;
+    amount: number;
+    transactionId: string;
+    status: string;
+    appointmentDate?: string | null;
+    appointmentTime?: string | null;
+    createdAt?: string | null;
+}
+
+/** One-time Braintree client token authorizing the drop-in UI (plain text). */
+export async function fetchBraintreeClientToken(): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/bookings/client_token`);
+    if (!response.ok) {
+        throw new Error('Failed to get payment token');
+    }
+    return response.text();
+}
+
+export interface CheckoutPayload {
+    amount: string;
+    paymentMethodNonce: string;
+    lawyerId: string;
+    userId: string;
+}
+
+/** Charge the nonce and record the confirmed booking. */
+export async function checkoutBooking(payload: CheckoutPayload) {
+    const response = await fetch(`${API_BASE_URL}/bookings/checkout`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.status === 'error') {
+        throw new Error(data.message || 'Payment failed');
+    }
+    return data as { status: string; transactionId: string };
+}
+
+/** Confirmed appointments for a user, newest first. */
+export async function fetchUserBookings(userId: string): Promise<Booking[]> {
+    const response = await fetch(`${API_BASE_URL}/bookings/user-bookings/${userId}`, {
+        headers: { ...getAuthHeaders() },
+    });
+    if (!response.ok) {
+        throw new Error('Failed to fetch bookings');
+    }
+    return response.json();
+}
+
+// ============================================================================
+// Shared error helper for the new-feature endpoints below, which return
+// {"message": ...} bodies (see server/CLAUDE.md's API compatibility rules).
+// ============================================================================
+
+async function requestJson(path: string, options: RequestInit = {}) {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        ...options,
+        headers: { ...(options.headers || {}), ...getAuthHeaders() },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.message || 'Request failed');
+    }
+    return data;
+}
+
+// ============================================================================
+// Bare Act Explorer
+// ============================================================================
+
+export async function searchBareAct(query: string, actHint?: string) {
+    const params = new URLSearchParams({ q: query });
+    if (actHint) params.set('act', actHint);
+    return requestJson(`/bare-acts/search?${params.toString()}`);
+}
+
+// ============================================================================
+// Similar Case Search
+// ============================================================================
+
+export async function searchSimilarCases(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return requestJson('/similar-cases/search', { method: 'POST', body: formData });
+}
+
+export async function searchSimilarCasesByText(text: string) {
+    return requestJson('/similar-cases/search-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+    });
+}
+
+// ============================================================================
+// My Cases
+// ============================================================================
+
+export interface SavedCase {
+    id: string;
+    cnr: string | null;
+    court: string | null;
+    caseNumber: string | null;
+    year: number | null;
+    title: string | null;
+    status: string | null;
+    lastSyncedAt: string | null;
+    createdAt: string | null;
+}
+
+export async function saveCase(payload: { cnr?: string; court?: string; caseNumber?: string; year?: number }) {
+    return requestJson('/cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function fetchSavedCases(): Promise<SavedCase[]> {
+    return requestJson('/cases');
+}
+
+export async function fetchCaseDetail(caseId: string) {
+    return requestJson(`/cases/${caseId}`);
+}
+
+export async function addCaseNote(caseId: string, noteText: string) {
+    return requestJson(`/cases/${caseId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ noteText }),
+    });
+}
+
+export async function syncCase(caseId: string) {
+    return requestJson(`/cases/${caseId}/sync`, { method: 'POST' });
+}
+
+export async function deleteCase(caseId: string) {
+    return requestJson(`/cases/${caseId}`, { method: 'DELETE' });
+}
+
+// ============================================================================
+// Court Cause List Search
+// ============================================================================
+
+export async function searchCauseList(params: { court: string; date: string; advocate?: string; judge?: string; caseNumber?: string }) {
+    const qs = new URLSearchParams({ court: params.court, date: params.date });
+    if (params.advocate) qs.set('advocate', params.advocate);
+    if (params.judge) qs.set('judge', params.judge);
+    if (params.caseNumber) qs.set('caseNumber', params.caseNumber);
+    return requestJson(`/cause-list/search?${qs.toString()}`);
+}
+
+// ============================================================================
+// Legal Document Vault
+// ============================================================================
+
+export interface VaultDocument {
+    id: string;
+    title: string;
+    documentType: string;
+    fileSizeBytes: number;
+    mimeType: string;
+    relatedCaseId: string | null;
+    indexingStatus: string;
+    createdAt: string | null;
+}
+
+export async function uploadVaultDocument(file: File, title: string, documentType: string, relatedCaseId?: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title);
+    formData.append('documentType', documentType);
+    if (relatedCaseId) formData.append('relatedCaseId', relatedCaseId);
+    return requestJson('/vault/documents', { method: 'POST', body: formData });
+}
+
+export async function fetchVaultDocuments(): Promise<VaultDocument[]> {
+    return requestJson('/vault/documents');
+}
+
+export async function searchVaultDocuments(query: string) {
+    return requestJson('/vault/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+    });
+}
+
+export async function deleteVaultDocument(documentId: string) {
+    return requestJson(`/vault/documents/${documentId}`, { method: 'DELETE' });
+}
+
+// ============================================================================
+// Personal Legal Calendar
+// ============================================================================
+
+export interface CalendarEvent {
+    id: string;
+    title: string;
+    eventType: string;
+    startAt: string;
+    endAt: string | null;
+    relatedCaseId: string | null;
+}
+
+export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
+    return requestJson('/calendar/events');
+}
+
+export async function createCalendarEvent(payload: { title: string; eventType: string; startAt: string; endAt?: string }) {
+    return requestJson('/calendar/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function deleteCalendarEvent(eventId: string) {
+    return requestJson(`/calendar/events/${eventId}`, { method: 'DELETE' });
+}
+
+// ============================================================================
+// Smart Notifications
+// ============================================================================
+
+export interface AppNotification {
+    id: string;
+    type: string;
+    title: string;
+    body: string;
+    channel: string;
+    status: string;
+    readAt: string | null;
+    createdAt: string | null;
+}
+
+export async function fetchNotifications(): Promise<AppNotification[]> {
+    return requestJson('/notifications');
+}
+
+export async function markNotificationRead(notificationId: string) {
+    return requestJson(`/notifications/${notificationId}/read`, { method: 'PATCH' });
 }

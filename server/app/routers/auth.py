@@ -15,16 +15,11 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.config import get_settings
 from app.db.engine import get_session
 from app.db.models import User
+from app.security import jwt_secret as _jwt_secret
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-# Same fallback the Express server used, so existing tokens stay valid
-# even when JWT_SECRET is unset in dev.
-def _jwt_secret() -> str:
-    return get_settings().jwt_secret or "dev_secret_key_123"
 
 
 def _error(status_code: int, message: str) -> JSONResponse:

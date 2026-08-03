@@ -17,390 +17,57 @@ from langgraph.graph import END, StateGraph
 
 from app.config import get_settings
 from app.prompts import (
+    CASE_LAW_CONTEXT_BLOCK,
+    CRIME_REPORT_FALLBACK,
+    CRIME_REPORT_PROMPT,
+    DOC_RAG_UNAVAILABLE_DISCLAIMER,
     DOCUMENT_ANALYSIS_PROMPT,
+    DOCUMENT_UPLOAD_HELP,
     DOCUMENT_VALIDATION_UPLOAD_PROMPT,
+    GENERAL_QUERY_ERROR,
     GENERAL_QUERY_PROMPT,
+    GROUNDED_QUERY_PROMPT,
+    GROUNDING_UNAVAILABLE_DISCLAIMER,
+    GROUNDING_UNAVAILABLE_PROMPT_WARNING,
+    INDIAN_KANOON_CONTEXT_BLOCK,
+    LAWYER_SEARCH_FALLBACK,
     LAWYER_SEARCH_PROMPT,
+    NON_LEGAL_RESPONSE,
     QUERY_REWRITE_PROMPT,
+    STATUTE_CONTEXT_BLOCK,
 )
+from app.routing_keywords import CRIME_TYPE_KEYWORDS
 from app.state import (
     ChatState,
     DocumentValidationInfo,
     LawyerInfo,
     Message,
 )
-from app.intent_classifier import classify_intent_embedding
+from app.intent_classifier import (
+    classify_document_subintent_embedding,
+    classify_domain_hint_embedding,
+    classify_intent_embedding,
+)
 from app.tool_dispatch import RAG_TOOL_REGISTRY, infer_indian_kanoon_context_type
 from app.tools.crime_reporter import detect_crime_type
 from app.tools.document_classifier import get_document_classifier
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 from app.tools.indian_law_rag import get_indian_law_rag
-from app.tools.lawyer_finder import get_lawyer_finder
+from app.tools.lawyer_recommender import (
+    format_lawyer_results,
+    recommend_lawyers as recommend_lawyers_core,
+)
 from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
 from app.tools.statutory_validator import get_statutory_validator
 
 
-# ============================================================================
-# Keyword Banks for Fast Routing (Zero-Latency Layer)
-# ============================================================================
-
-# Document validation keywords
-VALIDATION_KEYWORDS = frozenset(
-    [
-        "validate",
-        "validity",
-        "check validity",
-        "verify",
-        "statutory compliance",
-        "defects",
-        "legal defects",
-        "is this valid",
-        "check compliance",
-        "missing elements",
-        "properly drafted",
-        "drafting defects",
-        "formal defects",
-        "mandatory requirements",
-        "stamp duty compliance",
-        "review this document",
-        "check this document",
-        "is this correct",
-        "is this proper",
-    ]
-)
-
-# IPC/CrPC/Statute keywords (→ Crime RAG)
-STATUTE_KEYWORDS = frozenset(
-    [
-        "ipc",
-        "indian penal code",
-        "crpc",
-        "criminal procedure",
-        "punishment",
-        "imprisonment",
-        "fine",
-        "penalty",
-        "forgery",
-        "trespass",
-        "assault",
-        "threat",
-        "intimidation",
-        "fraud",
-        "cheating",
-        "theft",
-        "robbery",
-        "bribery",
-        "cyber",
-        "hacking",
-        "identity theft",
-        "money laundering",
-        "defamation",
-        "kidnapping",
-        "murder",
-        "hurt",
-        "grievous",
-        "it act",
-        "information technology",
-        "prevention of corruption",
-        "poca",
-        "pmla",
-    ]
-)
-
-# Crime type keywords for multi-offense detection
-CRIME_TYPE_KEYWORDS = frozenset(
-    [
-        "forgery",
-        "forged",
-        "trespass",
-        "trespassed",
-        "assault",
-        "assaulted",
-        "threat",
-        "threatened",
-        "bribe",
-        "bribery",
-        "fraud",
-        "cyber",
-        "identity theft",
-        "launder",
-        "laundering",
-        "cheating",
-        "theft",
-        "robbery",
-        "murder",
-        "kidnapping",
-        "extortion",
-        "blackmail",
-        "defamation",
-        "harassment",
-        "stalking",
-        "dowry",
-        "domestic violence",
-    ]
-)
-
-# ============================================================================
-# Domain keyword banks — sole remaining consumer is _infer_domain_hint
-# ============================================================================
-
-# Constitutional & fundamental rights keywords (→ Indian Kanoon)
-CONSTITUTIONAL_KEYWORDS = frozenset(
-    [
-        "article",
-        "fundamental right",
-        "fundamental rights",
-        "constitution",
-        "constitutional",
-        "amendment",
-        "basic structure",
-        "parliament",
-        "legislature",
-        "writ",
-        "habeas corpus",
-        "mandamus",
-        "certiorari",
-        "prohibition",
-        "quo warranto",
-        "right to privacy",
-        "right to life",
-        "right to equality",
-        "free speech",
-        "freedom of speech",
-        "freedom of expression",
-        "public order",
-        "reasonable restriction",
-        "directive principles",
-        "dpsp",
-        "preamble",
-        "federalism",
-        "president",
-        "governor",
-        "president's rule",
-        "article 356",
-        "article 19",
-        "article 21",
-        "article 14",
-        "article 32",
-        "article 226",
-        "article 370",
-        "article 370",
-        "ninth schedule",
-        "seventh schedule",
-        "union list",
-        "concurrent list",
-        "state list",
-        "surveillance",
-        "proportionality",
-        "puttaswamy",
-        "kesavananda",
-        "minerva mills",
-        "maneka gandhi",
-        "golaknath",
-    ]
-)
-
-# Civil / Contract law keywords (→ Indian Kanoon)
-CIVIL_LAW_KEYWORDS = frozenset(
-    [
-        "contract",
-        "agreement",
-        "enforceable",
-        "void",
-        "voidable",
-        "consideration",
-        "breach",
-        "specific performance",
-        "damages",
-        "indemnity",
-        "guarantee",
-        "coercion",
-        "undue influence",
-        "misrepresentation",
-        "mistake",
-        "frustration",
-        "force majeure",
-        "non-compete",
-        "restraint of trade",
-        "liquidated damages",
-        "injunction",
-        "arbitration",
-        "mediation",
-        "consumer protection",
-        "tort",
-        "negligence",
-        "defamation",
-        "nuisance",
-        "indian contract act",
-        "section 10",
-        "section 23",
-        "section 25",
-        "section 27",
-        "section 56",
-        "section 73",
-        "section 74",
-        "sale of goods",
-        "negotiable instruments",
-        "partnership",
-        "llp",
-        "oral agreement",
-        "oral contract",
-        "stamp duty",
-        "registration",
-        "admissible",
-        "admissibility",
-        "evidence",
-        "section 65b",
-        "electronic evidence",
-        "digital evidence",
-        "whatsapp",
-        "electronic record",
-    ]
-)
-
-# Property law keywords (→ Indian Kanoon)
-PROPERTY_LAW_KEYWORDS = frozenset(
-    [
-        "property",
-        "ancestral property",
-        "coparcenary",
-        "partition",
-        "sale deed",
-        "gift deed",
-        "will",
-        "testament",
-        "succession",
-        "inheritance",
-        "legal heir",
-        "legal heirs",
-        "hindu succession",
-        "transfer of property",
-        "easement",
-        "mortgage",
-        "lease",
-        "tenancy",
-        "tenant",
-        "landlord",
-        "rent control",
-        "eviction",
-        "encumbrance",
-        "benami",
-        "rera",
-        "real estate",
-        "mutation",
-        "land revenue",
-        "stridhan",
-        "joint family",
-        "huf",
-    ]
-)
-
-# Family law keywords (→ Indian Kanoon)
-FAMILY_LAW_KEYWORDS = frozenset(
-    [
-        "divorce",
-        "custody",
-        "maintenance",
-        "alimony",
-        "domestic violence",
-        "dowry",
-        "marriage",
-        "matrimonial",
-        "judicial separation",
-        "mutual consent",
-        "cruelty",
-        "desertion",
-        "restitution of conjugal rights",
-        "live-in",
-        "live in partner",
-        "cohabitation",
-        "hindu marriage act",
-        "special marriage act",
-        "muslim personal law",
-        "guardianship",
-        "adoption",
-        "juvenile",
-        "child marriage",
-        "marital rape",
-        "section 498a",
-        "protection of women",
-        "dv act",
-    ]
-)
-
-# Technology & modern law keywords (→ Indian Kanoon)
-TECH_LAW_KEYWORDS = frozenset(
-    [
-        "cryptocurrency",
-        "crypto",
-        "bitcoin",
-        "blockchain",
-        "artificial intelligence",
-        "ai liability",
-        "data protection",
-        "personal data",
-        "gdpr",
-        "pdp bill",
-        "dpdp",
-        "social media",
-        "online",
-        "internet",
-        "deepfake",
-        "it act",
-        "information technology act",
-        "section 66a",
-        "section 67",
-        "section 43",
-        "intermediary",
-        "safe harbour",
-        "takedown",
-        "right to be forgotten",
-        "aadhaar",
-        "rbi",
-        "fema",
-        "pmla",
-        "sebi",
-    ]
-)
-
-# Criminal procedure & bail keywords (→ Crime RAG + Indian Kanoon)
-CRIMINAL_PROCEDURE_KEYWORDS = frozenset(
-    [
-        "fir",
-        "bail",
-        "anticipatory bail",
-        "regular bail",
-        "quash",
-        "quashing",
-        "section 482",
-        "section 438",
-        "section 439",
-        "section 154",
-        "section 200",
-        "section 320",
-        "compoundable",
-        "non-compoundable",
-        "chargesheet",
-        "investigation",
-        "cognizable",
-        "non-cognizable",
-        "complainant",
-        "withdrawal",
-        "compound",
-        "plea bargaining",
-        "discharge",
-        "acquittal",
-        "conviction",
-        "appeal",
-        "revision",
-        "review",
-        "habeas corpus",
-        "remand",
-        "police custody",
-        "judicial custody",
-        "bhajan lal",
-    ]
-)
+# Main-LLM context window / output reservation. Kept as module constants so the
+# prompt-budget guard (_fit_context_blocks) sizes the input against the same
+# window the model runs with.
+LLM_NUM_CTX = 6144  # Ollama defaults to 2048, which silently clips grounded prompts
+LLM_NUM_PREDICT = 1024  # tokens reserved for the answer
+_PROMPT_SAFETY_MARGIN = 256  # headroom for chat scaffolding the estimate can't see
+_MAX_QUERY_CHARS = 8000  # clamp on user-derived text so one huge query can't overflow
 
 
 @lru_cache()
@@ -411,12 +78,41 @@ def get_llm() -> ChatOllama:
         model=settings.llm_model,
         temperature=settings.llm_temperature,
         base_url=settings.ollama_base_url,
-        num_ctx=6144,  # Ollama defaults to 2048, which silently clips grounded prompts
-        num_predict=1024,  # Balanced: enough for detailed answers, faster inference
+        num_ctx=LLM_NUM_CTX,
+        num_predict=LLM_NUM_PREDICT,
         timeout=35.0,  # Tighter timeout for snappier responses
         reasoning=False,  # qwen3 defaults to thinking mode; keep responses direct
         keep_alive="1h",  # loading the 14B model is the OOM-prone step — do it rarely
     )
+
+
+def _fit_context_blocks(context_parts: list, reserved_tokens: int) -> str:
+    """
+    Join retrieved-context blocks (already in priority order: statute → case
+    law → Indian Kanoon) without exceeding the model's input budget. Drops
+    lower-priority blocks and truncates the last kept one, so the instruction
+    template and user query always survive — this is what stops Ollama from
+    silently front-truncating the grounded statute block on long prompts.
+    """
+    from app.metrics.engineering_metrics import count_tokens_approx
+
+    budget = LLM_NUM_CTX - LLM_NUM_PREDICT - _PROMPT_SAFETY_MARGIN - reserved_tokens
+    if budget <= 0:
+        return ""
+
+    kept: list = []
+    used = 0
+    for block in context_parts:
+        block_tokens = count_tokens_approx(block)
+        if used + block_tokens <= budget:
+            kept.append(block)
+            used += block_tokens
+        else:
+            remaining = budget - used
+            if remaining > 50:  # ~4 chars/token — keep a useful truncated head
+                kept.append(block[: remaining * 4])
+            break
+    return "\n\n".join(kept)
 
 
 @lru_cache()
@@ -432,6 +128,44 @@ def get_fast_llm() -> ChatOllama:
         timeout=15.0,  # Reduced from 30s
         reasoning=False,  # classification needs the raw JSON, not a thinking preamble
     )
+
+
+@lru_cache()
+def get_fast_llm_prose() -> ChatOllama:
+    """Same small model as get_fast_llm(), but for short natural-language
+    generation (case summaries, plain-language explanations) rather than
+    JSON classification. qwen3:4b keeps thinking even with reasoning=False
+    (verified directly against the Ollama API — `think: false` is not
+    honored by this model/build) and the thinking preamble alone commonly
+    runs 300-500 tokens before the real answer starts, so num_predict needs
+    real headroom above get_fast_llm()'s 128 or the response gets cut off
+    mid-thought before ever reaching the answer."""
+    settings = get_settings()
+    return ChatOllama(
+        model=settings.fast_llm_model,
+        temperature=0,
+        base_url=settings.ollama_base_url,
+        num_ctx=4096,
+        num_predict=900,
+        timeout=45.0,
+        reasoning=False,
+    )
+
+
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def strip_reasoning_tags(text: str) -> str:
+    """Strip a qwen3 thinking preamble from a response. Two shapes seen in
+    practice: a full <think>...</think> pair, or — what this model's chat
+    template actually produces — only the closing </think> tag, since the
+    opening tag is injected into the prompt template rather than generated
+    (confirmed against the raw Ollama API). In the latter case a naive
+    <think>...</think> regex matches nothing, so fall back to keeping only
+    what follows the last </think>."""
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[-1].strip()
+    return _THINK_TAG_RE.sub("", text).strip()
 
 
 # Context variable for streaming queue - when set, invoke_llm_safely streams tokens
@@ -473,12 +207,6 @@ async def invoke_llm_safely(llm: ChatOllama, prompt: str) -> str:
 # ============================================================================
 # Node Functions
 # ============================================================================
-
-
-def _fast_keyword_check(text: str, keywords: frozenset) -> bool:
-    """Fast O(n) keyword matching against a frozenset."""
-    text_lower = text.lower()
-    return any(kw in text_lower for kw in keywords)
 
 
 def _count_keyword_matches(text: str, keywords: frozenset) -> int:
@@ -573,38 +301,6 @@ async def _rewrite_query_for_retrieval(
 # Primary Router (embedding-based) + deterministic policy layer
 # ============================================================================
 
-# The only keyword signals treated as "strong, unambiguous criminal" for
-# _infer_domain_hint below — explicit section/procedure references, not
-# generic crime-adjacent words. Deliberately narrow.
-STRONG_CRIMINAL_SIGNAL_KEYWORDS = frozenset(
-    [
-        "which section",
-        "what section",
-        "applicable section",
-        "sections apply",
-        "ipc section",
-        "crpc section",
-        "under which",
-        "punishable under",
-        "punishment for",
-        "penalty for",
-        "imprisonment for",
-        "fine for",
-        "cognizable",
-        "non-cognizable",
-        "bailable",
-        "non-bailable",
-        "compoundable",
-        "non-compoundable",
-        "triable by",
-        "investigation",
-        "chargesheet",
-        "fir for",
-        "file fir",
-        "police complaint",
-    ]
-)
-
 # Hard-wired per-intent tool sets — metadata for state["selected_tools"];
 # each handler still calls its specific tool_dispatch.invoke_* function(s)
 # directly (bespoke prompt assembly per handler), it doesn't loop over this
@@ -615,65 +311,9 @@ INTENT_TOOL_MAP: Dict[str, List[str]] = {
     "document_analysis": ["indian_kanoon"],
     "crime_report": ["crime_sections"],
     "general_query": ["indian_kanoon", "statute_context"],
-    "find_lawyer": ["lawyer_finder"],
+    "find_lawyer": ["lawyer_recommender"],
     "non_legal": [],
 }
-
-
-def _infer_domain_hint(text: str) -> Optional[Literal["criminal"]]:
-    """
-    Deterministic domain bias for the unified statute retrieval: "criminal"
-    only when explicit criminal-statute vocabulary is present AND no other
-    legal domain signal is competing for it without a *strong*, explicit
-    criminal-statute signal (section number, "punishable under", etc.).
-    Prevents IPC punishment clauses from contaminating civil/constitutional/
-    property/family/tech retrieval context — purely keyword-driven, so it
-    never depends on a classifier's guess being right.
-    """
-    has_criminal_signal = (
-        _fast_keyword_check(text, STATUTE_KEYWORDS)
-        or _fast_keyword_check(text, CRIMINAL_PROCEDURE_KEYWORDS)
-        or _count_keyword_matches(text, CRIME_TYPE_KEYWORDS) > 0
-    )
-    if not has_criminal_signal:
-        return None
-
-    has_other_domain_signal = (
-        _fast_keyword_check(text, CONSTITUTIONAL_KEYWORDS)
-        or _fast_keyword_check(text, CIVIL_LAW_KEYWORDS)
-        or _fast_keyword_check(text, PROPERTY_LAW_KEYWORDS)
-        or _fast_keyword_check(text, FAMILY_LAW_KEYWORDS)
-        or _fast_keyword_check(text, TECH_LAW_KEYWORDS)
-    )
-    has_strong_criminal_signal = _fast_keyword_check(
-        text, STRONG_CRIMINAL_SIGNAL_KEYWORDS
-    )
-
-    if has_other_domain_signal and not has_strong_criminal_signal:
-        return None
-    return "criminal"
-
-
-_GROUNDING_UNAVAILABLE_DISCLAIMER = (
-    "⚠️ **I was unable to retrieve authoritative legal references for this query.** "
-    "The response below is based on general knowledge and may not contain accurate "
-    "statutory citations. Please verify with a qualified legal practitioner.\n\n"
-)
-
-_GROUNDING_UNAVAILABLE_PROMPT_WARNING = """
-
-🚨 CRITICAL WARNING: Legal database searches returned NO RELEVANT RESULTS for this query.
-
-You MUST follow these rules strictly:
-1. DO NOT cite ANY specific IPC/CrPC section numbers (e.g., DO NOT say "Section 420 IPC" or "Section 438 CrPC")
-2. DO NOT cite specific Article numbers from the Constitution
-3. DO NOT cite specific case names or citations
-4. Refer to laws ONLY by their full Act name (e.g., "Indian Penal Code, 1860" or "Code of Criminal Procedure, 1973")
-5. Use general legal principles and concepts ONLY
-6. Start your answer with: "I could not retrieve specific statutory references from my legal database for this query."
-7. ALWAYS recommend: "Please consult a qualified lawyer registered with the Bar Council of India for specific statutory citations and authoritative legal advice."
-
-If you cite ANY specific section number, article number, or case citation, you are HALLUCINATING."""
 
 
 def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
@@ -688,21 +328,24 @@ def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
     """
     if rag_succeeded:
         return "", ""
-    return _GROUNDING_UNAVAILABLE_DISCLAIMER, _GROUNDING_UNAVAILABLE_PROMPT_WARNING
+    return GROUNDING_UNAVAILABLE_DISCLAIMER, GROUNDING_UNAVAILABLE_PROMPT_WARNING
 
 
 async def classify_intent(state: ChatState) -> ChatState:
     """
     Intent classification and tool selection.
 
-    Architecture:
-    1. Fast path: document + very short query -> document_analysis
-    2. Primary router: embedding nearest-centroid classification over 5
-       classes, including non_legal (classify_intent_embedding) — no
-       keyword-based domain gate, no LLM anywhere in this path
-    3. Deterministic domain_hint inference (_infer_domain_hint), independent
-       of the classifier
-    4. History-aware query rewrite for retrieval (unchanged)
+    Architecture — fully embedding-based, no keyword gates or hardcoded
+    shortcuts anywhere in this path:
+    1. Primary router: embedding nearest-centroid classification over 5
+       classes, including non_legal (classify_intent_embedding). A
+       has_document boost/penalty biases document_analysis appropriately —
+       verified empirically that this alone handles even single-word
+       document-attached queries ("review", "thoughts?") confidently, so no
+       separate word-count fast path is needed.
+    2. Domain-hint inference (classify_domain_hint_embedding), an
+       independent binary embedding classifier
+    3. History-aware query rewrite for retrieval (unchanged)
 
     Returns enriched state with:
     - intent: Primary classification
@@ -719,22 +362,6 @@ async def classify_intent(state: ChatState) -> ChatState:
 
     print(f"[Router] Input: {user_input[:100]}...")
     print(f"[Router] Has document: {has_document}")
-
-    # =========================================================================
-    # FAST PATH: Document with short query → Document Analysis
-    # =========================================================================
-    if has_document and len(user_input.split()) < 5:
-        print(f"[Router] Fast path: document_analysis (short query with document)")
-        return {
-            **state,
-            "intent": "document_analysis",
-            "routing_confidence": 0.95,
-            "routing_reasoning": "Document present with brief query",
-            "selected_tools": INTENT_TOOL_MAP["document_analysis"],
-            "domain_hint": None,
-            "active_document_context": True,
-            "is_ambiguous": False,
-        }
 
     # =========================================================================
     # PRIMARY ROUTER: embedding nearest-centroid classification, 5-way
@@ -772,7 +399,7 @@ async def classify_intent(state: ChatState) -> ChatState:
             "active_document_context": has_document,
         }
 
-    domain_hint = _infer_domain_hint(user_input)
+    domain_hint = await classify_domain_hint_embedding(user_input)
     entities = _extract_legal_entities(user_input)
     print(
         f"[Router] Decision: intent={intent}, confidence={result.confidence:.3f}, "
@@ -823,18 +450,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             kw in input_lower
             for kw in ["upload", "i will upload", "how to upload", "can i upload"]
         ):
-            response = """I can help you analyze and validate legal documents and images!
-
-Please upload a document (PDF, DOCX, TXT) or image (JPG, PNG) and I'll provide:
-- Document type identification and OCR extraction (for images)
-- Summary of key points
-- Relevant legal references from IndianKanoon
-- Statutory compliance validation and defect analysis
-- Crime reporting guidance (if applicable)
-- Legal implications and concerns
-- Suggested next steps
-
-You can upload your document using the upload feature."""
+            response = DOCUMENT_UPLOAD_HELP
 
             return {
                 **state,
@@ -847,8 +463,8 @@ You can upload your document using the upload feature."""
             return await handle_general_query(state)
 
     # Check if user is asking for validation/compliance checking
-    wants_validation = _fast_keyword_check(user_query, VALIDATION_KEYWORDS)
-    if wants_validation:
+    subintent = await classify_document_subintent_embedding(user_query)
+    if subintent == "validation":
         return await _handle_document_validation(state)
 
     # ALWAYS use Indian Kanoon API for document analysis (priority)
@@ -951,11 +567,7 @@ You can upload your document using the upload feature."""
 
         # Compulsory RAG: if retrieval failed, prepend disclaimer
         if not rag_succeeded:
-            response = (
-                "⚠️ **Legal database retrieval was unavailable.** The following analysis "
-                "is based on the document text alone without authoritative legal references. "
-                "Please retry or consult a qualified legal practitioner.\n\n" + response
-            )
+            response = DOC_RAG_UNAVAILABLE_DISCLAIMER + response
 
         return {
             **state,
@@ -993,11 +605,7 @@ You can upload your document using the upload feature."""
         analysis = await invoke_llm_safely(llm, prompt)
 
         # Compulsory RAG: always prepend disclaimer when using fallback path
-        analysis = (
-            "⚠️ **Legal database retrieval was unavailable.** The following analysis "
-            "is based on the document text alone without authoritative legal references. "
-            "Please retry or consult a qualified legal practitioner.\n\n" + analysis
-        )
+        analysis = DOC_RAG_UNAVAILABLE_DISCLAIMER + analysis
 
         return {
             **state,
@@ -1053,32 +661,20 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     # Compulsory RAG: when RAG failed, instruct LLM not to fabricate sections
     disclaimer_prefix, no_rag_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
-    prompt = f"""Indian law assistant. User reporting a crime. You MUST respond with ALL 4 sections in this EXACT format:
-
-**Crime:** [2-4 word crime name]
-
-**Statute:** [IPC sections from data below, e.g. "IPC Section 379 (Theft)"]
-
-**Punishment:** [Copy punishment from data below]
-
-**Further Steps:** [Steps: call 100/112, file FIR, preserve evidence]
-
-Crime reported: {crime_details}
-Type: {identified_crime}{rag_section}{no_rag_warning}
-
-IMPORTANT: All 4 sections (Crime, Statute, Punishment, Further Steps) are REQUIRED. Use the IPC sections provided above."""
+    prompt = CRIME_REPORT_PROMPT.format(
+        crime_details=crime_details[:_MAX_QUERY_CHARS],
+        identified_crime=identified_crime,
+        rag_section=rag_section,
+        no_rag_warning=no_rag_warning,
+    )
 
     try:
         final_response = await invoke_llm_safely(llm, prompt)
     except Exception as e:
         print(f"LLM error in crime report: {e}")
-        final_response = f"""**Crime:** {identified_crime.replace("_", " ").title()}
-
-**Statute:** Please consult with police or a lawyer for applicable IPC/CrPC sections.
-
-**Punishment:** Varies based on the specific offense and severity. Consult a lawyer for details.
-
-**Further Steps to be Taken:** If in immediate danger, call 100 (Police) or 112 (Emergency). Visit the nearest police station to file an FIR under CrPC Section 154. Preserve all evidence including photographs, documents, and witness contact information. Consult a criminal lawyer for legal guidance."""
+        final_response = CRIME_REPORT_FALLBACK.format(
+            crime_name=identified_crime.replace("_", " ").title()
+        )
 
     # Compulsory RAG: if RAG failed, prepend visible disclaimer
     if disclaimer_prefix:
@@ -1104,12 +700,16 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     user_input = state["current_input"]
     lawyer_query = state.get("lawyer_query") or user_input
 
-    # Get lawyer finder tool
-    finder = get_lawyer_finder()
+    # Real Postgres-backed recommendation (pgvector semantic search + weighted
+    # rating/success_rate score). ChatState has no session plumbing, and this
+    # is the only DB access chatbot.py needs, so open one locally rather than
+    # threading a Session through the whole graph.
+    from app.db.engine import get_engine
+    from sqlmodel import Session as DBSession
 
-    # Search for lawyers
-    lawyers = finder.search_by_query(lawyer_query, limit=5)
-    formatted_results = finder.format_lawyer_results(lawyers)
+    with DBSession(get_engine()) as session:
+        lawyers = await recommend_lawyers_core(session, problem_description=lawyer_query, limit=5)
+    formatted_results = format_lawyer_results(lawyers)
 
     # Optionally use Indian Kanoon to provide legal context for lawyer search —
     # purely locational searches ("find a lawyer near me") get no benefit
@@ -1143,27 +743,22 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
         final_response = await invoke_llm_safely(llm, prompt)
     except Exception:
         # Use formatted results directly if LLM fails
-        final_response = f"""Based on your request, I found some lawyers who might be able to help:
-
-{formatted_results}
-
-**Tips for choosing a lawyer:**
-1. Schedule consultations with 2-3 lawyers before deciding
-2. Ask about their experience with cases like yours
-3. Discuss fees and payment structure upfront
-4. Trust your instincts about communication style
-
-Would you like me to search with different criteria?"""
+        final_response = LAWYER_SEARCH_FALLBACK.format(
+            formatted_results=formatted_results
+        )
 
     # Convert to LawyerInfo format
     lawyers_info: List[LawyerInfo] = [
         {
             "name": l.name,
-            "specialization": l.specialization,
+            "specialization": l.specialty,
             "location": l.location,
-            "contact": l.contact,
+            "contact": None,
             "rating": l.rating,
-            "experience_years": l.experience_years,
+            "experience_years": l.experience,
+            "hourly_rate": l.hourly_rate,
+            "success_rate": l.success_rate,
+            "bio": l.bio,
         }
         for l in lawyers
     ]
@@ -1178,12 +773,16 @@ Would you like me to search with different criteria?"""
     }
 
 
-async def _verify_response_citations(response_text: str) -> str:
+async def _verify_response_citations(
+    response_text: str, retrieved_sections=None
+) -> str:
     """
     Non-LLM post-generation check: does every 'Section N of the X Act' /
     'Article N' claim in the answer actually exist in the indexed corpus
-    under the cited act? Appends a footer flagging mismatches; silent when
-    everything verifies. Never raises — a verifier bug must not break chat.
+    under the cited act? When ``retrieved_sections`` is given, citations that
+    exist but were not retrieved for this query are flagged as ungrounded.
+    Appends a footer flagging mismatches; silent when everything verifies.
+    Never raises — a verifier bug must not break chat.
     """
     try:
         from app.tools.citation_verifier import verification_footer, verify_citations
@@ -1192,7 +791,7 @@ async def _verify_response_citations(response_text: str) -> str:
         rag = get_unified_rag_system()
         if not rag.initialized:
             return response_text
-        report = verify_citations(response_text, rag)
+        report = verify_citations(response_text, rag, retrieved_sections)
         if report.checks:
             print(
                 f"[CitationVerify] {len(report.verified)}/{len(report.checks)} "
@@ -1302,56 +901,50 @@ async def handle_general_query(state: ChatState) -> ChatState:
 
         if rag_sections_text:
             context_parts.append(
-                f"""**Applicable Statutory Provisions** (each is tagged with its legal domain, e.g. [criminal], [civil], [family]):
-{rag_sections_text}
-
-NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/constitutional/other provisions govern rights, remedies, and obligations — do NOT describe them as criminal offences."""
+                STATUTE_CONTEXT_BLOCK.format(rag_sections_text=rag_sections_text)
             )
 
         if case_law_text:
             context_parts.append(
-                f"""**Judicial Interpretation** (curated landmark judgments, ordered by court authority — cite the case NAME, do not invent citations beyond what's shown):
-{case_law_text}"""
+                CASE_LAW_CONTEXT_BLOCK.format(case_law_text=case_law_text)
             )
 
         if indian_kanoon_results:
-            context_parts.append(f"""**Relevant Case Law & Precedents:**
-{indian_kanoon_results[:3000]}""")
+            context_parts.append(
+                INDIAN_KANOON_CONTEXT_BLOCK.format(
+                    indian_kanoon_results=indian_kanoon_results[:3000]
+                )
+            )
 
-        retrieved_context = "\n\n".join(context_parts) if context_parts else ""
+        from app.metrics.engineering_metrics import count_tokens_approx
+
+        user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
+        # Reserve budget for the fixed scaffolding (instruction template ~500
+        # tokens) plus the query and conversation history, then fit the context
+        # blocks into whatever input budget remains.
+        reserved = (
+            count_tokens_approx(user_input_for_prompt)
+            + count_tokens_approx(conversation_context or "")
+            + 500
+        )
+        retrieved_context = (
+            _fit_context_blocks(context_parts, reserved) if context_parts else ""
+        )
 
         # Choose appropriate prompt based on context
         if retrieved_context:
             # Use enhanced prompt with retrieved legal context
-            prompt = f"""You are a knowledgeable Indian legal assistant. Answer the following legal query comprehensively using ONLY the retrieved legal context below.
-
-**User Query:** {user_input}
-
-{retrieved_context}
-
-**CRITICAL ACCURACY RULES:**
-- You MUST base your answer on the retrieved context above. Cite specific sections, articles, case names, and provisions that appear in the context.
-- If the retrieved context does not cover a particular aspect of the query, say "I don't have specific references for this aspect" rather than guessing.
-- NEVER fabricate or guess section numbers, article numbers, or case citations.
-- If the legal position has changed or is contested, explicitly state that.
-- Cite landmark cases BY NAME when they appear in the retrieved context.
-
-**Instructions:**
-1. Directly answer the user's question using information from the retrieved context
-2. Cite the specific legal provisions, sections, or case law from the context that support your answer
-3. Explain the legal principles and reasoning clearly
-4. If multiple provisions or cases apply, explain how they relate to each other
-5. Note any exceptions, limitations, or conditions that apply
-6. If the retrieved context includes case law, reference the relevant holdings
-
-Provide a comprehensive, well-structured answer. Use headers and bullet points for clarity.
-
-End with: "This is general legal information. For specific advice on your situation, please consult a lawyer registered with the Bar Council of India."
-"""
+            prompt = GROUNDED_QUERY_PROMPT.format(
+                user_query=user_input_for_prompt,
+                retrieved_context=retrieved_context,
+            )
         else:
             # No retrieved context — tools returned empty.
             # Use general prompt with extra caution about ungrounded claims.
-            prompt = GENERAL_QUERY_PROMPT.format(query=user_input) + prompt_warning
+            prompt = (
+                GENERAL_QUERY_PROMPT.format(query=user_input_for_prompt)
+                + prompt_warning
+            )
 
         # Add conversation context if available
         if conversation_context:
@@ -1364,14 +957,7 @@ End with: "This is general legal information. For specific advice on your situat
 
     except Exception as e:
         print(f"LLM error in general query: {e}")
-        final_response = """I apologize, but I'm having trouble processing your request right now.
-
-In the meantime, I can help you with:
-1. **Document Analysis** - Upload a legal document for analysis
-2. **Crime Reporting** - Get guidance on reporting crimes and next steps
-3. **Find a Lawyer** - Search for attorneys based on your needs
-
-Please try rephrasing your question or selecting one of the options above."""
+        final_response = GENERAL_QUERY_ERROR
 
     # Compulsory RAG: if retrieval failed across all sources, prepend disclaimer
     if disclaimer_prefix:
@@ -1379,7 +965,10 @@ Please try rephrasing your question or selecting one of the options above."""
     elif rag_sections_text:
         # Only check citations when statute context was actually retrieved —
         # the no-context path already forbids specific citations by prompt.
-        final_response = await _verify_response_citations(final_response)
+        retrieved_sections = (statute_result.raw or {}).get("retrieved_sections")
+        final_response = await _verify_response_citations(
+            final_response, retrieved_sections
+        )
 
     return {
         **state,
@@ -1593,15 +1182,7 @@ async def handle_non_legal_query(state: ChatState) -> ChatState:
     """
     Handle non-legal queries with a polite rejection message.
     """
-    response = """I'm a legal assistance chatbot specializing in Indian law. I can help you with:
-
-• Legal questions and advice
-• Crime reporting guidance
-• Document analysis (contracts, agreements, etc.)
-• Finding lawyers
-• Understanding Indian laws (IPC, CrPC, IT Act, etc.)
-
-For other topics, I may not be the best resource. Please ask me a legal question!"""
+    response = NON_LEGAL_RESPONSE
 
     return {
         **state,
@@ -1702,6 +1283,7 @@ class LegalChatbot:
         self.graph = workflow.compile()
         self._sessions: Dict[str, List[Message]] = {}
         self._session_last_access: Dict[str, float] = {}
+        self._active_stream_tasks: Dict[str, asyncio.Task] = {}
 
     def _evict_stale_sessions(self):
         """Drop sessions idle beyond the TTL and cap the total session count."""
@@ -1814,24 +1396,46 @@ class LegalChatbot:
                 await queue.put(None)  # Signal completion
 
         task = asyncio.create_task(run_handler())
+        # A new stream supersedes any still-running one for this session — cancel
+        # the old task first so it isn't orphaned (unstoppable, still burning
+        # LLM compute) by the dict overwrite below.
+        previous = self._active_stream_tasks.get(session_id)
+        if previous is not None and not previous.done():
+            previous.cancel()
+        self._active_stream_tasks[session_id] = task
 
-        # Yield tokens as they arrive
-        while True:
-            chunk = await queue.get()
-            if chunk is None:
-                break
-            tokens_streamed = True
-            yield {"type": "token", "content": chunk}
+        accumulated = ""
+        stopped = False
+        try:
+            # Yield tokens as they arrive
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                tokens_streamed = True
+                accumulated += chunk
+                yield {"type": "token", "content": chunk}
 
-        # Wait for handler to complete and get result
-        result = await task
+            # Wait for handler to complete and get result
+            try:
+                result = await task
+            except asyncio.CancelledError:
+                # stop_stream() cancelled the handler mid-generation — the
+                # tokens already yielded above are everything the user saw,
+                # so save that partial text as the assistant turn instead of
+                # dropping it (keeps conversation context coherent).
+                stopped = True
+                result = {"intent": intent, "response": accumulated}
+        finally:
+            if self._active_stream_tasks.get(session_id) is task:
+                self._active_stream_tasks.pop(session_id, None)
 
         # If no tokens were streamed (non-LLM path), yield full response
         if not tokens_streamed and result.get("response"):
             yield {"type": "token", "content": result["response"]}
 
-        # Add assistant response to session history
-        response_text = result.get("response", "")
+        # Add assistant response (or partial, if stopped) to session history
+        response_text = result.get("response", "") or accumulated
         if response_text:
             assistant_message: Message = {
                 "role": "assistant",
@@ -1839,16 +1443,38 @@ class LegalChatbot:
             }
             self._add_message(session_id, assistant_message)
 
+        if stopped:
+            yield {
+                "type": "stopped",
+                "session_id": session_id,
+                "intent": result.get("intent") or intent,
+                "response": response_text,
+            }
+            return
+
         # Yield completion event with metadata
         yield {
             "type": "done",
             "session_id": session_id,
             "intent": result.get("intent") or intent,
+            "response": response_text,
             "lawyers_found": result.get("lawyers_found"),
             "document_info": result.get("document_info"),
             "document_validation": result.get("document_validation"),
             "crime_report": result.get("crime_report"),
         }
+
+    def stop_stream(self, session_id: str) -> bool:
+        """Cancel an in-flight stream_chat() generation for this session, if
+        any. Called from the /api/chat/stream/stop endpoint (the Stop button)
+        rather than relying on HTTP disconnect detection, since the handler
+        task is a detached asyncio task that a closed response body alone
+        would not cancel."""
+        task = self._active_stream_tasks.get(session_id)
+        if task is not None and not task.done():
+            task.cancel()
+            return True
+        return False
 
     async def chat(
         self,
@@ -1927,6 +1553,26 @@ class LegalChatbot:
     def get_session_history(self, session_id: str) -> List[Message]:
         """Get the message history for a session."""
         return self._get_session_messages(session_id).copy()
+
+    def has_session(self, session_id: str) -> bool:
+        """Whether session_id is already live in the in-memory cache."""
+        self._evict_stale_sessions()
+        return session_id in self._sessions
+
+    def seed_session(self, session_id: str, messages: List[Message]) -> None:
+        """
+        Prime in-memory state from DB-loaded history, but only if this
+        session_id isn't already live (avoids clobbering an active
+        conversation with a stale DB read). Called by the chat router for an
+        authenticated user whose session_id isn't yet in this process (fresh
+        restart, or a session_id that predates this process's uptime).
+        """
+        self._evict_stale_sessions()
+        if session_id not in self._sessions:
+            # Matches _add_message's cap — DB may hold the full untruncated
+            # transcript, but the live LangGraph context window is unaffected.
+            self._sessions[session_id] = list(messages[-20:])
+            self._session_last_access[session_id] = time.monotonic()
 
 
 # Singleton instance

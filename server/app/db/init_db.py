@@ -11,6 +11,7 @@ from sqlalchemy import inspect
 from sqlmodel import Session
 
 from app.db.engine import get_engine
+from app.db.migrations import run_migrations
 from app.db.models import Lawyer
 
 SCHEMA_FILE = Path(__file__).parent / "schema.sql"
@@ -106,6 +107,10 @@ def init_db() -> None:
         print("Created tables from schema.sql")
     else:
         print("Tables already exist, skipping schema.sql")
+
+    # Incremental changes for existing dev DBs — see app/db/migrations.py
+    # for the convention (there is no Alembic in this project).
+    run_migrations(engine)
 
     with Session(engine) as session:
         seeded = 0

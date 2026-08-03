@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import csv
+import sys
 import time
 from datetime import datetime
 
@@ -9,6 +10,23 @@ from app.chatbot import get_chatbot
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+class _Tee:
+    """Mirror a stream to a log file so each run's full console output is saved."""
+
+    def __init__(self, stream, fh):
+        self._stream = stream
+        self._fh = fh
+
+    def write(self, data):
+        self._stream.write(data)
+        self._fh.write(data)
+        self._fh.flush()
+
+    def flush(self):
+        self._stream.flush()
+        self._fh.flush()
 # ============================================================================
 # Test prompts — covering the domains that previously had accuracy issues
 # ============================================================================
@@ -164,8 +182,8 @@ async def run_metrics_evaluation(
     timestamp : str
         Timestamp string used for output filenames.
     use_llm_judge : bool
-        True  -> uses local Ollama LLM-as-judge (slower, higher quality).
-        False -> uses keyword heuristics only   (fast,  offline mode).
+        True  -> uses the OpenRouter LLM-as-judge (slower, higher quality).
+        False -> uses keyword heuristics only     (fast,  offline mode).
     """
     try:
         from app.metrics.evaluator import MetricsEvaluator
@@ -251,9 +269,21 @@ Examples:
         default=False,
         dest="no_llm_judge",
         help=(
-            "Disable the Ollama LLM-as-judge and use keyword heuristics instead. "
-            "Much faster; useful for offline / CI runs. "
-            "Only applies when --metrics is also passed."
+            "Disable the OpenRouter LLM-as-judge and use keyword heuristics "
+            "instead. Much faster and uses zero API quota; useful for "
+            "offline / CI runs. Only applies when --metrics is also passed."
+        ),
+    )
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Evaluate only the first N prompts instead of the full set. "
+            "Each prompt costs up to 4 LLM-judge calls, so use this to stay "
+            "inside OpenRouter's free-tier daily budget (see "
+            "OPENROUTER_DAILY_LIMIT in server/.env, default 50/day)."
         ),
     )
     return parser.parse_args()
@@ -263,6 +293,23 @@ async def main() -> None:
     args = parse_args()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # Save the complete console output of this run to its own log file.
+    run_log_path = f"run_{timestamp}.log"
+    log_fh = open(run_log_path, "w", encoding="utf-8")
+    sys.stdout = _Tee(sys.__stdout__, log_fh)
+    sys.stderr = _Tee(sys.__stderr__, log_fh)
+    print(f"[log] Saving full run log to {run_log_path}\n")
+
+    try:
+        await _run(args, timestamp)
+    finally:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        log_fh.close()
+        print(f"[log] Full run log written to {run_log_path}")
+
+
+async def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------
     # Pass 1: run the chatbot and collect raw answers + latencies
     # ------------------------------------------------------------------
@@ -272,6 +319,24 @@ async def main() -> None:
         prompts = TEST_PROMPTS + EXTENDED_PROMPTS
     else:
         prompts = TEST_PROMPTS
+    if args.sample is not None:
+        prompts = prompts[: max(0, args.sample)]
+
+    use_llm_judge = args.metrics and not args.no_llm_judge
+    if use_llm_judge:
+        from app.config import get_settings
+
+        settings = get_settings()
+        daily_limit = getattr(settings, "openrouter_daily_limit", 50)
+        estimated_calls = len(prompts)  # one batched judge call per query
+        print(
+            f"[Budget] This run may make up to {estimated_calls} OpenRouter judge "
+            f"calls against a daily budget of {daily_limit} "
+            "(cached/repeated (query, context, answer) triples are free). "
+            "Use --sample N to shrink the prompt set, or --no-llm-judge to "
+            "skip the judge entirely.\n"
+        )
+
     chatbot_results = await run_evaluation(prompts)
 
     # Save the basic CSV (same format as before, always written)
@@ -283,7 +348,6 @@ async def main() -> None:
     # Pass 2 (optional): full metrics evaluation
     # ------------------------------------------------------------------
     if args.metrics:
-        use_llm_judge = not args.no_llm_judge
         await run_metrics_evaluation(
             chatbot_results=chatbot_results,
             timestamp=timestamp,

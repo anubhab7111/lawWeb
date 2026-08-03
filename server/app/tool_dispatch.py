@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from app.tools.indian_kanoon import get_indian_kanoon_tool
-from app.tools.lawyer_finder import get_lawyer_finder
 
 
 @dataclass
@@ -272,11 +271,20 @@ async def invoke_statute_context(
         except Exception as e:
             print(f"Case law lookup error: {e}")
 
+        retrieved_sections = {
+            c.section_number.replace("Article", "").replace("§", "").strip().upper()
+            for c in context.chunks
+            if not c.section_number.startswith("part ")
+        }
+
         return ToolInvocationResult(
             name="statute_context",
             succeeded=True,
             context_text=text,
-            raw={"case_law_text": case_text},
+            raw={
+                "case_law_text": case_text,
+                "retrieved_sections": retrieved_sections,
+            },
         )
     except Exception as e:
         print(f"Unified RAG lookup error: {e}")
@@ -353,26 +361,31 @@ async def invoke_crime_sections(
 
 
 # ============================================================================
-# Lawyer finder
+# Bare Act Explorer (bonus chatbot reachability — primary UX is the
+# standalone /api/bare-acts router; see app/tools/bare_act_explorer.py)
 # ============================================================================
 
 
-async def invoke_lawyer_finder(query: str, limit: int = 5) -> ToolInvocationResult:
-    """Search the lawyer directory."""
-    finder = get_lawyer_finder()
-    lawyers = finder.search_by_query(query, limit=limit)
-    formatted = finder.format_lawyer_results(lawyers)
-    return ToolInvocationResult(
-        name="lawyer_finder",
-        succeeded=bool(lawyers),
-        context_text=formatted,
-        raw=lawyers,
-    )
+async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
+    try:
+        from app.tools.bare_act_explorer import explore_bare_act
+
+        result = await explore_bare_act(query, explain=False)
+        if not result.matches:
+            return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
+
+        text = _budget_context(result.matches)
+        return ToolInvocationResult(
+            name="bare_act_lookup", succeeded=True, context_text=text, raw=result
+        )
+    except Exception as e:
+        print(f"Bare act lookup error: {e}")
+        return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
 
 
 RAG_TOOL_REGISTRY: Dict[str, Callable] = {
     "indian_kanoon": invoke_indian_kanoon,
     "statute_context": invoke_statute_context,
     "crime_sections": invoke_crime_sections,
-    "lawyer_finder": invoke_lawyer_finder,
+    "bare_act_lookup": invoke_bare_act_lookup,
 }

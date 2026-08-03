@@ -1,7 +1,7 @@
 """
 Routing-accuracy eval for the embedding-based intent classifier
-(app.intent_classifier.classify_intent_embedding) and the deterministic
-domain-hint inference (app.chatbot._infer_domain_hint).
+(app.intent_classifier.classify_intent_embedding) and the embedding-based
+domain-hint classifier (app.intent_classifier.classify_domain_hint_embedding).
 
 Cheap by design: pure embedding calls, no Ollama/generation dependency.
 Calls the classifier and domain-hint function directly rather than the
@@ -20,8 +20,7 @@ Usage: python test_routing.py
 import asyncio
 import time
 
-from app.chatbot import _infer_domain_hint
-from app.intent_classifier import classify_intent_embedding
+from app.intent_classifier import classify_domain_hint_embedding, classify_intent_embedding
 
 ROUTING_GROUND_TRUTH = [
     # -- document_analysis --
@@ -145,7 +144,7 @@ async def run() -> None:
         t0 = time.time()
         result = await classify_intent_embedding(query, has_document)
         intent = "general_query" if result.is_ambiguous else result.primary_intent
-        domain_hint = _infer_domain_hint(query)
+        domain_hint = await classify_domain_hint_embedding(query)
         latency_ms = (time.time() - t0) * 1000
         latencies_ms.append(latency_ms)
 

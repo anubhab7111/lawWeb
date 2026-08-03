@@ -103,6 +103,14 @@ def _dedupe_by_section(chunks: List[LegalChunk]) -> List[LegalChunk]:
     return out
 
 
+def _drop_prose(chunks: List[LegalChunk]) -> List[LegalChunk]:
+    """Exclude prose sliding-window chunks (``section_number`` like "part 3").
+    These are notifications/commentary, not citable statute sections, and can
+    outrank real provisions — especially in the unfiltered confidence-gate retry.
+    Pinned sections never use the "part N" format, so they are unaffected."""
+    return [c for c in chunks if not c.section_number.startswith("part ")]
+
+
 async def retrieve_statutes(
     query: str,
     k: int = 8,
@@ -162,7 +170,7 @@ async def retrieve_statutes(
             k=hybrid_k,
             domains=domains_hint or (parsed.domains or None),
         )
-        hybrid_chunks = context.chunks
+        hybrid_chunks = _drop_prose(context.chunks)
 
     merged = _dedupe_by_section(pinned + hybrid_chunks)
 
@@ -181,7 +189,7 @@ async def retrieve_statutes(
         context = await rag.retrieve(
             search_query, k=max(k, 12), domains=None, min_score=0.1
         )
-        merged = _dedupe_by_section(merged + context.chunks)
+        merged = _dedupe_by_section(merged + _drop_prose(context.chunks))
 
     merged = merged[: max(k, len(pinned))]
     merged = _expand_context(rag, merged)
