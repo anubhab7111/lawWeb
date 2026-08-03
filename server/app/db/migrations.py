@@ -242,6 +242,7 @@ def ensure_calendar_events_table(engine: Engine) -> None:
                 end_at TIMESTAMPTZ(6),
                 related_case_id TEXT REFERENCES saved_cases(id) ON DELETE SET NULL,
                 related_booking_id TEXT REFERENCES bookings(id) ON DELETE SET NULL,
+                related_case_event_id TEXT REFERENCES case_events(id) ON DELETE SET NULL,
                 google_calendar_event_id TEXT,
                 outlook_event_id TEXT,
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -251,6 +252,22 @@ def ensure_calendar_events_table(engine: Engine) -> None:
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS calendar_events_user_id_start_at_idx "
             "ON calendar_events(user_id, start_at);"
+        )
+
+
+def ensure_calendar_events_related_case_event_column(engine: Engine) -> None:
+    """Lets sync_case_events() upsert a hearing's calendar_events row instead
+    of creating a duplicate on every re-sync (added after calendar_events
+    already shipped without this column)."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS "
+            "related_case_event_id TEXT REFERENCES case_events(id) ON DELETE SET NULL;"
+        )
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "calendar_events_related_case_event_id_key ON calendar_events(related_case_event_id) "
+            "WHERE related_case_event_id IS NOT NULL;"
         )
 
 
@@ -266,3 +283,4 @@ def run_migrations(engine: Engine) -> None:
     ensure_cause_list_cache_table(engine)
     ensure_vault_tables(engine)
     ensure_calendar_events_table(engine)
+    ensure_calendar_events_related_case_event_column(engine)

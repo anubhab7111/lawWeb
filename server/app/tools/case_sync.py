@@ -10,7 +10,7 @@ from typing import List
 
 from sqlmodel import Session, select
 
-from app.db.models import CaseAiSummary, CaseEvent, SavedCase
+from app.db.models import CalendarEvent, CaseAiSummary, CaseEvent, SavedCase
 from app.tools.case_data_provider import CaseDataProviderError, get_case_data_provider
 from app.tools.case_summarizer import summarize_case_event
 
@@ -51,6 +51,23 @@ async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]
         session.add(event)
         session.flush()
         new_events.append(event)
+
+        # Personal Legal Calendar (Phase 4.1): a new hearing case_event
+        # auto-populates the calendar, same as a confirmed booking does in
+        # app/routers/bookings.py. Keyed by related_case_event_id (unique)
+        # so a future update-in-place on the source event could re-sync
+        # this row instead of creating a duplicate.
+        if record.event_type == "hearing" and event.event_date:
+            session.add(
+                CalendarEvent(
+                    user_id=case.user_id,
+                    title=f"Hearing: {case.title or case.cnr}",
+                    event_type="hearing",
+                    start_at=event.event_date,
+                    related_case_id=case.id,
+                    related_case_event_id=event.id,
+                )
+            )
 
         if record.event_type == "order":
             summary_text = await summarize_case_event(
