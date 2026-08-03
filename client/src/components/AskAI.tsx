@@ -1,11 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type MouseEvent } from "react";
 import type { View } from "../App";
 import {
   sendChatMessageStream,
   stopChatStream,
   uploadDocumentForAnalysis,
   clearChatSession,
+  listChatSessions,
+  getChatSessionHistory,
   type StreamEvent,
+  type ChatSessionSummary,
 } from "../api";
 import { RichText } from "./RichText";
 import { initials, avatarTint, type UserProfile } from "../lib/ui";
@@ -27,12 +30,6 @@ const EXAMPLE_PROMPTS = [
   "Understand a legal notice",
   "Divorce process basics",
   "Trademark registration steps",
-];
-
-const RECENT_THREADS = [
-  "Deposit withheld by landlord",
-  "FIR for phone theft",
-  "Rental agreement review",
 ];
 
 const CMDK_ACTIONS: { icon: string; label: string; view: View }[] = [
@@ -59,6 +56,8 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [cmdkQuery, setCmdkQuery] = useState("");
   const [openSources, setOpenSources] = useState<Record<string, boolean>>({});
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -74,6 +73,70 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const refreshSessions = useCallback(async () => {
+    if (!user) {
+      setSessions([]);
+      return;
+    }
+    try {
+      const { sessions } = await listChatSessions();
+      setSessions(sessions);
+    } catch {
+      // Non-fatal — leave whatever list we already have.
+    }
+  }, [user]);
+
+  // Covers initial mount, login, and logout. On logout, also drop any
+  // transcript on screen so the next guest/account never sees it.
+  useEffect(() => {
+    refreshSessions();
+    if (!user) {
+      setSessionId(undefined);
+      setMessages([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const loadSession = useCallback(
+    async (id: string) => {
+      if (id === sessionId || busy) return;
+      setLoadingHistory(true);
+      try {
+        const { messages: history } = await getChatSessionHistory(id);
+        setSessionId(id);
+        setMessages(
+          history.map((m, i) => ({
+            id: `h${i}-${id}`,
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: m.content,
+          }))
+        );
+      } catch {
+        // Leave the current view unchanged on failure.
+      } finally {
+        setLoadingHistory(false);
+      }
+    },
+    [sessionId, busy]
+  );
+
+  const deleteSession = useCallback(
+    async (e: MouseEvent, id: string) => {
+      e.stopPropagation();
+      try {
+        await clearChatSession(id);
+      } catch {
+        // ignore
+      }
+      await refreshSessions();
+      if (id === sessionId) {
+        setSessionId(undefined);
+        setMessages([]);
+      }
+    },
+    [sessionId, refreshSessions]
+  );
 
   const send = useCallback(
     async (text: string, upload?: File | null) => {
@@ -133,9 +196,10 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
         setBusy(false);
         abortRef.current = null;
         streamingSessionIdRef.current = undefined;
+        if (user) refreshSessions();
       }
     },
-    [busy, sessionId]
+    [busy, sessionId, user, refreshSessions]
   );
 
   const stopGenerating = useCallback(() => {
@@ -188,15 +252,41 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
         </button>
         <div className="eyebrow" style={{ padding: "0 12px 8px", fontSize: 11 }}>Recent</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, overflow: "auto" }}>
-          {RECENT_THREADS.map((t, i) => (
-            <button key={t} className={`side-thread${i === 0 ? " active" : ""}`}>{t}</button>
+          {user && sessions.length === 0 && (
+            <div style={{ padding: "6px 12px", font: "400 12.5px var(--font-body)", color: "var(--muted-3)" }}>No conversations yet</div>
+          )}
+          {sessions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => loadSession(s.id)}
+              className={`side-thread${s.id === sessionId ? " active" : ""}`}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}
+            >
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.title || "Untitled"}</span>
+              <span
+                onClick={(e) => deleteSession(e, s.id)}
+                className="side-thread-delete"
+                style={{ flex: "none", opacity: 0, cursor: "pointer" }}
+                title="Delete conversation"
+              >
+                ✕
+              </span>
+            </button>
           ))}
         </div>
       </div>
 
       {/* main column */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {isEmpty ? (
+        {loadingHistory ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{ width: 6, height: 6, borderRadius: 99, background: "var(--faint)", display: "inline-block", animation: `lw-dotPulse 1.2s infinite ${i * 0.15}s` }} />
+              ))}
+            </div>
+          </div>
+        ) : isEmpty ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", gap: 22 }}>
             <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", font: "700 20px var(--font-head)" }}>L</div>
             <div>
@@ -342,10 +432,10 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
                   <span style={{ color: "var(--accent)", width: 16, display: "inline-block", textAlign: "center", marginRight: 8 }}>{a.icon}</span>{a.label}
                 </button>
               ))}
-              <div className="eyebrow" style={{ padding: "12px 12px 4px", fontSize: 11 }}>Recent threads</div>
-              {RECENT_THREADS.filter((t) => t.toLowerCase().includes(q)).map((t) => (
-                <button key={t} className="menu-row" onClick={() => setCmdkOpen(false)}>
-                  <span style={{ color: "#c3c2bc", width: 16, display: "inline-block", textAlign: "center", marginRight: 8 }}>💬</span>{t}
+              {sessions.length > 0 && <div className="eyebrow" style={{ padding: "12px 12px 4px", fontSize: 11 }}>Recent threads</div>}
+              {sessions.filter((s) => (s.title || "").toLowerCase().includes(q)).map((s) => (
+                <button key={s.id} className="menu-row" onClick={() => { setCmdkOpen(false); loadSession(s.id); }}>
+                  <span style={{ color: "#c3c2bc", width: 16, display: "inline-block", textAlign: "center", marginRight: 8 }}>💬</span>{s.title || "Untitled"}
                 </button>
               ))}
             </div>
