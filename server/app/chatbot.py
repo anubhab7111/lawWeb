@@ -1544,6 +1544,7 @@ class LegalChatbot:
                 "type": "stopped",
                 "session_id": session_id,
                 "intent": result.get("intent") or intent,
+                "response": response_text,
             }
             return
 

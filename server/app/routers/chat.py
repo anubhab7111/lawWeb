@@ -290,7 +290,11 @@ async def chat_stream(
                 message=request.message,
                 session_id=resolved_session_id,
             ):
-                if event.get("type") == "done":
+                # "stopped" (Stop button cancelled generation mid-stream) also
+                # carries a "response" — the partial text already shown to
+                # the user — and must be persisted the same as "done", or a
+                # stopped turn would silently never reach the DB.
+                if event.get("type") in ("done", "stopped"):
                     with Session(get_engine()) as db_session:
                         await _persist_turn(
                             db_session,
