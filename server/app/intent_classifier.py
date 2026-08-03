@@ -6,10 +6,14 @@ over the same BGE embedding model already loaded for RAG retrieval
 (app.tools.base_legal_rag._get_shared_embeddings) — zero additional
 VRAM/RAM cost versus today, no Ollama round-trip, no multi-second latency.
 
-Scope: classifies among the four intents that survive app.chatbot's stage-1
-non-legal short-circuit (_stage1_domain_check runs first, zero latency, and
-filters "non_legal"). This module never represents "non_legal" as a class —
-by construction it's only ever called on input stage-1 already judged legal.
+Scope: classifies among all five intents app.chatbot.classify_intent can
+route to, including "non_legal". There is no separate keyword-based domain
+gate upstream of this — a prior hardcoded allow/deny-list
+(_stage1_domain_check) defaulted anything that didn't match either list to
+"assume legal", which silently forced unrelated queries (e.g. "where is my
+bike") into a legal intent. non_legal is a real competing class here, scored
+the same way as the other four, so ambiguous/off-topic input can actually
+lose to it instead of defaulting past it.
 """
 
 import asyncio
@@ -67,6 +71,27 @@ INTENT_REFERENCE_EXAMPLES: Dict[str, List[str]] = {
         "What is the procedure for filing a consumer complaint?",
         "What does Article 21 of the Constitution protect?",
         "How does bail work for a non-bailable offence?",
+    ],
+    "non_legal": [
+        # Deliberately heterogeneous — non_legal covers everything outside
+        # the other four domains, so a narrow reference set here would
+        # centroid-blur into a poor discriminator. Each example anchors a
+        # different topic rather than paraphrasing the same one.
+        "I can't find my keys anywhere, any tips on where to look?",
+        "How do I make a classic Margherita pizza at home?",
+        "What was the final score of last night's football match?",
+        "What's the square root of 144?",
+        "What stretches help with lower back pain after sitting all day?",
+        "Can you write a short story about a dragon for my daughter?",
+        "Can we just chat for a bit, I'm bored right now.",
+        "What's the weather going to be like this weekend?",
+        "Can you recommend a good sci-fi movie to watch tonight?",
+        "How do I fix a laptop that won't turn on?",
+        "What's the capital of Australia?",
+        "Tell me a fun fact about outer space.",
+        "How long does it take to boil an egg?",
+        "What's the best way to learn to play guitar?",
+        "My phone battery drains really fast, any tips?",
     ],
 }
 

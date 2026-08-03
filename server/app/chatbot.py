@@ -14,7 +14,6 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional
 from langchain_core.messages import HumanMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.prompts import (
@@ -40,105 +39,10 @@ from app.tools.lawyer_finder import get_lawyer_finder
 from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
 from app.tools.statutory_validator import get_statutory_validator
 
-# ============================================================================
-# Pydantic Models for Structured Routing
-# ============================================================================
-
-
-class DomainClassification(BaseModel):
-    """Stage 1: Domain-level classification (Legal vs Non-Legal)."""
-
-    is_legal: bool = Field(description="Whether the query is related to legal matters")
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    legal_indicators: List[str] = Field(
-        default_factory=list, description="Legal terms or concepts found in the query"
-    )
-
 
 # ============================================================================
 # Keyword Banks for Fast Routing (Zero-Latency Layer)
 # ============================================================================
-
-# Non-legal patterns (casual conversation)
-NON_LEGAL_PATTERNS = frozenset(
-    [
-        "my favorite",
-        "my favourite",
-        "i like",
-        "i love",
-        "favorite color",
-        "favourite color",
-        "best food",
-        "favorite movie",
-        "what is your",
-        "how are you",
-        "good morning",
-        "good night",
-        "hello",
-        "hi there",
-        "weather today",
-        "tell me a joke",
-        "sing a song",
-        "who are you",
-        "your name",
-        "thank you",
-        "thanks",
-        "bye",
-        "goodbye",
-    ]
-)
-
-# Legal domain indicators
-LEGAL_DOMAIN_KEYWORDS = frozenset(
-    [
-        "law",
-        "legal",
-        "court",
-        "judge",
-        "crime",
-        "police",
-        "lawyer",
-        "attorney",
-        "ipc",
-        "crpc",
-        "section",
-        "act",
-        "right",
-        "constitution",
-        "case",
-        "fir",
-        "bail",
-        "arrest",
-        "prosecution",
-        "verdict",
-        "judgment",
-        "statute",
-        "offence",
-        "offense",
-        "punishment",
-        "penalty",
-        "fine",
-        "imprisonment",
-        "contract",
-        "agreement",
-        "deed",
-        "property",
-        "tenant",
-        "landlord",
-        "divorce",
-        "custody",
-        "maintenance",
-        "alimony",
-        "will",
-        "testament",
-        "inheritance",
-        "defamation",
-        "fraud",
-        "cheating",
-        "theft",
-        "robbery",
-    ]
-)
 
 # Document validation keywords
 VALIDATION_KEYWORDS = frozenset(
@@ -623,38 +527,6 @@ def _extract_legal_entities(text: str) -> List[str]:
     return list(set(entities))
 
 
-async def _stage1_domain_check(text: str) -> DomainClassification:
-    """
-    Stage 1: Hierarchical Routing - Domain Check
-    Determines if the query is Legal or Non-Legal.
-    Uses fast keyword matching (zero-latency).
-    """
-    text_lower = text.lower()
-
-    # Check for non-legal patterns first
-    is_non_legal = _fast_keyword_check(text, NON_LEGAL_PATTERNS)
-
-    # Check for legal domain indicators
-    legal_matches = [kw for kw in LEGAL_DOMAIN_KEYWORDS if kw in text_lower]
-    has_legal_context = len(legal_matches) > 0
-
-    # If clearly non-legal and no legal context
-    if is_non_legal and not has_legal_context:
-        return DomainClassification(is_legal=False, confidence=0.9, legal_indicators=[])
-
-    # If has legal indicators
-    if has_legal_context:
-        confidence = min(0.95, 0.6 + len(legal_matches) * 0.1)
-        return DomainClassification(
-            is_legal=True,
-            confidence=confidence,
-            legal_indicators=legal_matches[:5],  # Top 5 indicators
-        )
-
-    # Ambiguous - assume legal with lower confidence
-    return DomainClassification(is_legal=True, confidence=0.5, legal_indicators=[])
-
-
 async def _rewrite_query_for_retrieval(
     messages: List[Message], current_input: str
 ) -> str:
@@ -825,13 +697,12 @@ async def classify_intent(state: ChatState) -> ChatState:
 
     Architecture:
     1. Fast path: document + very short query -> document_analysis
-    2. Zero-latency keyword pre-filter: non-legal short-circuit (skips the
-       embedding classifier entirely for casual chat)
-    3. Primary router: embedding nearest-centroid classification
-       (classify_intent_embedding) — no LLM anywhere in this path
-    4. Deterministic domain_hint inference (_infer_domain_hint), independent
+    2. Primary router: embedding nearest-centroid classification over 5
+       classes, including non_legal (classify_intent_embedding) — no
+       keyword-based domain gate, no LLM anywhere in this path
+    3. Deterministic domain_hint inference (_infer_domain_hint), independent
        of the classifier
-    5. History-aware query rewrite for retrieval (unchanged)
+    4. History-aware query rewrite for retrieval (unchanged)
 
     Returns enriched state with:
     - intent: Primary classification
@@ -866,32 +737,40 @@ async def classify_intent(state: ChatState) -> ChatState:
         }
 
     # =========================================================================
-    # ZERO-LATENCY PRE-FILTER: Domain Check (Legal vs Non-Legal)
+    # PRIMARY ROUTER: embedding nearest-centroid classification, 5-way
+    # (document_analysis / crime_report / find_lawyer / general_query /
+    # non_legal) — no separate keyword-based domain gate. non_legal is a
+    # real competing class here, not a hardcoded-pattern fallback.
     # =========================================================================
-    domain = await _stage1_domain_check(user_input)
-    print(
-        f"[Router] Stage 1 - Domain: is_legal={domain.is_legal}, confidence={domain.confidence:.2f}"
+    result = await classify_intent_embedding(user_input, has_document)
+    # Ambiguous ties among the four *legal* intents default to general_query
+    # (still grounded, just not the specific handler) rather than falling
+    # back to an LLM — no model call anywhere in this routing path. But if
+    # non_legal is itself the top-scoring class, trust it even when the
+    # margin is thin: collapsing an ambiguous non_legal read into
+    # general_query would silently reintroduce the old "assume legal when
+    # unsure" bias non_legal was added to remove.
+    intent = (
+        "general_query"
+        if result.is_ambiguous and result.primary_intent != "non_legal"
+        else result.primary_intent
     )
-    if not domain.is_legal:
-        print(f"[Router] Non-legal short-circuit — skipping embedding classifier")
+
+    if intent == "non_legal":
+        print(
+            f"[Router] Non-legal (confidence={result.confidence:.3f}, "
+            f"margin={result.margin:.3f}) — skipping domain_hint/entities/retrieval"
+        )
         return {
             **state,
             "intent": "non_legal",
-            "routing_confidence": domain.confidence,
-            "routing_reasoning": "Query is not related to legal matters",
+            "routing_confidence": result.confidence,
+            "routing_reasoning": result.reasoning,
+            "is_ambiguous": result.is_ambiguous,
             "selected_tools": [],
             "domain_hint": None,
             "active_document_context": has_document,
         }
-
-    # =========================================================================
-    # PRIMARY ROUTER: embedding nearest-centroid classification
-    # =========================================================================
-    result = await classify_intent_embedding(user_input, has_document)
-    # Ambiguous classifications default to general_query (still grounded,
-    # just not the specific handler) rather than falling back to an LLM —
-    # no model call anywhere in this routing path.
-    intent = "general_query" if result.is_ambiguous else result.primary_intent
 
     domain_hint = _infer_domain_hint(user_input)
     entities = _extract_legal_entities(user_input)
