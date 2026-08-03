@@ -258,6 +258,8 @@ textarea.input { resize: vertical; min-height: 96px; line-height: 1.5; }
 }
 .side-thread:hover { background: #f1f0ec; color: var(--text); }
 .side-thread.active { background: #f1f0ec; color: var(--text); }
+.side-thread:hover .side-thread-delete { opacity: 1; }
+.side-thread-delete:hover { color: var(--danger); }
 .composer-send {
   width: 34px; height: 34px; flex: none; border-radius: 10px; border: none; background: var(--accent);
   display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer;

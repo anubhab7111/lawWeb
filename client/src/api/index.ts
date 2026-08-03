@@ -297,7 +297,11 @@ export async function clearChatSession(sessionId: string): Promise<{ message: st
 /**
  * Get chat session history
  */
-export async function getChatSessionHistory(sessionId: string) {
+export async function getChatSessionHistory(sessionId: string): Promise<{
+    session_id: string;
+    messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
+    count: number;
+}> {
     const response = await fetch(`${API_BASE_URL}/chat/session/${sessionId}/history`, {
         headers: {
             ...getAuthHeaders(),
@@ -305,6 +309,31 @@ export async function getChatSessionHistory(sessionId: string) {
     });
     if (!response.ok) {
         throw new Error('Failed to fetch session history');
+    }
+    return response.json();
+}
+
+export interface ChatSessionSummary {
+    id: string;
+    userId: string;
+    title: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+/**
+ * List the current user's persisted chat sessions, most recent first.
+ * Requires auth — the caller should treat a failed request (e.g. a guest
+ * with no token) as "no sessions" rather than surfacing an error.
+ */
+export async function listChatSessions(): Promise<{ sessions: ChatSessionSummary[]; count: number }> {
+    const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
+        headers: {
+            ...getAuthHeaders(),
+        },
+    });
+    if (!response.ok) {
+        throw new Error('Failed to fetch sessions');
     }
     return response.json();
 }
