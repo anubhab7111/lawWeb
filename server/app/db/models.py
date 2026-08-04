@@ -481,7 +481,14 @@ class ChatMessage(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     session_id: str = Field(foreign_key="chat_sessions.id")
     role: MessageRole = Field(sa_column=Column(SAEnum(MessageRole, name="MessageRole")))
+    # `content` is always canonical English (memory is language-independent).
+    # For a non-English turn, `content_display` holds the original-language
+    # text the user actually typed/saw and `language` its ISO-639-1 code, so
+    # history can be re-rendered without re-translating. English turns leave
+    # content_display NULL and language 'en'.
     content: str
+    language: str = Field(default="en")
+    content_display: Optional[str] = Field(default=None)
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -492,7 +499,10 @@ class ChatMessage(SQLModel, table=True):
             "id": self.id,
             "sessionId": self.session_id,
             "role": self.role.value if self.role else None,
-            "content": self.content,
+            # Prefer the user's original-language text for display; fall back to
+            # the canonical English content for English turns / legacy rows.
+            "content": self.content_display or self.content,
+            "language": self.language,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
 

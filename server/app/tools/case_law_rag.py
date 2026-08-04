@@ -229,6 +229,12 @@ class CaseLawRAGSystem:
         stored_fingerprint = meta.get("case_fingerprint")
         if stored_fingerprint is None:
             return True  # meta.pkl predates fingerprinting — rebuild once
+        # Vectors are model-specific — a different embedding model forces a
+        # rebuild (see base_legal_rag._should_rebuild).
+        from app.config import get_settings
+
+        if meta.get("embedding_model") != get_settings().embedding_model:
+            return True
         return stored_fingerprint != self._current_case_fingerprint()
 
     @staticmethod
@@ -238,6 +244,8 @@ class CaseLawRAGSystem:
     async def _build_vectorstore(self):
         from langchain_community.vectorstores import FAISS
         from langchain_core.documents import Document
+
+        from app.config import get_settings
 
         case_files = sorted(CASE_LAW_DIR.glob("*.json"))
         if not case_files:
@@ -320,6 +328,7 @@ class CaseLawRAGSystem:
                 {
                     "n_cases": len(case_files),
                     "case_fingerprint": self._current_case_fingerprint(),
+                    "embedding_model": get_settings().embedding_model,
                 },
                 f,
             )

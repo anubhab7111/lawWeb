@@ -27,9 +27,18 @@ class Settings(BaseSettings):
     # (<6GB) GPUs entirely — the VRAM is worth more to Ollama's LLM offload.
     reranker_device: str = "auto"
 
-    # Where the bge-large embedding model runs: "auto" | "cuda" | "cpu".
+    # Where the embedding model runs: "auto" | "cuda" | "cpu".
     # Set EMBEDDINGS_DEVICE=cuda for one-off index rebuilds.
     embeddings_device: str = "auto"
+
+    # Shared dense embedding model. BGE-M3 is multilingual (100+ languages)
+    # and still 1024-dim, so the pgvector columns and FAISS pipeline are
+    # unchanged — but its indices are model-specific and must be rebuilt after
+    # any change here. Unlike bge-large-en, M3 uses NO query-instruction
+    # prefix; leaving embedding_query_instruction blank is required or
+    # cross-lingual retrieval quality silently degrades.
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_query_instruction: str = ""
 
     # Chat session lifecycle
     session_ttl_seconds: int = 7200
@@ -104,6 +113,31 @@ class Settings(BaseSettings):
     # Performance settings
     max_document_size_mb: int = 10
     cache_ttl_seconds: int = 3600
+
+    # Multilingual support. Pipeline: detect language (fastText) → translate
+    # query → English → run the existing English RAG/Qwen pipeline → translate
+    # the English answer back to the user's language. Conversation memory stays
+    # canonical-English. When disabled, the pipeline is a zero-overhead no-op
+    # (no models load) and behaviour is identical to the English-only chatbot.
+    multilingual_enabled: bool = True
+    language_detector: str = "fasttext"
+    # fastText language-id model (lid.176.bin, ~126MB). Path is resolved
+    # relative to the server CWD, matching the data-path convention.
+    lang_detect_model_path: str = "app/data/models/lid.176.bin"
+    # Below this fastText confidence, assume the default language rather than
+    # trust a shaky guess — short/code-mixed inputs are unreliable.
+    lang_detect_min_confidence: float = 0.55
+    default_language: str = "en"
+    # IndicTrans2 distilled 200M checkpoints, one per direction, served via
+    # CTranslate2. These are the non-gated CTranslate2 conversions of Raj Dabre's
+    # rotary IndicTrans2 distilled models: they need no transformers modeling code
+    # (which is incompatible with the transformers 5.x this stack runs on) and no
+    # HuggingFace gating. Distilled keeps RAM ~0.5GB/direction. Runs on CPU by
+    # default so the 4GB VRAM stays free for Ollama's LLM offload.
+    translation_model_indic_en: str = "adalat-ai/ct2-rotary-indictrans2-indic-en-dist-200M"
+    translation_model_en_indic: str = "adalat-ai/ct2-rotary-indictrans2-en-indic-dist-200M"
+    translation_device: str = "cpu"  # "auto" | "cuda" | "cpu"
+    translation_cache: bool = True
 
     class Config:
         env_file = ".env"

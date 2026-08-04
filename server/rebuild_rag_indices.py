@@ -21,11 +21,16 @@ sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
 from app.tools import get_unified_rag_system
+from app.tools.case_law_rag import get_case_law_rag_system
 
 # All bare-act domains live in the single unified index; the old per-domain
 # indexes (criminal/civil/constitutional) are thin adapters over it now.
+# case_law is a separate index (Supreme Court/HC judgments) — included here so
+# `--all` rebuilds it too (e.g. after an embedding-model swap), rather than
+# relying solely on the startup build path.
 DOMAINS = {
     "unified": get_unified_rag_system,
+    "case_law": get_case_law_rag_system,
 }
 
 
@@ -53,9 +58,11 @@ async def rebuild_domain(domain: str):
     success = await system.initialize()
 
     if success:
-        print(
-            f"  Successfully rebuilt '{domain}' index with {len(system._chunks)} chunks."
-        )
+        # Bare-act systems hold `_chunks`; the case-law system holds `_cases`.
+        indexed = getattr(system, "_chunks", None)
+        if indexed is None:
+            indexed = getattr(system, "_cases", None) or {}
+        print(f"  Successfully rebuilt '{domain}' index with {len(indexed)} item(s).")
 
         # Diagnostic: per-domain chunk counts in the unified index
         if domain == "unified":

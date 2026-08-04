@@ -5,9 +5,15 @@ have one yet (e.g. after adding the pgvector column, or after seeding new
 demo lawyers).
 
 Usage:
-    python backfill_lawyer_embeddings.py
+    python backfill_lawyer_embeddings.py          # only rows missing an embedding
+    python backfill_lawyer_embeddings.py --all    # re-embed EVERY lawyer
+
+Use --all after switching the embedding model (e.g. to BGE-M3): existing
+bio_embedding values are non-NULL but were produced by the old model and are
+incompatible with new query vectors, so they must be regenerated.
 """
 
+import argparse
 import asyncio
 import os
 import sys
@@ -27,11 +33,20 @@ from app.tools.lawyer_recommender import embed_lawyers_batch
 
 
 async def main() -> None:
+    parser = argparse.ArgumentParser(description="Backfill lawyer bio embeddings.")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Re-embed every lawyer (use after an embedding-model change).",
+    )
+    args = parser.parse_args()
+
     engine = get_engine()
     with Session(engine) as session:
-        lawyers = session.exec(
-            select(Lawyer).where(Lawyer.bio_embedding.is_(None))
-        ).all()
+        query = select(Lawyer)
+        if not args.all:
+            query = query.where(Lawyer.bio_embedding.is_(None))
+        lawyers = session.exec(query).all()
 
         if not lawyers:
             print("No lawyers need embedding backfill.")
