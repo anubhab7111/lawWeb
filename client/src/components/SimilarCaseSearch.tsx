@@ -7,6 +7,10 @@ interface CaseHit {
   court: string;
   date: string;
   url: string;
+  facts: string;
+  issues: string[];
+  holding: string;
+  score: number;
 }
 
 interface Statute {
@@ -114,10 +118,27 @@ export function SimilarCaseSearch() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
                   {result.similarSupremeCourtCases.map((c, i) => (
                     <div key={i} className="card" style={{ padding: "14px 16px" }}>
-                      <div style={{ font: "600 13.5px var(--font-body)" }}>{c.caseName}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <div style={{ font: "600 13.5px var(--font-body)" }}>{c.caseName}</div>
+                        {c.score > 0 && (
+                          <div style={{ font: "600 11px var(--font-body)", color: "var(--muted-3)", whiteSpace: "nowrap" }}>
+                            match {Math.round(c.score * 100)}%
+                          </div>
+                        )}
+                      </div>
                       <div style={{ font: "400 12px var(--font-body)", color: "var(--muted-2)" }}>
                         {c.court}{c.citation ? ` · ${c.citation}` : ""}
                       </div>
+                      {c.holding && (
+                        <div style={{ font: "400 12.5px var(--font-body)", color: "var(--text-2)", marginTop: 6 }}>
+                          {c.holding}
+                        </div>
+                      )}
+                      {c.issues.length > 0 && (
+                        <ul style={{ margin: "6px 0 0 18px", font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>
+                          {c.issues.map((issue, j) => <li key={j}>{issue}</li>)}
+                        </ul>
+                      )}
                     </div>
                   ))}
                 </div>
