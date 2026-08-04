@@ -18,7 +18,7 @@ from cachetools import TTLCache
 
 from app.config import get_settings
 from app.tools.base_legal_rag import LegalChunk
-from app.tools.case_law_rag import CaseChunk, get_case_law_rag_system
+from app.tools.case_law_rag import CaseRecord, get_case_law_rag_system
 from app.tools.unified_legal_rag import get_unified_rag_system
 
 _SECTION_QUERY_RE = re.compile(
@@ -32,7 +32,7 @@ class BareActResult:
     query: str
     is_section_lookup: bool
     matches: List[LegalChunk] = field(default_factory=list)
-    landmark_judgments: List[CaseChunk] = field(default_factory=list)
+    landmark_judgments: List[CaseRecord] = field(default_factory=list)
     explanation: Optional[str] = None
     ambiguous: bool = False  # multiple acts share this section number
 

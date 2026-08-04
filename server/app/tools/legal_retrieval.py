@@ -23,7 +23,7 @@ import re
 from typing import Awaitable, Callable, List, Optional, Tuple
 
 from app.tools.base_legal_rag import LegalChunk, LegalContext
-from app.tools.case_law_rag import CaseChunk, get_case_law_rag_system
+from app.tools.case_law_rag import CaseRecord, get_case_law_rag_system
 from app.tools.legal_query_parser import (
     ParsedLegalQuery,
     parse_legal_query,
@@ -220,13 +220,19 @@ async def retrieve_case_law(
     parsed: ParsedLegalQuery,
     statute_chunks: List[LegalChunk],
     k: int = 3,
-) -> List[CaseChunk]:
+    query_issues: Optional[List[str]] = None,
+) -> List[CaseRecord]:
     """
     Second hop of statute -> case retrieval: query the curated landmark-
-    judgment corpus, boosting cases whose `statutes_cited` overlap the
-    statute sections already retrieved for this query (so a case actually
-    interpreting §438 outranks a topically-similar case about something
-    else). Silently returns [] if the case-law corpus isn't built yet.
+    judgment corpus, composite-scoring by semantic relevance + issue
+    overlap (query_issues, when the caller has run FIRAC extraction on an
+    uploaded document — see similar_cases.py) + statute overlap (cases
+    whose `statutes_cited` overlap the sections already retrieved for this
+    query) + doctrine overlap (parsed.doctrines). query_issues defaults to
+    None for callers without a structured FIRAC query (e.g. the general
+    chatbot), which degrades gracefully rather than distorting ranking —
+    see case_law_rag.CaseLawRAGSystem.retrieve. Silently returns [] if the
+    case-law corpus isn't built yet.
     """
     case_rag = get_case_law_rag_system()
     if not await case_rag.initialize():
@@ -236,4 +242,10 @@ async def retrieve_case_law(
     search_query = query
     if parsed.doctrines:
         search_query = query + " " + " ".join(parsed.doctrines)
-    return await case_rag.retrieve(search_query, k=k, boost_statutes=boost)
+    return await case_rag.retrieve(
+        search_query,
+        k=k,
+        boost_statutes=boost,
+        query_issues=query_issues,
+        query_doctrines=parsed.doctrines,
+    )
