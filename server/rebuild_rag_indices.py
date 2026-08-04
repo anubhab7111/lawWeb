@@ -58,9 +58,11 @@ async def rebuild_domain(domain: str):
     success = await system.initialize()
 
     if success:
-        print(
-            f"  Successfully rebuilt '{domain}' index with {len(system._chunks)} chunks."
-        )
+        # Bare-act systems hold `_chunks`; the case-law system holds `_cases`.
+        indexed = getattr(system, "_chunks", None)
+        if indexed is None:
+            indexed = getattr(system, "_cases", None) or {}
+        print(f"  Successfully rebuilt '{domain}' index with {len(indexed)} item(s).")
 
         # Diagnostic: per-domain chunk counts in the unified index
         if domain == "unified":

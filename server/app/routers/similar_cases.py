@@ -48,7 +48,9 @@ async def _run_search(document_text: str) -> dict:
 
     context, parsed = await retrieve_statutes(query, k=6)
     try:
-        supreme_court_cases = await retrieve_case_law(query, parsed, context.chunks, k=5)
+        supreme_court_cases = await retrieve_case_law(
+            query, parsed, context.chunks, k=5, query_issues=firac.issues
+        )
     except Exception as e:
         print(f"[SimilarCaseSearch] case law retrieval failed: {e}")
         supreme_court_cases = []
@@ -70,6 +72,10 @@ async def _run_search(document_text: str) -> dict:
                 "court": c.court,
                 "date": c.date,
                 "url": c.url,
+                "facts": c.facts,
+                "issues": c.issues,
+                "holding": c.holding,
+                "score": round(c.score, 3),
             }
             for c in supreme_court_cases
         ],

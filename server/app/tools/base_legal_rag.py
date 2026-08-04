@@ -217,6 +217,13 @@ async def _get_shared_embeddings() -> Any:
                             device = "cuda"
                 except ImportError:
                     pass
+                except Exception as e:
+                    # A genuinely full/contended GPU (e.g. Ollama holding VRAM)
+                    # can make the mem_get_info() probe itself raise a CUDA
+                    # runtime error rather than just report low free memory —
+                    # that must fall back to CPU like any other "GPU unusable"
+                    # case, not crash RAG initialization entirely.
+                    print(f"[rag] CUDA device probe failed ({e}) — using CPU.")
             print(f"[rag] Embeddings device: {device}")
             _shared_embeddings = _make_bge_embeddings(device)
         return _shared_embeddings
