@@ -109,6 +109,7 @@ class EvalResult:
     reciprocal_rank: float = 0.0
     context_precision: float = 0.0
     context_precision_reasoning: str = ""
+    context_precision_from_llm: bool = False
 
     # Generation metrics
     faithfulness: float = 0.0
@@ -205,6 +206,10 @@ class AggregateReport:
 
     # Domain breakdown
     domain_scores: Dict[str, Dict[str, float]]
+
+    # Count of results excluded from each judge-based mean because the judge
+    # failed for that query and a neutral-0.5 fallback was used instead.
+    judge_fallback_excluded: Dict[str, int]
 
     evaluated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -370,6 +375,7 @@ class MetricsEvaluator:
         # ---- LLM judge metrics (context precision + RAG triad) ---------------
         judge_failures = 0
         cp_precision = 0.0
+        cp_from_llm = False
         gen_scores: Dict[str, GenerationScore] = {}
 
         async def _guarded(coro):
@@ -388,7 +394,15 @@ class MetricsEvaluator:
                         reference=gt_entry["reference_answer"],
                     )
                 )
-                cp_precision = float(scores["context_precision"].score)
+                cp_score = scores["context_precision"]
+                cp_precision = float(cp_score.score)
+                # Each of the four triad metrics is parsed independently out
+                # of the batched response, so context_precision can fail to
+                # parse even when the other three succeed — track it the
+                # same way those three are tracked below.
+                cp_from_llm = not cp_score.reasoning.startswith("[JUDGE FAILED]")
+                if not cp_from_llm:
+                    judge_failures += 1
                 gen_scores = {
                     m: _judge_to_generation_score(scores[m])
                     for m in ("faithfulness", "answer_relevance", "context_recall")
@@ -452,6 +466,7 @@ class MetricsEvaluator:
             reciprocal_rank=rr,
             context_precision=round(cp_precision, 4),
             context_precision_reasoning="",
+            context_precision_from_llm=cp_from_llm,
             faithfulness=faith_s.final_score if faith_s else 0.0,
             faithfulness_reasoning=(faith_s.reasoning if faith_s else "Not evaluated."),
             faithfulness_from_llm=not (faith_s.judge_failed if faith_s else True),
@@ -495,6 +510,14 @@ class MetricsEvaluator:
             query = cr.get("query", "")
             gt = get_entry_by_query(query)
             if gt is None:
+                logger.warning(
+                    "No ground-truth entry found for query %r — scoring with "
+                    "an empty stub (domain='unknown', no keywords/sections/"
+                    "reference answer). Check that TEST_PROMPTS/"
+                    "EXTENDED_PROMPTS in test_chatbot.py match "
+                    "app/metrics/ground_truth.py exactly.",
+                    query,
+                )
                 gt = GroundTruthEntry(
                     query=query,
                     relevant_ipc_sections=[],
@@ -530,22 +553,41 @@ class MetricsEvaluator:
 
         errors = sum(1 for r in results if r.error)
 
-        # Retrieval
-        hr1 = round(sum(r.hit_rate_at_1 for r in results) / n, 4)
-        hr3 = round(sum(r.hit_rate_at_3 for r in results) / n, 4)
-        hr5 = round(sum(r.hit_rate_at_5 for r in results) / n, 4)
-        cp_mean = round(sum(r.context_precision for r in results) / n, 4)
-
+        # Retrieval — Hit Rate and MRR must share the same population: only
+        # queries that actually carry section-level ground truth. Queries
+        # without it (e.g. some constitutional questions) would otherwise
+        # silently drag Hit Rate toward 0 (compute_hit_rate returns 0.0 for
+        # empty ground truth) while MRR correctly excludes them — this kept
+        # the two metrics scored over different populations.
         gt_queries_with_secs = {
             gt["query"] for gt in GROUND_TRUTH if relevant_sections_for(gt)
         }
-        rrs = [r.reciprocal_rank for r in results if r.query in gt_queries_with_secs]
+        scored = [r for r in results if r.query in gt_queries_with_secs]
+
+        hr1 = round(sum(r.hit_rate_at_1 for r in scored) / len(scored), 4) if scored else 0.0
+        hr3 = round(sum(r.hit_rate_at_3 for r in scored) / len(scored), 4) if scored else 0.0
+        hr5 = round(sum(r.hit_rate_at_5 for r in scored) / len(scored), 4) if scored else 0.0
+        rrs = [r.reciprocal_rank for r in scored]
         mrr = round(sum(rrs) / len(rrs), 4) if rrs else 0.0
 
-        # Generation
-        faith_mean = round(sum(r.faithfulness for r in results) / n, 4)
-        rel_mean = round(sum(r.answer_relevance for r in results) / n, 4)
-        recall_mean = round(sum(r.context_recall for r in results) / n, 4)
+        # Generation — exclude neutral-0.5 judge-failure fallback scores from
+        # the mean when the judge was supposed to be running, so a partial
+        # judge outage doesn't silently pull the reported score toward 0.5.
+        # In --no-llm-judge runs every result is "not from llm" by design
+        # (not a failure), so _judge_mean falls back to the full blended
+        # average in that mode.
+        cp_mean, cp_excluded = self._judge_mean(
+            results, "context_precision", "context_precision_from_llm"
+        )
+        faith_mean, faith_excluded = self._judge_mean(
+            results, "faithfulness", "faithfulness_from_llm"
+        )
+        rel_mean, rel_excluded = self._judge_mean(
+            results, "answer_relevance", "answer_relevance_from_llm"
+        )
+        recall_mean, recall_excluded = self._judge_mean(
+            results, "context_recall", "context_recall_from_llm"
+        )
         rag_triad = round((faith_mean + rel_mean + recall_mean) / 3, 4)
 
         # Engineering
@@ -606,7 +648,46 @@ class MetricsEvaluator:
             cost_estimates=cost_estimates,
             token_efficiency=token_eff,
             domain_scores=domain_scores,
+            judge_fallback_excluded={
+                "context_precision": cp_excluded,
+                "faithfulness": faith_excluded,
+                "answer_relevance": rel_excluded,
+                "context_recall": recall_excluded,
+            },
         )
+
+    def _judge_mean(
+        self,
+        results: List[EvalResult],
+        score_attr: str,
+        from_llm_attr: str,
+    ) -> Tuple[float, int]:
+        """
+        Mean of *score_attr* across *results*, excluding results where
+        *from_llm_attr* is False when the judge is enabled for this run.
+
+        Excluding those results keeps a partial judge outage (some queries
+        got a real score, others got the neutral-0.5 failure fallback) from
+        silently pulling the mean toward 0.5. Falls back to the full blended
+        mean if literally every result was excluded, so the report never
+        shows an empty metric.
+
+        In --no-llm-judge runs every result has *from_llm_attr* False by
+        design (not a failure), so this returns the plain blended mean with
+        0 exclusions rather than flagging the whole run as "failed".
+        """
+        if not results:
+            return 0.0, 0
+
+        if not self.use_llm_judge:
+            vals = [getattr(r, score_attr) for r in results]
+            return (round(sum(vals) / len(vals), 4) if vals else 0.0), 0
+
+        clean = [r for r in results if getattr(r, from_llm_attr)]
+        excluded = len(results) - len(clean)
+        pool = clean if clean else results
+        vals = [getattr(r, score_attr) for r in pool]
+        return (round(sum(vals) / len(vals), 4) if vals else 0.0), excluded
 
     # -------------------------------------------------------------------------
     # Public: print_report
@@ -654,6 +735,13 @@ class MetricsEvaluator:
             else "OFF (keyword heuristics only)"
         )
         print(f"  LLM Judge     : {jmode}")
+        if self.use_llm_judge and any(report.judge_fallback_excluded.values()):
+            excl = report.judge_fallback_excluded
+            print(
+                "  Excluded from means (judge failed, neutral-0.5 fallback): "
+                f"faith={excl['faithfulness']}  relevance={excl['answer_relevance']}  "
+                f"recall={excl['context_recall']}  ctx_precision={excl['context_precision']}"
+            )
         print(sep)
 
         # [1] Retrieval --------------------------------------------------------
