@@ -273,7 +273,12 @@ CREATE TABLE "chat_messages" (
     "id" TEXT NOT NULL,
     "session_id" TEXT NOT NULL,
     "role" "MessageRole" NOT NULL,
+    -- content is always canonical English (language-independent memory).
+    -- language / content_display preserve the original-language turn for
+    -- re-rendering history; NULL / 'en' for English turns and legacy rows.
     "content" TEXT NOT NULL,
+    "language" TEXT NOT NULL DEFAULT 'en',
+    "content_display" TEXT,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "chat_messages_pkey" PRIMARY KEY ("id"),

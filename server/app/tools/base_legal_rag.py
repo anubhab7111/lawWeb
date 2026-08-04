@@ -162,9 +162,17 @@ def _is_noise_match(title: str, raw: str) -> bool:
 
 
 def _make_bge_embeddings(device: str) -> Any:
+    from app.config import get_settings
+
+    settings = get_settings()
     return HuggingFaceBgeEmbeddings(
-        model_name="BAAI/bge-large-en-v1.5",
+        model_name=settings.embedding_model,
         model_kwargs={"device": device},
+        # BGE-M3 (the multilingual default) uses NO query-instruction prefix,
+        # unlike bge-large-en. Passing the en-v1.5 default prefix to M3
+        # silently degrades cross-lingual retrieval, so it is configurable and
+        # blank by default — see config.embedding_query_instruction.
+        query_instruction=settings.embedding_query_instruction,
         # Small batch_size: a few thousand legal-section chunks at
         # once can OOM a consumer GPU (e.g. 4GB VRAM) if encoded
         # in one big batch.
@@ -834,6 +842,13 @@ class BaseLegalRAGSystem(ABC):
         stored_fingerprint = meta.get("pdf_fingerprint")
         if stored_fingerprint is None:
             return True  # meta.pkl predates fingerprinting — rebuild once
+        # Vectors are model-specific: an index built with a different embedding
+        # model must be rebuilt, or queries embedded by the new model would be
+        # scored against incompatible stored vectors.
+        from app.config import get_settings
+
+        if meta.get("embedding_model") != get_settings().embedding_model:
+            return True
         return stored_fingerprint != self._current_pdf_fingerprint()
 
     def _current_pdf_fingerprint(self) -> Dict[str, int]:
@@ -1036,6 +1051,8 @@ class BaseLegalRAGSystem(ABC):
 
     async def _save_vectorstore(self):
         """Persist FAISS index and write a mtime-stamped meta file."""
+        from app.config import get_settings
+
         self._faiss_dir.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
@@ -1047,6 +1064,7 @@ class BaseLegalRAGSystem(ABC):
                 {
                     "domain": self.domain_name,
                     "pdf_fingerprint": self._current_pdf_fingerprint(),
+                    "embedding_model": get_settings().embedding_model,
                 },
                 f,
             )

@@ -29,7 +29,7 @@ Provide a SHORT, easy-to-understand analysis:
 
 🇮🇳 **Related Indian Laws** (Mention IPC/CPC/other acts briefly if relevant)
 
-Use simple Hindi/English terms. Avoid complex legal jargon. Be conversational and helpful."""
+Use simple, plain-language terms. Avoid complex legal jargon. Be conversational and helpful."""
 
 
 # Lawyer search prompt

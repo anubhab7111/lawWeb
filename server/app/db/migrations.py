@@ -270,6 +270,22 @@ def ensure_chat_tables(engine: Engine) -> None:
         )
 
 
+def ensure_chat_messages_language_columns(engine: Engine) -> None:
+    """Multilingual support (added after chat_messages already shipped): store
+    the canonical English text in `content` and the user's original-language
+    text + ISO code in content_display/language, so a non-English conversation
+    re-renders in its own language while memory stays language-independent.
+    Depends on ensure_chat_tables having created chat_messages."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS "
+            "language TEXT NOT NULL DEFAULT 'en';"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS content_display TEXT;"
+        )
+
+
 def ensure_calendar_events_table(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.exec_driver_sql(
@@ -339,3 +355,4 @@ def run_migrations(engine: Engine) -> None:
     ensure_calendar_events_table(engine)
     ensure_calendar_events_related_case_event_column(engine)
     ensure_chat_tables(engine)
+    ensure_chat_messages_language_columns(engine)

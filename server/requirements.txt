@@ -61,4 +61,14 @@ braintree>=4.28.0
 # Hybrid retrieval (BM25 sparse index; reranker comes from sentence-transformers)
 rank-bm25>=0.2.2
 
+# Multilingual support: fastText language ID + IndicTrans2 translation.
+# fasttext-wheel ships prebuilt wheels (avoids a C++ build toolchain).
+# IndicTransToolkit provides IndicProcessor for pre/post-processing; the
+# IndicTrans2 models load via transformers (already present transitively).
+# transformers is pinned to a range known-good with IndicTrans2's custom code.
+fasttext-wheel>=0.9.2
+IndicTransToolkit>=1.0.0
+sentencepiece>=0.1.99
+transformers>=4.38,<4.46
+
 flake8

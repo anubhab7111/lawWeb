@@ -48,6 +48,7 @@ from app.intent_classifier import (
     classify_domain_hint_embedding,
     classify_intent_embedding,
 )
+from app.multilingual import preprocess_query, postprocess_response
 from app.tool_dispatch import RAG_TOOL_REGISTRY, infer_indian_kanoon_context_type
 from app.tools.crime_reporter import detect_crime_type
 from app.tools.document_classifier import get_document_classifier
@@ -1354,19 +1355,28 @@ class LegalChatbot:
         Stream chat response token by token.
         Yields dicts: {"type": "token", "content": "..."} or {"type": "done", ...}
         """
+        # Multilingual layer. Translate the query to English up front so
+        # routing/retrieval/reasoning run in English and memory stays canonical.
+        # Hybrid streaming (see class docstring): English replies stream token
+        # by token; a non-English reply cannot stream because it is translated
+        # only after the full English answer exists, so for those we suppress
+        # per-token output and emit one translated message at the end.
+        english_message, lang = await preprocess_query(message)
+        translate_out = lang.is_reliable and lang.language != get_settings().default_language
+
         # Get session history — snapshot into a new list so a concurrent
         # request for the same session_id (double-submit/retry) appending
         # via _add_message() can't mutate the list this run is still reading.
         messages = list(self._get_session_messages(session_id))
 
-        # Add user message to history
-        user_message: Message = {"role": "user", "content": message}
+        # Add user message to history (English canonical)
+        user_message: Message = {"role": "user", "content": english_message}
         self._add_message(session_id, user_message)
 
         # Build initial state
         initial_state: ChatState = {
             "messages": messages,
-            "current_input": message,
+            "current_input": english_message,
             "conversation_context": None,
             "intent": None,
             "document_content": document_content,
@@ -1428,14 +1438,18 @@ class LegalChatbot:
         stopped = False
         superseded = False
         try:
-            # Yield tokens as they arrive
+            # Yield tokens as they arrive. For a non-English reply we still
+            # drain the queue (to accumulate the full English answer) but do
+            # not emit per-token — the client receives one translated message
+            # after generation completes.
             while True:
                 chunk = await queue.get()
                 if chunk is None:
                     break
                 tokens_streamed = True
                 accumulated += chunk
-                yield {"type": "token", "content": chunk}
+                if not translate_out:
+                    yield {"type": "token", "content": chunk}
 
             # Wait for handler to complete and get result
             try:
@@ -1457,18 +1471,30 @@ class LegalChatbot:
                 # already-completed turn.
                 superseded = True
 
-        # If no tokens were streamed (non-LLM path), yield full response
-        if not tokens_streamed and result.get("response"):
-            yield {"type": "token", "content": result["response"]}
+        # English answer (canonical) — from the handler, or accumulated tokens.
+        english_text = result.get("response", "") or accumulated
 
-        # Add assistant response (or partial, if stopped) to session history
-        response_text = result.get("response", "") or accumulated
-        if response_text and not superseded:
+        # Add the English answer (or partial, if stopped) to session history so
+        # memory stays language-independent.
+        if english_text and not superseded:
             assistant_message: Message = {
                 "role": "assistant",
-                "content": response_text,
+                "content": english_text,
             }
             self._add_message(session_id, assistant_message)
+
+        # Client-facing text: translated for non-English, else the English
+        # answer. For English replies that streamed token-by-token, the client
+        # already has the text; only the non-streamed/non-English cases need a
+        # full-text token emission below.
+        if translate_out:
+            response_text = await postprocess_response(english_text, lang)
+            if response_text:
+                yield {"type": "token", "content": response_text}
+        else:
+            response_text = english_text
+            if not tokens_streamed and response_text:
+                yield {"type": "token", "content": response_text}
 
         if stopped:
             yield {
@@ -1476,6 +1502,9 @@ class LegalChatbot:
                 "session_id": session_id,
                 "intent": result.get("intent") or intent,
                 "response": response_text,
+                "response_en": english_text,
+                "query_en": english_message,
+                "language": lang.language,
             }
             return
 
@@ -1485,6 +1514,9 @@ class LegalChatbot:
             "session_id": session_id,
             "intent": result.get("intent") or intent,
             "response": response_text,
+            "response_en": english_text,
+            "query_en": english_message,
+            "language": lang.language,
             "lawyers_found": result.get("lawyers_found"),
             "document_info": result.get("document_info"),
             "document_validation": result.get("document_validation"),
@@ -1522,19 +1554,25 @@ class LegalChatbot:
         Returns:
             Dict containing response and any additional data
         """
+        # Multilingual layer (no-op for English / when disabled): detect the
+        # input language and translate the query to English so the entire
+        # downstream pipeline — routing, retrieval, reasoning — runs in English.
+        # Conversation memory therefore stays canonical-English.
+        english_message, lang = await preprocess_query(message)
+
         # Get session history — snapshot into a new list so a concurrent
         # request for the same session_id can't mutate the list this run
         # is still reading (see stream_chat for the same fix).
         messages = list(self._get_session_messages(session_id))
 
-        # Add user message to history
-        user_message: Message = {"role": "user", "content": message}
+        # Add user message to history (English canonical)
+        user_message: Message = {"role": "user", "content": english_message}
         self._add_message(session_id, user_message)
 
         # Build initial state
         initial_state: ChatState = {
             "messages": messages,
-            "current_input": message,
+            "current_input": english_message,
             "conversation_context": None,
             "intent": None,
             "document_content": document_content,
@@ -1553,19 +1591,31 @@ class LegalChatbot:
         # Run the graph
         result = await self.graph.ainvoke(initial_state)
 
-        # Add assistant response to history
-        if result.get("response"):
+        # Add assistant response to history (English canonical — memory is
+        # language-independent). Only the client-facing copy is translated.
+        english_response = result.get("response")
+        if english_response:
             assistant_message: Message = {
                 "role": "assistant",
-                "content": result["response"],
+                "content": english_response,
             }
             self._add_message(session_id, assistant_message)
 
-        # Return structured response
+        # Translate the final answer back into the user's language (no-op for
+        # English / when disabled). Falls back to English text on failure.
+        display_response = await postprocess_response(
+            english_response or "", lang
+        ) or "I'm sorry, I couldn't process your request."
+
+        # Return structured response. response_en/query_en are the canonical
+        # English texts for language-independent persistence; response is the
+        # user-facing (possibly translated) text.
         return {
-            "response": result.get(
-                "response", "I'm sorry, I couldn't process your request."
-            ),
+            "response": display_response,
+            "response_en": english_response,
+            "query_en": english_message,
+            "language": lang.language,
+            "language_confidence": lang.confidence,
             "intent": result.get("intent"),
             "document_info": result.get("document_info"),
             "document_validation": result.get("document_validation"),

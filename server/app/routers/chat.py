@@ -161,11 +161,20 @@ async def _persist_turn(
     session_id: str,
     user_message: str,
     assistant_message: str,
+    language: str = "en",
+    user_message_display: Optional[str] = None,
+    assistant_message_display: Optional[str] = None,
 ) -> None:
     """No-op for guests. For authenticated users: create the chat_sessions
     row if absent, then append both turns to chat_messages. Assumes
     session_id has already been through _resolve_session_id; the ownership
-    check below is a defensive backstop, not the primary guard."""
+    check below is a defensive backstop, not the primary guard.
+
+    `user_message`/`assistant_message` are the canonical English text stored in
+    `content` (memory is language-independent). For a non-English turn,
+    `*_display` carry the original-language text the user typed/saw and
+    `language` its ISO code, stored in content_display/language so history
+    re-renders in the user's language. English turns pass None displays."""
     if user is None or not assistant_message:
         return
 
@@ -173,8 +182,12 @@ async def _persist_turn(
     if chat_session is not None and chat_session.user_id != user.id:
         return
 
+    # Title from what the user actually typed (original language), not the
+    # English translation, so the sidebar shows a recognisable entry.
+    title_source = user_message_display or user_message
+
     if chat_session is None:
-        chat_session = ChatSession(id=session_id, user_id=user.id, title=user_message[:80])
+        chat_session = ChatSession(id=session_id, user_id=user.id, title=title_source[:80])
         session.add(chat_session)
         try:
             # Without a declared relationship() between ChatSession and
@@ -206,6 +219,8 @@ async def _persist_turn(
             session_id=session_id,
             role=MessageRole.user,
             content=user_message,
+            language=language,
+            content_display=user_message_display,
             created_at=user_turn_at,
         )
     )
@@ -214,6 +229,8 @@ async def _persist_turn(
             session_id=session_id,
             role=MessageRole.assistant,
             content=assistant_message,
+            language=language,
+            content_display=assistant_message_display,
             created_at=user_turn_at + timedelta(microseconds=1),
         )
     )
@@ -249,7 +266,19 @@ async def chat(
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(message=request.message, session_id=session_id)
-        await _persist_turn(session, user, session_id, request.message, result.get("response", ""))
+        language = result.get("language", "en")
+        is_translated = language != "en"
+        await _persist_turn(
+            session,
+            user,
+            session_id,
+            # Canonical English for memory; original-language text for display.
+            user_message=result.get("query_en") or request.message,
+            assistant_message=result.get("response_en") or result.get("response", ""),
+            language=language,
+            user_message_display=request.message if is_translated else None,
+            assistant_message_display=result.get("response") if is_translated else None,
+        )
 
         return ChatResponse(
             response=result["response"],
@@ -295,13 +324,21 @@ async def chat_stream(
                 # the user — and must be persisted the same as "done", or a
                 # stopped turn would silently never reach the DB.
                 if event.get("type") in ("done", "stopped"):
+                    language = event.get("language", "en")
+                    is_translated = language != "en"
                     with Session(get_engine()) as db_session:
                         await _persist_turn(
                             db_session,
                             user,
                             resolved_session_id,
-                            request.message,
-                            event.get("response", ""),
+                            user_message=event.get("query_en") or request.message,
+                            assistant_message=event.get("response_en")
+                            or event.get("response", ""),
+                            language=language,
+                            user_message_display=request.message if is_translated else None,
+                            assistant_message_display=(
+                                event.get("response") if is_translated else None
+                            ),
                         )
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
@@ -726,7 +763,16 @@ async def get_session_history(
                 .where(ChatMessage.session_id == session_id)
                 .order_by(ChatMessage.created_at)
             ).all()
-            messages = [{"role": r.role.value, "content": r.content} for r in rows]
+            # Render the user's original-language text (content_display) when
+            # present; English turns / legacy rows fall back to content.
+            messages = [
+                {
+                    "role": r.role.value,
+                    "content": r.content_display or r.content,
+                    "language": r.language,
+                }
+                for r in rows
+            ]
             return {"session_id": session_id, "messages": messages, "count": len(messages)}
 
         chatbot = get_chatbot()
