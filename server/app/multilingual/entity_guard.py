@@ -7,9 +7,13 @@ translation *verbatim* (Requirement 3), so before translating we replace every
 protected span with an opaque sentinel token the model leaves untouched, then
 restore the originals afterward.
 
-The sentinel format (``__LX7Q_{n}__``) is deliberately alphanumeric-with-
-underscores: IndicTrans2's tokenizer keeps it intact and never reorders or
-translates it. We restore by the same tokens after generation.
+The sentinel is a run of uppercase ASCII letters (``QZXQ<code>QXZQ``): empirically
+this survives SentencePiece tokenisation *and* IndicProcessor's script
+transliteration completely intact and un-spaced, in both directions. Earlier
+formats with underscores/digits got split and re-spaced (e.g. ``__LX7Q_3__`` →
+``_ _ LX7Q _ 3 _ _``), which broke restoration. The mapping index is encoded in
+letters (``0→A … 9→J``) so the token never contains a digit that the tokeniser
+or IndicProcessor's number handling might peel off.
 """
 
 from __future__ import annotations
@@ -19,11 +23,16 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Distinctive, translation-stable sentinel. Underscores + uppercase survive
-# IndicTrans2 tokenization; the random-ish infix avoids clashing with corpus
-# text. {n} is the running index into the restore mapping.
-_SENTINEL = "__LX7Q_{n}__"
-_SENTINEL_RE = re.compile(r"__LX7Q_(\d+)__")
+# Index digits are encoded as letters so the sentinel is purely alphabetic.
+_DIGIT_LETTERS = "ABCDEFGHIJ"
+_SENTINEL_PREFIX = "QZXQ"
+_SENTINEL_SUFFIX = "QXZQ"
+_SENTINEL_RE = re.compile(rf"{_SENTINEL_PREFIX}([A-J]+){_SENTINEL_SUFFIX}")
+
+
+def _make_sentinel(n: int) -> str:
+    code = "".join(_DIGIT_LETTERS[int(d)] for d in str(n))
+    return f"{_SENTINEL_PREFIX}{code}{_SENTINEL_SUFFIX}"
 
 # Order matters: earlier patterns are masked first, so longer/more-specific
 # spans (full citations) win over shorter ones (a bare section number) that
@@ -81,7 +90,7 @@ def mask(text: str) -> tuple[str, dict[str, str]]:
             # Don't re-wrap an existing sentinel.
             if _SENTINEL_RE.fullmatch(span.strip()):
                 return span
-            token = _SENTINEL.format(n=counter)
+            token = _make_sentinel(counter)
             mapping[token] = span
             counter += 1
             return token
@@ -94,8 +103,8 @@ def mask(text: str) -> tuple[str, dict[str, str]]:
 def unmask(text: str, mapping: dict[str, str]) -> str:
     """Restore original spans, replacing any sentinel left in ``text``.
 
-    Tolerant of sentinels the translator may have spaced out (``__LX7Q_ 3__``)
-    or whose surrounding whitespace shifted; unresolved sentinels are stripped
+    The letter sentinels survive translation un-spaced, so a direct replace
+    resolves them; any sentinel the model still dropped or garbled is stripped
     rather than shown to the user.
     """
     if not mapping:
@@ -104,12 +113,12 @@ def unmask(text: str, mapping: dict[str, str]) -> str:
     for token, original in mapping.items():
         text = text.replace(token, original)
 
-    # Belt-and-suspenders: collapse any mangled/whitespaced sentinel the loop
-    # above missed, then drop leftovers so raw tokens never reach the user.
+    # Belt-and-suspenders: resolve/strip any sentinel the loop above missed so a
+    # raw token never reaches the user.
     def _resolve(m: re.Match[str]) -> str:
-        return mapping.get(_SENTINEL.format(n=m.group(1)), "")
+        return mapping.get(m.group(0), "")
 
-    leftover = re.sub(r"__LX7Q_\s*(\d+)\s*__", _resolve, text)
+    leftover = _SENTINEL_RE.sub(_resolve, text)
     if leftover != text:
-        logger.debug("entity_guard: recovered spaced/mangled sentinels")
+        logger.debug("entity_guard: recovered leftover sentinels")
     return leftover

@@ -44,7 +44,11 @@ async def main() -> None:
             select(VaultDocument).where(VaultDocument.extracted_text.is_not(None))
         ).all()
 
-        targets = []
+        # Capture id + text as plain values now, while the session is live:
+        # index_vault_document runs after this block closes, and session.commit()
+        # below expires ORM attributes, so reading doc.* later would raise
+        # DetachedInstanceError.
+        targets: list[tuple[str, str]] = []
         for doc in docs:
             has_vectors = session.exec(
                 select(VaultDocumentEmbedding.id)
@@ -52,7 +56,7 @@ async def main() -> None:
                 .limit(1)
             ).first()
             if args.all or not has_vectors:
-                targets.append(doc)
+                targets.append((doc.id, doc.extracted_text or ""))
 
         if not targets:
             print("No vault documents need embedding backfill.")
@@ -61,17 +65,17 @@ async def main() -> None:
         print(f"Re-embedding {len(targets)} vault document(s)...")
         # Clear stale vectors first — index_vault_document appends, so without
         # this a --all run would duplicate chunks.
-        for doc in targets:
+        for doc_id, _text in targets:
             session.exec(
                 delete(VaultDocumentEmbedding).where(
-                    VaultDocumentEmbedding.vault_document_id == doc.id
+                    VaultDocumentEmbedding.vault_document_id == doc_id
                 )
             )
         session.commit()
 
     # index_vault_document opens its own session per document.
-    for doc in targets:
-        await index_vault_document(doc.id, doc.extracted_text or "")
+    for doc_id, text in targets:
+        await index_vault_document(doc_id, text)
 
     print(f"Backfilled {len(targets)} vault document(s).")
 

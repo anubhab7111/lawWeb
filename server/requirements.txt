@@ -62,13 +62,20 @@ braintree>=4.28.0
 rank-bm25>=0.2.2
 
 # Multilingual support: fastText language ID + IndicTrans2 translation.
-# fasttext-wheel ships prebuilt wheels (avoids a C++ build toolchain).
-# IndicTransToolkit provides IndicProcessor for pre/post-processing; the
-# IndicTrans2 models load via transformers (already present transitively).
-# transformers is pinned to a range known-good with IndicTrans2's custom code.
+# fasttext-wheel: fastText lid.176 language detector. NOTE: on very new
+#   toolchains (GCC 13+, Python 3.14) the sdist needs `#include <cstdint>` added
+#   to its sources to compile; see docs/multilingual.md.
+# ctranslate2: runs the IndicTrans2 models. We deliberately do NOT use the
+#   HuggingFace transformers modeling path — IndicTrans2's trust_remote_code is
+#   written for transformers ~4.x and breaks on the transformers 5.x this stack
+#   needs (sentence-transformers / BGE-M3 / reranker). CTranslate2 needs no
+#   transformers modeling code, so no downgrade is required. transformers stays
+#   unpinned (a transitive dep of sentence-transformers).
+# IndicTransToolkit: IndicProcessor for normalization / language-tagging /
+#   transliteration. sentencepiece: subword tokenisation for CTranslate2.
 fasttext-wheel>=0.9.2
+ctranslate2>=4.0
 IndicTransToolkit>=1.0.0
 sentencepiece>=0.1.99
-transformers>=4.38,<4.46
 
 flake8

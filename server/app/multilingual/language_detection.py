@@ -109,17 +109,23 @@ async def detect_language(text: str) -> LanguageResult:
     try:
         # fastText chokes on newlines; feed a single flattened line.
         sample = " ".join(stripped.split())
-        labels, probs = model.predict(sample, k=1)
+        # Call the underlying pybind predictor directly: fastText's Python
+        # ``predict`` wrapper wraps probabilities with ``np.array(probs,
+        # copy=False)``, which NumPy 2.x rejects (it can't avoid the copy),
+        # making every detection fail. ``model.f.predict`` returns raw
+        # ``[(prob, label), …]`` tuples and sidesteps NumPy entirely.
+        predictions = model.f.predict(sample, 1, 0.0, "strict")
     except Exception as exc:  # noqa: BLE001
         logger.warning("fastText prediction failed (%s); defaulting to %s", exc, default_lang)
         return _default_result()
 
-    if not labels:
+    if not predictions:
         return _default_result()
 
-    # Labels look like "__label__hi".
-    iso = labels[0].replace("__label__", "")
-    confidence = float(probs[0]) if len(probs) else 0.0
+    # Each prediction is (probability, "__label__hi").
+    confidence, label = predictions[0]
+    iso = label.replace("__label__", "")
+    confidence = float(confidence)
 
     if iso == default_lang:
         return LanguageResult(language=default_lang, confidence=confidence, is_reliable=False)

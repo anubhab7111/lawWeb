@@ -82,8 +82,8 @@ All settings live in `app/config.py` (env overrides by field name):
 | `lang_detect_model_path` | `LANG_DETECT_MODEL_PATH` | `app/data/models/lid.176.bin` | fastText model file |
 | `lang_detect_min_confidence` | `LANG_DETECT_MIN_CONFIDENCE` | `0.55` | Below this → assume English |
 | `default_language` | `DEFAULT_LANGUAGE` | `en` | Fallback language |
-| `translation_model_indic_en` | `TRANSLATION_MODEL_INDIC_EN` | `ai4bharat/indictrans2-indic-en-dist-200M` | query→English |
-| `translation_model_en_indic` | `TRANSLATION_MODEL_EN_INDIC` | `ai4bharat/indictrans2-en-indic-dist-200M` | answer→user lang |
+| `translation_model_indic_en` | `TRANSLATION_MODEL_INDIC_EN` | `adalat-ai/ct2-rotary-indictrans2-indic-en-dist-200M` | query→English (CTranslate2) |
+| `translation_model_en_indic` | `TRANSLATION_MODEL_EN_INDIC` | `adalat-ai/ct2-rotary-indictrans2-en-indic-dist-200M` | answer→user lang (CTranslate2) |
 | `translation_device` | `TRANSLATION_DEVICE` | `cpu` | `auto`/`cuda`/`cpu` |
 | `translation_cache` | `TRANSLATION_CACHE` | `true` | TTLCache on translations |
 | `embedding_model` | `EMBEDDING_MODEL` | `BAAI/bge-m3` | Shared dense embedding model |
@@ -94,8 +94,13 @@ All settings live in `app/config.py` (env overrides by field name):
 ### 1. Install dependencies
 ```bash
 conda activate legal_chatbot_env
-pip install -r requirements.txt   # adds fasttext-wheel, IndicTransToolkit, sentencepiece
+pip install -r requirements.txt   # adds fasttext-wheel, ctranslate2, IndicTransToolkit, sentencepiece
 ```
+`fasttext-wheel` has no prebuilt wheel for very new interpreters (e.g. Python
+3.14) and its sdist fails to compile on GCC 13+ because it relies on transitive
+`<cstdint>` includes that newer GCC dropped. If the build fails, add
+`#include <cstdint>` to the top of the `src/*.h` and `src/*.cc` files in the
+sdist and `pip install` the patched source (one-time; the built wheel is cached).
 
 ### 2. Download the fastText language-ID model (~126 MB, one-time)
 ```bash
@@ -104,10 +109,24 @@ curl -L -o app/data/models/lid.176.bin \
   https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
 ```
 
-### 3. IndicTrans2 models
+### 3. Translation models (CTranslate2 IndicTrans2)
 Downloaded automatically from the Hugging Face Hub on first non-English request
-(cached under `~/.cache/huggingface`). To pre-fetch, run any non-English query
-once, or `huggingface-cli download ai4bharat/indictrans2-indic-en-dist-200M`.
+(cached under `~/.cache/huggingface`). These are **non-gated** CTranslate2
+conversions of Raj Dabre's rotary IndicTrans2 distilled 200M models, so no HF
+license acceptance or token is required. To pre-fetch:
+`huggingface-cli download adalat-ai/ct2-rotary-indictrans2-indic-en-dist-200M`.
+
+**Why CTranslate2 rather than transformers:** this stack runs transformers 5.x
+(required by sentence-transformers / BGE-M3 / the reranker), but IndicTrans2's
+official HuggingFace models load via `trust_remote_code` modeling + tokenizer
+code written for transformers ~4.x, which breaks on 5.x in several places
+(removed `transformers.onnx`, moved `PreTrainedTokenizerBase`, stricter
+`SpecialTokensMixin.__init__`). CTranslate2 runs the model with its own engine
+and needs no transformers modeling code, so translation stays compatible without
+downgrading transformers for the whole app. `IndicProcessor` (normalization,
+language-tagging, transliteration) and SentencePiece handle tokenisation; the
+only transformers shim needed is re-exporting `PreTrainedTokenizerBase` so
+`IndicTransToolkit` imports (see `translation.py`).
 
 ### 4. Re-index with BGE-M3 (required — vectors are model-specific)
 The index self-invalidates on model change (the embedding model name is stored
@@ -129,15 +148,15 @@ Existing databases pick up the two new `chat_messages` columns automatically via
 - **English is free.** Detection returns immediately for the default language;
   no translation model loads. `multilingual_enabled=false` disables the layer
   entirely.
-- **Lazy loading.** fastText and both IndicTrans2 checkpoints load on the first
-  non-English request (singleton + lock), so the ~0.8 GB/direction RAM cost is
-  only paid when actually used. On the 15 GB / 4 GB-VRAM target, translation
-  runs on **CPU** so the GPU stays reserved for Ollama's LLM.
+- **Lazy loading.** fastText and both CTranslate2 IndicTrans2 models load on the
+  first non-English request (singleton + lock), so their RAM cost (~0.5 GB
+  /direction) is only paid when actually used. On the 15 GB / 4 GB-VRAM target,
+  translation runs on **CPU** so the GPU stays reserved for Ollama's LLM.
 - **Caching.** Identical (direction, text) translations are served from a
   TTLCache (`cache_ttl_seconds`).
-- **Async.** The blocking `model.generate` is offloaded to a thread; the request
+- **Async.** The blocking `translate_batch` is offloaded to a thread; the request
   path stays async.
 - **Distilled models.** The 200M distilled IndicTrans2 checkpoints are the
-  default for the RAM budget; swap in the 1B via env on larger hardware.
+  default for the RAM budget; CTranslate2 int8 keeps them light and fast on CPU.
 - **Fallbacks never break the chat.** If detection or translation fails, the
   layer logs and continues in English.

@@ -128,12 +128,14 @@ class Settings(BaseSettings):
     # trust a shaky guess — short/code-mixed inputs are unreliable.
     lang_detect_min_confidence: float = 0.55
     default_language: str = "en"
-    # IndicTrans2 distilled 200M checkpoints, one per direction. Distilled
-    # keeps RAM ~0.8GB/direction (vs ~4GB for the 1B) — swap in the 1B via env
-    # on larger hardware. Runs on CPU by default so the 4GB VRAM stays free for
-    # Ollama's LLM offload.
-    translation_model_indic_en: str = "ai4bharat/indictrans2-indic-en-dist-200M"
-    translation_model_en_indic: str = "ai4bharat/indictrans2-en-indic-dist-200M"
+    # IndicTrans2 distilled 200M checkpoints, one per direction, served via
+    # CTranslate2. These are the non-gated CTranslate2 conversions of Raj Dabre's
+    # rotary IndicTrans2 distilled models: they need no transformers modeling code
+    # (which is incompatible with the transformers 5.x this stack runs on) and no
+    # HuggingFace gating. Distilled keeps RAM ~0.5GB/direction. Runs on CPU by
+    # default so the 4GB VRAM stays free for Ollama's LLM offload.
+    translation_model_indic_en: str = "adalat-ai/ct2-rotary-indictrans2-indic-en-dist-200M"
+    translation_model_en_indic: str = "adalat-ai/ct2-rotary-indictrans2-en-indic-dist-200M"
     translation_device: str = "cpu"  # "auto" | "cuda" | "cpu"
     translation_cache: bool = True
 
