@@ -427,7 +427,15 @@ async def compress_chunks_for_context(
             continue
         sentences = per_chunk_sentences[i]
         scores = scores_by_chunk[i]
-        top_idx = sorted(range(len(sentences)), key=lambda j: scores[j], reverse=True)[:max_sentences]
+        # Anchor on the opening sentence — where a section's operative "(1)"
+        # rule usually lives — then fill the rest by score. Pure top-N-by-score
+        # can strand a later sub-clause ("(2) Notwithstanding...") without the
+        # "(1)" it refers back to, which reads as an incomplete/misleading
+        # excerpt even though each kept sentence scored well on its own.
+        fill = sorted(
+            (j for j in range(1, len(sentences))), key=lambda j: scores[j], reverse=True
+        )[: max_sentences - 1]
+        top_idx = [0] + fill
         keep = sorted(top_idx)  # restore document order, not score order
         out.append(replace(chunk, text=" ".join(sentences[j] for j in keep)))
     return out
