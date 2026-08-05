@@ -11,6 +11,7 @@ fixed everywhere at once.
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from app.tools.base_legal_rag import compress_chunks_for_context
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 
 
@@ -252,7 +253,8 @@ async def invoke_statute_context(
                 raw={"case_law_text": ""},
             )
 
-        text = _budget_context(context.chunks)
+        compressed = await compress_chunks_for_context(query, context.chunks)
+        text = _budget_context(compressed)
         print(
             f"Unified RAG: {len(context.chunks)} provisions retrieved "
             f"(confidence: {context.confidence:.2%}): "
