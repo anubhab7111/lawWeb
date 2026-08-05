@@ -4,12 +4,18 @@ import csv
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.chatbot import get_chatbot
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
+RESULTS_DIR.mkdir(exist_ok=True)
 
 
 class _Tee:
@@ -27,6 +33,8 @@ class _Tee:
     def flush(self):
         self._stream.flush()
         self._fh.flush()
+
+
 # ============================================================================
 # Test prompts — covering the domains that previously had accuracy issues
 # ============================================================================
@@ -127,7 +135,7 @@ async def run_evaluation(prompts=None):
 # ============================================================================
 
 
-def save_csv(results: list, path: str):
+def save_csv(results: list, path: "str | Path"):
     """Save raw chatbot results to a CSV file."""
     fieldnames = ["query", "intent", "answer", "response_time_s"]
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -209,11 +217,11 @@ async def run_metrics_evaluation(
     evaluator.print_report(eval_results)
 
     # Save detailed CSV (one row per query, all 9 metrics as columns)
-    metrics_csv_path = f"metrics_{timestamp}.csv"
+    metrics_csv_path = RESULTS_DIR / f"metrics_{timestamp}.csv"
     evaluator.save_csv(eval_results, metrics_csv_path)
 
     # Save full JSON (includes per-query reasoning strings + aggregate)
-    metrics_json_path = f"metrics_{timestamp}.json"
+    metrics_json_path = RESULTS_DIR / f"metrics_{timestamp}.json"
     evaluator.save_json(eval_results, metrics_json_path)
 
     print(f"\n[Metrics] Reports written:")
@@ -232,9 +240,9 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python test_chatbot.py                        # basic run (no metrics)
-  python test_chatbot.py --metrics              # full 9-metric eval with LLM judge
-  python test_chatbot.py --metrics --no-llm-judge  # keyword heuristics only
+  python tests/test_chatbot.py                        # basic run (no metrics)
+  python tests/test_chatbot.py --metrics              # full 9-metric eval with LLM judge
+  python tests/test_chatbot.py --metrics --no-llm-judge  # keyword heuristics only
         """,
     )
     parser.add_argument(
@@ -294,7 +302,7 @@ async def main() -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Save the complete console output of this run to its own log file.
-    run_log_path = f"run_{timestamp}.log"
+    run_log_path = RESULTS_DIR / f"run_{timestamp}.log"
     log_fh = open(run_log_path, "w", encoding="utf-8")
     sys.stdout = _Tee(sys.__stdout__, log_fh)
     sys.stderr = _Tee(sys.__stderr__, log_fh)
@@ -340,7 +348,7 @@ async def _run(args: argparse.Namespace, timestamp: str) -> None:
     chatbot_results = await run_evaluation(prompts)
 
     # Save the basic CSV (same format as before, always written)
-    basic_csv_path = f"eval_results_{timestamp}.csv"
+    basic_csv_path = RESULTS_DIR / f"eval_results_{timestamp}.csv"
     save_csv(chatbot_results, basic_csv_path)
     print_summary(chatbot_results)
 

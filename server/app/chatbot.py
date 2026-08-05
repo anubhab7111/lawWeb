@@ -9,7 +9,7 @@ import contextvars
 import re
 from asyncio.events import AbstractEventLoop
 from functools import lru_cache
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Literal, Optional
 
 from langchain_core.messages import HumanMessage
 from langchain_ollama import ChatOllama
@@ -62,11 +62,8 @@ from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
 from app.tools.statutory_validator import get_statutory_validator
 
 
-# Main-LLM context window / output reservation. Kept as module constants so the
-# prompt-budget guard (_fit_context_blocks) sizes the input against the same
-# window the model runs with.
 LLM_NUM_CTX = 6144  # Ollama defaults to 2048, which silently clips grounded prompts
-LLM_NUM_PREDICT = 1024  # tokens reserved for the answer
+LLM_NUM_PREDICT = 2048  # tokens reserved for thinking + the answer
 _PROMPT_SAFETY_MARGIN = 256  # headroom for chat scaffolding the estimate can't see
 _MAX_QUERY_CHARS = 8000  # clamp on user-derived text so one huge query can't overflow
 
@@ -81,8 +78,8 @@ def get_llm() -> ChatOllama:
         base_url=settings.ollama_base_url,
         num_ctx=LLM_NUM_CTX,
         num_predict=LLM_NUM_PREDICT,
-        timeout=35.0,  # Tighter timeout for snappier responses
-        reasoning=False,  # qwen3 defaults to thinking mode; keep responses direct
+        timeout=180.0,
+        reasoning=True,
         keep_alive="1h",  # loading the 14B model is the OOM-prone step — do it rarely
     )
 
@@ -784,30 +781,61 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
 
 
 async def _verify_response_citations(
-    response_text: str, retrieved_sections=None
+    response_text: str,
+    retrieved_sections=None,
+    retrieved_context_text: str = "",
+    llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
 ) -> str:
     """
-    Non-LLM post-generation check: does every 'Section N of the X Act' /
-    'Article N' claim in the answer actually exist in the indexed corpus
-    under the cited act? When ``retrieved_sections`` is given, citations that
-    exist but were not retrieved for this query are flagged as ungrounded.
-    Appends a footer flagging mismatches; silent when everything verifies.
-    Never raises — a verifier bug must not break chat.
+    Two-layer post-generation grounding gate:
+
+    1. citation_verifier (unchanged): does every 'Section N of the X Act' /
+       'Article N' in the answer exist in the indexed corpus under the cited
+       act, and was it among what was actually retrieved for this query?
+    2. grounding_verifier: goes past the citation token to the claim built
+       around it — splits the answer into sentences, checks each cited or
+       high-risk-absolute claim against its evidence text, and (only for
+       what's flagged) uses one batched LLM call to rewrite the unsupported
+       part from evidence alone. Supported sentences are never touched.
+
+    Appends advisory footers from both layers; silent when everything
+    checks out. Never raises — a verifier bug must not break chat.
     """
     try:
-        from app.tools.citation_verifier import verification_footer, verify_citations
+        from app.tools.grounding_verifier import ground_and_correct, grounding_footer
+        from app.tools.citation_verifier import verification_footer
         from app.tools.unified_legal_rag import get_unified_rag_system
 
         rag = get_unified_rag_system()
         if not rag.initialized:
             return response_text
-        report = verify_citations(response_text, rag, retrieved_sections)
-        if report.checks:
+
+        corrected_text, report = await ground_and_correct(
+            response_text,
+            rag,
+            retrieved_sections=retrieved_sections,
+            retrieved_context_text=retrieved_context_text,
+            llm_invoke=llm_invoke,
+        )
+        if report.citation_report.checks:
             print(
-                f"[CitationVerify] {len(report.verified)}/{len(report.checks)} "
-                f"citations verified"
+                f"[CitationVerify] {len(report.citation_report.verified)}/"
+                f"{len(report.citation_report.checks)} citations verified"
             )
-        return response_text + verification_footer(report)
+        if report.claim_sentences:
+            corrected_count = sum(
+                1 for s in report.sentences if s.outcome == "corrected"
+            )
+            print(
+                f"[GroundingGate] confidence={report.overall_score:.2f} "
+                f"flagged={len(report.flagged)}/{len(report.claim_sentences)} "
+                f"corrected={corrected_count}"
+            )
+        return (
+            corrected_text
+            + verification_footer(report.citation_report)
+            + grounding_footer(report)
+        )
     except Exception as e:
         print(f"[CitationVerify] Skipped due to error: {e}")
         return response_text
@@ -903,6 +931,7 @@ async def handle_general_query(state: ChatState) -> ChatState:
 
     disclaimer_prefix, prompt_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
+    retrieved_context = ""  # populated inside the try — guarded so it's always defined below
     try:
         llm = get_llm()
 
@@ -985,8 +1014,15 @@ async def handle_general_query(state: ChatState) -> ChatState:
             if not isinstance(statute_result, Exception)
             else None
         )
+
+        async def _fast_prose_invoke(prompt: str) -> str:
+            return await invoke_llm_safely(get_fast_llm_prose(), prompt)
+
         final_response = await _verify_response_citations(
-            final_response, retrieved_sections
+            final_response,
+            retrieved_sections,
+            retrieved_context_text=retrieved_context,
+            llm_invoke=_fast_prose_invoke,
         )
 
     return {

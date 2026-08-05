@@ -105,6 +105,40 @@ def _act_hint_near(text: str, start: int, end: int, is_article: bool) -> str:
     return "Constitution of India" if is_article else ""
 
 
+@dataclass
+class CitationOccurrence:
+    """One raw citation mention in the answer, with its resolved act hint.
+
+    Unlike ``VerificationReport.checks`` (deduplicated — one entry per unique
+    provision cited anywhere in the answer), this keeps every mention so
+    callers that need to tie a citation back to the specific sentence it
+    appears in (e.g. claim-level grounding) can do so.
+    """
+
+    start: int
+    end: int
+    raw: str
+    section: str
+    act_hint: str
+    is_article: bool
+
+
+def iter_citation_occurrences(answer: str) -> List[CitationOccurrence]:
+    """Every citation mention in `answer`, in reading order, undeduplicated."""
+    occurrences = []
+    for m in _CITE_RE.finditer(answer):
+        section = (m.group(1) or m.group(2) or m.group(3)).upper()
+        is_article = m.group(3) is not None
+        act_hint = _act_hint_near(answer, m.start(), m.end(), is_article)
+        raw = answer[m.start() : m.end()]
+        if act_hint:
+            raw = f"{raw} ({act_hint})"
+        occurrences.append(
+            CitationOccurrence(m.start(), m.end(), raw, section, act_hint, is_article)
+        )
+    return occurrences
+
+
 def verify_citations(answer: str, rag, retrieved_sections=None) -> VerificationReport:
     """
     Check every statutory citation in `answer` against the chunk index of
@@ -119,34 +153,26 @@ def verify_citations(answer: str, rag, retrieved_sections=None) -> VerificationR
     report = VerificationReport()
     seen: set = set()
 
-    for m in _CITE_RE.finditer(answer):
-        section = (m.group(1) or m.group(2) or m.group(3)).upper()
-        is_article = m.group(3) is not None
-        act_hint = _act_hint_near(answer, m.start(), m.end(), is_article)
-
-        key = (act_hint, section, is_article)
+    for occ in iter_citation_occurrences(answer):
+        key = (occ.act_hint, occ.section, occ.is_article)
         if key in seen:
             continue
         seen.add(key)
 
-        raw = answer[m.start() : m.end()]
-        if act_hint:
-            raw = f"{raw} ({act_hint})"
-
-        hits = rag.find_section(act_hint, section, max_parts=1)
+        hits = rag.find_section(occ.act_hint, occ.section, max_parts=1)
         if hits:
             status = "verified"
-            if retrieved_sections is not None and section not in retrieved_sections:
+            if retrieved_sections is not None and occ.section not in retrieved_sections:
                 status = "not_retrieved"
-            report.checks.append(CitationCheck(raw, section, act_hint, status))
+            report.checks.append(CitationCheck(occ.raw, occ.section, occ.act_hint, status))
             continue
 
         # Right number, wrong act?
-        anywhere = rag.find_section("", section, max_parts=5)
+        anywhere = rag.find_section("", occ.section, max_parts=5)
         acts = sorted({c.act_name for c in anywhere})
-        status = "wrong_act" if (act_hint and acts) else "unverified"
+        status = "wrong_act" if (occ.act_hint and acts) else "unverified"
         report.checks.append(
-            CitationCheck(raw, section, act_hint, status, found_in=acts[:4])
+            CitationCheck(occ.raw, occ.section, occ.act_hint, status, found_in=acts[:4])
         )
 
     return report

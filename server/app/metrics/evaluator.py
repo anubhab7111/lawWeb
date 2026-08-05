@@ -37,6 +37,7 @@ import logging
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.metrics.engineering_metrics import (
@@ -858,7 +859,7 @@ class MetricsEvaluator:
     # Public: save_csv
     # -------------------------------------------------------------------------
 
-    def save_csv(self, results: List[EvalResult], path: str) -> None:
+    def save_csv(self, results: List[EvalResult], path: "str | Path") -> None:
         """Save per-query results to a CSV file."""
         if not results:
             print("[MetricsEvaluator] No results to save.")
@@ -875,7 +876,7 @@ class MetricsEvaluator:
     # Public: save_json
     # -------------------------------------------------------------------------
 
-    def save_json(self, results: List[EvalResult], path: str) -> None:
+    def save_json(self, results: List[EvalResult], path: "str | Path") -> None:
         """Save the full report (per-query + aggregate) to JSON."""
         report = self.aggregate(results)
         payload = {

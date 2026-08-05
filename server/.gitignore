@@ -4,9 +4,8 @@ node_modules
 __pycache__
 */__pycache__
 **/__pycache__/
-*.csv
-*.log
 dist
+results/
 app/metrics/.judge_cache.json
 app/metrics/.judge_usage.json
 

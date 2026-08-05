@@ -69,7 +69,7 @@ python rebuild_rag_indices.py --all      # or --domain criminal|civil|constituti
 
 ```bash
 cd server
-python test_chatbot.py    # accuracy sweep over domain prompts; needs Ollama running, slow
+python tests/test_chatbot.py    # accuracy sweep over domain prompts; needs Ollama running, slow
 ```
 
 See `SYSTEM_DESIGN.md` and `CHATBOT_ARCHITECTURE.md` for architecture details, and `CLAUDE.md` for development conventions.
