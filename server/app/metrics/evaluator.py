@@ -275,13 +275,19 @@ class MetricsEvaluator:
 
         # ── 1. Production statute retrieval (pins + hybrid + gate) ─────
         try:
+            from app.tools.base_legal_rag import compress_chunks_for_context
             from app.tools.legal_retrieval import retrieve_statutes
 
             # k=8 matches the chatbot's own retrieve_statutes call so the
             # evaluated context is what production actually feeds the LLM.
             context, _parsed = await retrieve_statutes(query, k=8)
+            # tool_dispatch.invoke_statute_context compresses chunks to their
+            # most relevant sentences before they ever reach the prompt — do
+            # the same here, or the judge (and input_tokens) grade against
+            # full section text the LLM was never actually shown.
+            chunks = await compress_chunks_for_context(query, context.chunks)
             seen: set = set()
-            for c in context.chunks:
+            for c in chunks:
                 # "Article 21" → "21"; part-chunks share their section no.
                 sec = c.section_number.replace("Article", "").strip()
                 if sec and sec not in seen:
