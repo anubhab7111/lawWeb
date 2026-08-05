@@ -23,7 +23,7 @@ import math
 import pickle
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -333,6 +333,104 @@ def _split_long_text(text: str, max_chars: int = 2000, overlap: int = 200) -> Li
             break
         start = max(end - overlap, start + 1)
     return [p for p in parts if p]
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;:])\s+(?=[A-Z0-9(])")
+# Abbreviations that precede a period/section-number in Indian statutory
+# text (Rs. 500, S. 302, u/s. 34, Art. 21, v.) — without this, splitting
+# on the period would strand the abbreviation and its number as two
+# separately-scored, individually meaningless fragments.
+_ABBR = {
+    "rs", "s", "ss", "art", "arts", "no", "u/s", "mr", "dr", "cr",
+    "govt", "ors", "anr", "v", "sec", "secs",
+}
+# A handful of source PDFs duplicate the section header verbatim before the
+# body (e.g. "419. Punishment for X. 419. Punishment for X.--Whoever..."),
+# which would otherwise split into a bare "419." fragment carrying no
+# content of its own — exactly the kind of empty fragment that can crowd
+# out the one sentence with the actual operative text.
+_BARE_SECTION_NUM_RE = re.compile(r"^\d{1,4}[A-Za-z]{0,3}\.?$")
+
+
+def _split_into_sentences(text: str) -> List[str]:
+    """
+    Crude sentence/clause split for extractive scoring — same boundary
+    heuristics as _split_long_text, plus guards so a false split (an
+    abbreviation, a bare repeated section number) rejoins into the
+    previous fragment instead of standing alone.
+    """
+    raw_parts = _SENTENCE_SPLIT_RE.split(text)
+    parts: List[str] = []
+    for part in raw_parts:
+        part = part.strip()
+        if not part:
+            continue
+        if parts:
+            prev_words = parts[-1].split()
+            last_word = re.sub(r"[^a-z/]", "", prev_words[-1].lower()) if prev_words else ""
+            if last_word in _ABBR or _BARE_SECTION_NUM_RE.match(prev_words[-1]):
+                parts[-1] = parts[-1] + " " + part
+                continue
+        parts.append(part)
+    return parts or [text]
+
+
+async def compress_chunks_for_context(
+    query: str, chunks: List["LegalChunk"], max_sentences: int = 3
+) -> List["LegalChunk"]:
+    """
+    Replace each chunk's full section text with just the max_sentences
+    sentences most relevant to `query`, scored by the shared cross-encoder
+    reranker (already resident in memory for chunk-level reranking) — a
+    small LLM's context window is better spent on a few precise sentences
+    than a whole section full of definitions/provisos it doesn't need.
+
+    Sentences are kept in original document order, not score order, so the
+    excerpt still reads as a coherent (if partial) provision rather than a
+    shuffled list of fragments. Chunks already short enough, or all chunks
+    when the reranker is unavailable/fails, pass through unmodified.
+    """
+    reranker = await _get_shared_reranker()
+    if reranker is None:
+        return chunks
+
+    per_chunk_sentences = [_split_into_sentences(c.text) for c in chunks]
+    pairs: List[Tuple[str, str]] = []
+    owner: List[int] = []
+    for i, sentences in enumerate(per_chunk_sentences):
+        if len(sentences) <= max_sentences:
+            continue  # already short enough — nothing to gain from scoring
+        for sent in sentences:
+            pairs.append((query, sent))
+            owner.append(i)
+
+    if not pairs:
+        return chunks
+
+    loop = asyncio.get_event_loop()
+    try:
+        logits = await loop.run_in_executor(
+            None, lambda: reranker.predict(pairs, batch_size=16)
+        )
+    except Exception as e:
+        print(f"[compress_chunks_for_context] Sentence rerank failed ({e}) — using full chunks.")
+        return chunks
+
+    scores_by_chunk: Dict[int, List[float]] = {}
+    for idx, score in zip(owner, logits):
+        scores_by_chunk.setdefault(idx, []).append(float(score))
+
+    out: List[LegalChunk] = []
+    for i, chunk in enumerate(chunks):
+        if i not in scores_by_chunk:
+            out.append(chunk)
+            continue
+        sentences = per_chunk_sentences[i]
+        scores = scores_by_chunk[i]
+        top_idx = sorted(range(len(sentences)), key=lambda j: scores[j], reverse=True)[:max_sentences]
+        keep = sorted(top_idx)  # restore document order, not score order
+        out.append(replace(chunk, text=" ".join(sentences[j] for j in keep)))
+    return out
 
 
 # ─────────────────────────────────────────────────────────────
