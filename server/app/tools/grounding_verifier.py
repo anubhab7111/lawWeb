@@ -346,6 +346,30 @@ Respond with ONLY a JSON array, no other text, in exactly this shape:
 """
 
 
+# Ollama structured-output schema for the correction call above — passed as
+# ChatOllama(format=...) by whatever LLM the caller supplies. Grammar-
+# constrains the small model's decoding to this exact shape, which is what
+# actually gets it to comply with "respond with ONLY a JSON array": plain
+# prompting alone reliably produced free-form step-by-step prose instead
+# (verified directly — qwen3:4b would reason through each claim in prose
+# and get cut off by num_predict before ever emitting JSON).
+CORRECTION_RESPONSE_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "index": {"type": "integer"},
+            "status": {
+                "type": "string",
+                "enum": [SUPPORTED, PARTIALLY_SUPPORTED, CONTRADICTED, UNGROUNDED],
+            },
+            "corrected": {"type": "string"},
+        },
+        "required": ["index", "status", "corrected"],
+    },
+}
+
+
 def _build_claims_block(sentences: List[SentenceGrounding]) -> str:
     lines = []
     for i, s in enumerate(sentences, 1):
