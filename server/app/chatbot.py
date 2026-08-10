@@ -150,6 +150,34 @@ def get_fast_llm_prose() -> ChatOllama:
     )
 
 
+@lru_cache()
+def get_grounding_correction_llm() -> ChatOllama:
+    """Dedicated LLM for grounding_verifier's claim-correction call — same
+    small model as get_fast_llm_prose(), but grammar-constrained to
+    CORRECTION_RESPONSE_SCHEMA via Ollama's structured-output support. Free
+    prompting alone ("respond with ONLY a JSON array") does not work for
+    this task: qwen3:4b reliably reasons through each claim in prose instead
+    and gets cut off by num_predict before emitting any JSON, so the
+    correction step silently never fired. Kept separate from
+    get_fast_llm_prose() since that's shared with bare_act_explorer.py and
+    case_summarizer.py for free-text generation, which format= would break.
+    num_predict has headroom above get_fast_llm_prose()'s 900 for the
+    worst-case _MAX_LLM_CORRECTIONS-sized batch."""
+    from app.tools.grounding_verifier import CORRECTION_RESPONSE_SCHEMA
+
+    settings = get_settings()
+    return ChatOllama(
+        model=settings.fast_llm_model,
+        temperature=0,
+        base_url=settings.ollama_base_url,
+        num_ctx=4096,
+        num_predict=1200,
+        timeout=60.0,
+        reasoning=False,
+        format=CORRECTION_RESPONSE_SCHEMA,
+    )
+
+
 _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
@@ -1015,14 +1043,15 @@ async def handle_general_query(state: ChatState) -> ChatState:
             else None
         )
 
-        async def _fast_prose_invoke(prompt: str) -> str:
-            return await invoke_llm_safely(get_fast_llm_prose(), prompt)
+        async def _grounding_correction_invoke(prompt: str) -> str:
+            raw = await invoke_llm_safely(get_grounding_correction_llm(), prompt)
+            return strip_reasoning_tags(raw)
 
         final_response = await _verify_response_citations(
             final_response,
             retrieved_sections,
             retrieved_context_text=retrieved_context,
-            llm_invoke=_fast_prose_invoke,
+            llm_invoke=_grounding_correction_invoke,
         )
 
     return {
