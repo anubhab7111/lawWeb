@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.db.engine import get_engine, get_session
 from app.db.models import ChatMessage, ChatSession, MessageRole, User
 from app.deps.auth import get_current_user, get_current_user_optional
+from app.deps.uploads import read_upload_within_limit
 from app.tools.crime_reporter import CRIME_TYPES
 from app.tools.document_extractor import get_document_extractor
 from app.tools.lawyer_recommender import (
@@ -404,13 +405,7 @@ async def chat_with_document(
 
     # Read file content
     try:
-        file_bytes = await file.read()
-
-        if len(file_bytes) > max_size:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Maximum size is {settings.max_document_size_mb}MB",
-            )
+        file_bytes = await read_upload_within_limit(file, max_size)
 
         # Extract text from document or image
         extractor = get_document_extractor()
@@ -559,13 +554,7 @@ async def validate_document_upload(
     max_size = settings.max_document_size_mb * 1024 * 1024
 
     try:
-        file_bytes = await file.read()
-
-        if len(file_bytes) > max_size:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Maximum size is {settings.max_document_size_mb}MB",
-            )
+        file_bytes = await read_upload_within_limit(file, max_size)
 
         extractor = get_document_extractor()
         document_text, doc_type = await extractor.extract_text(

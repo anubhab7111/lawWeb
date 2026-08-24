@@ -24,7 +24,14 @@ export function MyBookings({ user, onNavigate }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      // Reachable if a session expires while this view is already open —
+      // without this the skeleton loader would spin forever instead of
+      // ever resolving.
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     Promise.all([fetchUserBookings(user.id), fetchLawyers().catch(() => [])])
       .then(([bk, lw]) => {
         setBookings(bk);

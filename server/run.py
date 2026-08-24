@@ -4,6 +4,7 @@ Run script for the legal chatbot server.
 """
 
 import asyncio
+import sys
 
 import uvicorn
 from app.config import get_settings
@@ -12,6 +13,18 @@ from app.tools.offline_index import ensure_indices_built
 
 def main():
     """Run the FastAPI server."""
+    # Python block-buffers stdout when it isn't a terminal (e.g. redirected
+    # to a log file, as any real deployment/demo run does) — the warmup and
+    # indexing progress prints below would then sit invisible in a pipe
+    # buffer for minutes before flushing, making a server that's working
+    # normally look hung to anyone tailing the log. Force line buffering so
+    # `python run.py > server.log 2>&1 &` shows progress in real time.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass  # Python <3.7 fallback: no-op, buffering stays default
+
     settings = get_settings()
 
     # Offline indexing step: build/refresh any missing or stale RAG index
@@ -37,7 +50,7 @@ def main():
         "app.main:app",
         host=settings.host,
         port=settings.port,
-        reload=True,
+        reload=settings.reload,
         log_level="info",
     )
 

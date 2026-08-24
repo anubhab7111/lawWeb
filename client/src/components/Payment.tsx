@@ -28,7 +28,14 @@ export function Payment({ lawyer, user, onBack, onSuccess }: Props) {
   }, []);
 
   const pay = async () => {
-    if (!instance || !user) return;
+    if (!user) {
+      setError("Your session has expired. Please sign in again to complete this booking.");
+      return;
+    }
+    if (!instance) {
+      setError("The payment form is still loading — please wait a moment and try again.");
+      return;
+    }
     setProcessing(true);
     setError(null);
     try {

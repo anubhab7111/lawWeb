@@ -26,6 +26,12 @@ def _error(status_code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"message": message})
 
 
+# bcrypt hard-rejects (ValueError) any password whose UTF-8 encoding exceeds
+# 72 bytes — both hashpw and checkpw. Checked explicitly so an over-length
+# password is a normal 400, not an unhandled 500.
+_BCRYPT_MAX_BYTES = 72
+
+
 def _make_token(user_id: str) -> str:
     payload = {
         "id": user_id,
@@ -53,6 +59,8 @@ class LoginRequest(BaseModel):
 def register(body: RegisterRequest, session: Session = Depends(get_session)):
     if not body.name or not body.email or not body.password:
         return _error(400, "All fields are required")
+    if len(body.password.encode()) > _BCRYPT_MAX_BYTES:
+        return _error(400, "Password must be 72 bytes or fewer")
 
     existing = session.exec(select(User).where(User.email == body.email)).first()
     if existing:
@@ -80,7 +88,12 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
     if not user:
         return _error(400, "Invalid credentials")
 
-    if not bcrypt.checkpw((body.password or "").encode(), user.password.encode()):
+    password_bytes = (body.password or "").encode()
+    if len(password_bytes) > _BCRYPT_MAX_BYTES:
+        # Can't possibly match a hash of a <=72-byte password; treat like
+        # any other wrong password rather than crashing checkpw on it.
+        return _error(400, "Invalid credentials")
+    if not bcrypt.checkpw(password_bytes, user.password.encode()):
         return _error(400, "Invalid credentials")
 
     return {"token": _make_token(user.id), "user": _user_json(user)}

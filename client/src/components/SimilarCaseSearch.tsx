@@ -45,7 +45,19 @@ export function SimilarCaseSearch() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await fn());
+      const data = await fn();
+      // Normalize once here rather than guarding every .length/.map below —
+      // a partial/legacy response missing these arrays would otherwise
+      // throw during render and take down the whole screen.
+      setResult({
+        ...data,
+        firac: { ...data.firac, issues: data.firac?.issues ?? [] },
+        similarSupremeCourtCases: (data.similarSupremeCourtCases ?? []).map((c) => ({
+          ...c,
+          issues: c.issues ?? [],
+        })),
+        relevantStatutes: data.relevantStatutes ?? [],
+      });
     } catch {
       setError("Couldn't process that document. Try a shorter excerpt or a clearer scan.");
       setResult(null);

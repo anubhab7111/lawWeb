@@ -90,9 +90,14 @@ HIGH_RISK_ABSOLUTES = (
     "no longer",
 )
 
-_SUPPORTED_THRESHOLD = 0.45
-_PARTIAL_THRESHOLD = 0.18
-_HIGH_RISK_SUPPORTED_THRESHOLD = 0.60
+# Word overlap between a fluent generated sentence and bare statutory text is
+# inherently low even when the claim is accurate (legal prose paraphrases).
+# These bars were originally calibrated too high (0.45/0.60) and flagged the
+# large majority of claims on every answer; lowered after inspecting real
+# qwen3 outputs against their cited evidence.
+_SUPPORTED_THRESHOLD = 0.25
+_PARTIAL_THRESHOLD = 0.12
+_HIGH_RISK_SUPPORTED_THRESHOLD = 0.45
 
 _MAX_LLM_CORRECTIONS = 8  # bound prompt size / latency regardless of how much is flagged
 _MAX_EVIDENCE_CHARS = 800
@@ -118,6 +123,11 @@ class SentenceGrounding:
 class GroundingReport:
     sentences: List[SentenceGrounding]
     citation_report: VerificationReport
+    # True only once the LLM correction/adjudication call has run and its
+    # output parsed successfully — distinguishes "verified low confidence"
+    # from "the deterministic pass flagged some claims but we couldn't
+    # double-check them" (grounding_footer treats the two differently).
+    llm_succeeded: bool = False
 
     @property
     def claim_sentences(self) -> List[SentenceGrounding]:
@@ -379,20 +389,49 @@ def _build_claims_block(sentences: List[SentenceGrounding]) -> str:
 
 
 def _extract_json_array(raw: str) -> list:
+    """Find the first balanced top-level `[...]` in `raw` and parse it.
+    qwen3 leaves a `</think>` preamble in the output even with reasoning
+    off/stripped elsewhere, and a greedy `\\[.*\\]` regex over that text can
+    span across unrelated brackets in the preamble; scanning for the first
+    balanced bracket (string-aware, so brackets inside quoted text don't
+    throw off the depth count) is what actually finds the JSON array."""
     raw = raw.strip()
-    match = re.search(r"\[.*\]", raw, re.DOTALL)
-    if not match:
+    start = raw.find("[")
+    if start == -1:
         raise ValueError("No JSON array found in LLM output")
-    return json.loads(match.group(0))
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(raw)):
+        ch = raw[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return json.loads(raw[start : i + 1])
+    raise ValueError("No balanced JSON array found in LLM output")
 
 
 async def _llm_adjudicate_and_correct(
     sentences: List[SentenceGrounding],
     llm_invoke: Callable[[str], Awaitable[str]],
 ) -> Dict[int, Tuple[str, str]]:
+    from app.chatbot import strip_reasoning_tags
+
     prompt = _CORRECTION_PROMPT.format(claims_block=_build_claims_block(sentences))
     raw = await llm_invoke(prompt)
-    parsed = _extract_json_array(raw)
+    parsed = _extract_json_array(strip_reasoning_tags(raw))
 
     valid_statuses = {SUPPORTED, PARTIALLY_SUPPORTED, CONTRADICTED, UNGROUNDED}
     result: Dict[int, Tuple[str, str]] = {}
@@ -466,6 +505,7 @@ async def ground_and_correct(
         print(f"[GroundingGate] LLM correction skipped: {e}")
         return answer, report
 
+    report.llm_succeeded = True
     if not corrections:
         return answer, report
 
@@ -490,11 +530,23 @@ async def ground_and_correct(
 def grounding_footer(report: GroundingReport) -> str:
     """Advisory footer summarizing claim-level (not just citation-level)
     grounding. Silent when every claim is supported and nothing needed
-    correction — same no-noise-on-good-answers policy as citation_verifier."""
+    correction — same no-noise-on-good-answers policy as citation_verifier.
+
+    Also silent whenever the LLM adjudication pass didn't run or its output
+    couldn't be parsed: the deterministic word-overlap pass alone is too
+    blunt (fluent legal prose paraphrases statutory text) to justify
+    surfacing every flag to the user, so an unverified deterministic flag
+    is treated as "not confident enough to show", not "confidently wrong".
+    And even with a verified pass, only surface it once confidence is
+    genuinely low — a couple of flagged claims among many supported ones
+    isn't worth a scary footer on an otherwise good answer.
+    """
     claims = report.claim_sentences
     corrected = [s for s in claims if s.outcome == "corrected"]
     still_flagged = [s for s in claims if s.status != SUPPORTED and s.outcome != "corrected"]
     if not corrected and not still_flagged:
+        return ""
+    if not report.llm_succeeded or report.overall_score >= 0.5:
         return ""
 
     lines = [

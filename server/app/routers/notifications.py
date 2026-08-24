@@ -37,7 +37,7 @@ def list_notifications(
         select(Notification)
         .where(Notification.user_id == current_user.id)
         .order_by(Notification.created_at.desc())
-        .limit(min(limit, 200))
+        .limit(max(1, min(limit, 200)))
     ).all()
     return [n.to_dict() for n in notifications]
 

@@ -5,6 +5,27 @@ const getAuthHeaders = () => {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
 
+/**
+ * Pull a human-readable message out of an error response body, regardless
+ * of which shape produced it: {"message": ...} (the app's own contract),
+ * {"detail": "..."} (FastAPI's default), {"detail": [{msg, loc, type}, ...]}
+ * (a Pydantic 422 validation error — an array, not a string), or a legacy
+ * {"error": ...}. Without this, `new Error(someArray)` stringifies an array
+ * of objects to the literal text "[object Object]", which is what a long
+ * chat message or a too-short document used to render as.
+ */
+function extractErrorMessage(data: any, fallback: string): string {
+    if (!data) return fallback;
+    if (typeof data.message === 'string' && data.message) return data.message;
+    if (typeof data.detail === 'string' && data.detail) return data.detail;
+    if (Array.isArray(data.detail) && data.detail.length > 0) {
+        const first = data.detail[0];
+        if (first && typeof first.msg === 'string') return first.msg;
+    }
+    if (typeof data.error === 'string' && data.error) return data.error;
+    return fallback;
+}
+
 export interface LoginCredentials {
     email: string;
     password: string;
@@ -53,14 +74,14 @@ export async function sendChatMessage(message: string, sessionId?: string): Prom
         body: JSON.stringify({ message, session_id: sessionId }),
     });
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to send message' }));
-        throw new Error(error.error || error.detail || 'Failed to send message');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to send message'));
     }
     return response.json();
 }
 
 export interface StreamEvent {
-    type: 'token' | 'done' | 'error' | 'stopped';
+    type: 'token' | 'done' | 'error' | 'stopped' | 'superseded';
     content?: string;
     session_id?: string;
     response?: string;
@@ -97,8 +118,8 @@ export async function sendChatMessageStream(
     });
 
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to send message' }));
-        throw new Error(error.error || error.detail || 'Failed to send message');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to send message'));
     }
 
     const reader = response.body?.getReader();
@@ -128,7 +149,14 @@ export async function sendChatMessageStream(
 
                     if (event.type === 'token' && event.content) {
                         onToken(event.content);
-                    } else if (event.type === 'done' || event.type === 'stopped') {
+                    } else if (event.type === 'done' || event.type === 'stopped' || event.type === 'superseded') {
+                        // 'superseded': a newer request for the same session_id
+                        // already completed (e.g. two tabs on one conversation).
+                        // This stream carries no final response — onDone falls
+                        // back to whatever was already streamed, same as it does
+                        // for 'stopped'. Without handling it, this branch's
+                        // message bubble would be stuck showing "streaming"
+                        // forever, since no other event ever follows it.
                         onDone(event);
                     } else if (event.type === 'error') {
                         onError?.(event.content || 'Unknown streaming error');
@@ -185,8 +213,8 @@ export async function uploadDocumentForAnalysis(
         signal,
     });
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to upload document' }));
-        throw new Error(error.error || error.detail || 'Failed to upload document');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to upload document'));
     }
     return response.json();
 }
@@ -207,8 +235,8 @@ export async function analyzeDocumentText(
         body: JSON.stringify({ document_text: documentText, session_id: sessionId }),
     });
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to analyze document' }));
-        throw new Error(error.error || error.detail || 'Failed to analyze document');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to analyze document'));
     }
     return response.json();
 }
@@ -229,8 +257,8 @@ export async function getCrimeReportGuidance(
         body: JSON.stringify({ description, session_id: sessionId }),
     });
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to get guidance' }));
-        throw new Error(error.error || error.detail || 'Failed to get crime report guidance');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to get crime report guidance'));
     }
     return response.json();
 }
@@ -252,8 +280,8 @@ export async function findLawyersAI(
         body: JSON.stringify({ query, location, specialization }),
     });
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to find lawyers' }));
-        throw new Error(error.error || error.detail || 'Failed to find lawyers');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to find lawyers'));
     }
     return response.json();
 }
@@ -398,8 +426,8 @@ export async function login(credentials: LoginCredentials) {
         body: JSON.stringify(credentials),
     });
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Login failed');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Login failed'));
     }
     return response.json();
 }
@@ -413,8 +441,8 @@ export async function register(userData: RegisterData) {
         body: JSON.stringify(userData),
     });
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Registration failed');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Registration failed'));
     }
     return response.json();
 }
@@ -475,7 +503,7 @@ export async function checkoutBooking(payload: CheckoutPayload) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.status === 'error') {
-        throw new Error(data.message || 'Payment failed');
+        throw new Error(extractErrorMessage(data, 'Payment failed'));
     }
     return data as { status: string; transactionId: string };
 }
@@ -503,7 +531,7 @@ async function requestJson(path: string, options: RequestInit = {}) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(data.message || 'Request failed');
+        throw new Error(extractErrorMessage(data, 'Request failed'));
     }
     return data;
 }

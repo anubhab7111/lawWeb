@@ -15,9 +15,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
+from app.config import get_settings
 from app.db.engine import get_session
 from app.db.models import User
 from app.deps.auth import get_current_user_optional
+from app.deps.uploads import read_upload_within_limit
 from app.tool_dispatch import invoke_indian_kanoon
 from app.tools.document_extractor import get_document_extractor
 from app.tools.firac_extractor import FiracExtraction, extract_firac
@@ -103,7 +105,8 @@ async def search_upload(
         raise HTTPException(status_code=400, detail="Provide either a file or text")
 
     if file is not None:
-        file_bytes = await file.read()
+        max_size = get_settings().max_document_size_mb * 1024 * 1024
+        file_bytes = await read_upload_within_limit(file, max_size)
         extractor = get_document_extractor()
         document_text, _doc_type = await extractor.extract_text(
             file_bytes, file.filename or "document.txt"
