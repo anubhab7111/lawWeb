@@ -21,6 +21,7 @@ from app.db.engine import get_session
 from app.db.models import User, VaultDocument, VaultDocumentEmbedding, VaultDocumentPermission
 from app.deps.auth import get_current_user
 from app.deps.errors import MessageHTTPException
+from app.deps.uploads import read_upload_within_limit
 from app.services.notification_dispatch import send_notification
 from app.services.object_storage import LocalDiskObjectStorage, get_object_storage
 from app.services.vault_indexer import index_vault_document
@@ -75,14 +76,8 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    file_bytes = await file.read()
-
     max_size = get_settings().max_document_size_mb * 1024 * 1024
-    if len(file_bytes) > max_size:
-        raise MessageHTTPException(
-            status_code=413,
-            detail=f"File too large. Maximum size is {get_settings().max_document_size_mb}MB",
-        )
+    file_bytes = await read_upload_within_limit(file, max_size)
 
     # Basename only: strip any directory components from the client-supplied
     # filename so it can't inject `..`/separators into the storage key (which

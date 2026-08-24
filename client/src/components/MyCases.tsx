@@ -27,7 +27,19 @@ export function MyCases({ user }: Props) {
   useEffect(() => { if (user) load(); }, [user]);
 
   const openCase = (id: string) => {
-    fetchCaseDetail(id).then(setSelected).catch(() => setError("Couldn't load case detail."));
+    fetchCaseDetail(id)
+      .then((detail) =>
+        // Normalize once here rather than guarding every .length/.map below
+        // — a partial/legacy response missing these arrays would otherwise
+        // throw during render and take down the whole screen.
+        setSelected({
+          ...detail,
+          timeline: detail.timeline ?? [],
+          notes: detail.notes ?? [],
+          aiSummaries: detail.aiSummaries ?? [],
+        })
+      )
+      .catch(() => setError("Couldn't load case detail."));
   };
 
   const handleSave = async () => {

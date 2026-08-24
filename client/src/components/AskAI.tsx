@@ -13,6 +13,21 @@ import {
 import { RichText } from "./RichText";
 import { initials, avatarTint, type UserProfile } from "../lib/ui";
 
+// crypto.randomUUID is only defined in secure contexts (https:// or
+// localhost) — a demo reached over a bare http://<lan-ip> origin (a phone,
+// a second laptop, a projector machine) would otherwise throw here on every
+// single message send.
+function uuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -176,7 +191,7 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
           // Known upfront (not just learned from the "done" event) so the
           // Stop button can cancel the server-side generation even if the
           // user clicks it before a single event has come back.
-          const activeSessionId = sessionId ?? crypto.randomUUID();
+          const activeSessionId = sessionId ?? uuid();
           if (!sessionId) setSessionId(activeSessionId);
           streamingSessionIdRef.current = activeSessionId;
 
@@ -193,8 +208,13 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
             },
             (meta) => {
               if (meta.session_id) setSessionId(meta.session_id);
+              // Post-generation verification (citation check, grounding
+              // correction) can rewrite the answer after streaming finishes —
+              // meta.response is that final text; fall back to the streamed
+              // tokens only if the server didn't send one.
               setMessages((m) => m.map((msg) => msg.id === botId ? {
                 ...msg, streaming: false, meta, stopped: meta.type === "stopped",
+                content: meta.response || acc,
               } : msg));
             },
             (err) => {
@@ -243,8 +263,11 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const newConversation = async () => {
-    if (sessionId) clearChatSession(sessionId).catch(() => {});
+  const newConversation = () => {
+    // Just start a fresh local thread — the current one stays in "Recent"
+    // and reloadable. clearChatSession() is reserved for the explicit
+    // delete (✕) action; calling it here would permanently wipe whatever
+    // conversation the user just had.
     setSessionId(undefined);
     setMessages([]);
   };

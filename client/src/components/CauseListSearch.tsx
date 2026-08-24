@@ -31,7 +31,7 @@ export function CauseListSearch() {
     setError(null);
     try {
       const data = await searchCauseList({ court, date, advocate, judge });
-      setResults(data.results);
+      setResults(Array.isArray(data.results) ? data.results : []);
       setPublished(Boolean(data.publishedAt));
     } catch {
       setError("Couldn't fetch the cause list right now.");

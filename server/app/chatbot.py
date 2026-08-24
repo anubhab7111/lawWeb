@@ -72,14 +72,32 @@ from app.tools.statutory_validator import get_statutory_validator
 
 
 LLM_NUM_CTX = 6144  # Ollama defaults to 2048, which silently clips grounded prompts
-LLM_NUM_PREDICT = 2048  # tokens reserved for thinking + the answer
+# qwen3:4b's thinking-phase length is variable and can run to 1000+ tokens on
+# its own for a grounded legal prompt (measured live) — 1536 total left too
+# little room for the actual answer often enough to matter (verified: empty
+# or thinking-text-only responses in repeated live trials). Shrinks the
+# context-block budget in _fit_context_blocks, which is an acceptable
+# tradeoff against silently returning no real answer.
+LLM_NUM_PREDICT = 3072  # tokens reserved for thinking + the answer
 _PROMPT_SAFETY_MARGIN = 256  # headroom for chat scaffolding the estimate can't see
 _MAX_QUERY_CHARS = 8000  # clamp on user-derived text so one huge query can't overflow
 
 
 @lru_cache()
 def get_llm() -> ChatOllama:
-    """Get cached LLM instance for better performance."""
+    """Get cached LLM instance for better performance.
+
+    reasoning=False, not True: verified live (2 empty answers out of 3
+    identical requests) that with reasoning=True, Ollama's `thinking` field
+    and `content` field are genuinely separate per-chunk, and qwen3:4b's
+    thinking-phase length is variable enough that it can consume the whole
+    num_predict budget before ever starting the answer, leaving `content`
+    completely empty with no error raised. With reasoning=False the same
+    thinking text lands inline in `content` (ending in `</think>`, same as
+    get_fast_llm_prose() already relies on), which invoke_llm_safely()
+    strips/filters — and, critically, always has *something* to fall back
+    to if generation gets cut off mid-thought, instead of nothing.
+    """
     settings = get_settings()
     return ChatOllama(
         model=settings.llm_model,
@@ -88,7 +106,7 @@ def get_llm() -> ChatOllama:
         num_ctx=LLM_NUM_CTX,
         num_predict=LLM_NUM_PREDICT,
         timeout=180.0,
-        reasoning=True,
+        reasoning=False,
         keep_alive="1h",  # loading the 14B model is the OOM-prone step — do it rarely
     )
 
@@ -124,13 +142,22 @@ def _fit_context_blocks(context_parts: list, reserved_tokens: int) -> str:
 
 @lru_cache()
 def get_fast_llm() -> ChatOllama:
-    """Get cached small LLM for classification/routing tasks (local Ollama)."""
+    """Get cached small LLM for classification/routing tasks (local Ollama).
+
+    num_ctx=LLM_NUM_CTX, not a smaller value: fast_llm_model is the same
+    Ollama model tag as get_llm() (both "qwen3:4b" — see config.py), and
+    Ollama reloads a model whenever a request asks for a different num_ctx
+    than what's currently loaded (verified live via `ollama ps`, ~1.7-2s per
+    reload). A single chat request calls both get_llm() and get_fast_llm()
+    in sequence, so a mismatched num_ctx here was forcing a reload on every
+    handoff between them — pure added latency for no benefit.
+    """
     settings = get_settings()
     return ChatOllama(
         model=settings.fast_llm_model,
         temperature=0,
         base_url=settings.ollama_base_url,
-        num_ctx=4096,  # rewrite/classification prompts include conversation history
+        num_ctx=LLM_NUM_CTX,
         num_predict=128,  # Reduced from 256 for faster classification
         timeout=15.0,  # Reduced from 30s
         reasoning=False,  # classification needs the raw JSON, not a thinking preamble
@@ -146,13 +173,18 @@ def get_fast_llm_prose() -> ChatOllama:
     honored by this model/build) and the thinking preamble alone commonly
     runs 300-500 tokens before the real answer starts, so num_predict needs
     real headroom above get_fast_llm()'s 128 or the response gets cut off
-    mid-thought before ever reaching the answer."""
+    mid-thought before ever reaching the answer.
+
+    num_ctx=LLM_NUM_CTX, same reasoning as get_fast_llm(): matching the
+    context size of get_llm()'s "qwen3:4b" instance avoids a model reload
+    every time a single request pipeline hands off between the two.
+    """
     settings = get_settings()
     return ChatOllama(
         model=settings.fast_llm_model,
         temperature=0,
         base_url=settings.ollama_base_url,
-        num_ctx=4096,
+        num_ctx=LLM_NUM_CTX,
         num_predict=900,
         timeout=45.0,
         reasoning=False,
@@ -209,20 +241,120 @@ _stream_queue_var: contextvars.ContextVar[asyncio.Queue | None] = (
 )
 
 
-async def invoke_llm_safely(llm: ChatOllama, prompt: str) -> str:
-    """Safely invoke LLM with proper error handling. Supports streaming via context queue."""
-    queue = _stream_queue_var.get(None)
+_LLM_TIMEOUT_SECONDS = 120  # ChatOllama's own timeout= kwarg is a silent no-op
+
+# get_llm()'s prompt template always opens an implicit <think> block server-side
+# (confirmed against the raw Ollama API — see strip_reasoning_tags), so every
+# generation starts as thinking and only becomes a real answer once the model
+# emits the closing </think>. Measured live: on multi-provision questions
+# qwen3:4b can spend its *entire* LLM_NUM_PREDICT budget re-drafting the answer
+# inside its own thinking before ever closing the tag — so "no </think> yet"
+# is not a rare edge case, it's a real failure mode that must not be shown to
+# the user as if it were the answer (see _INCOMPLETE_GENERATION_NOTE below).
+# This cap is sized comfortably above the worst-case character output for
+# LLM_NUM_PREDICT tokens (~4-5 chars/token) — it fires only as an absolute
+# backstop against a truly runaway/never-closing generation, not during
+# normal (if verbose) thinking.
+_THINKING_BUFFER_SAFETY_CAP = 20000
+
+# Shown instead of raw thinking text whenever generation ends (hits the safety
+# cap, exhausts num_predict, or the stream errors) without ever producing a
+# closed </think> — i.e. the model never actually finished formulating an
+# answer. Deliberately not a truncated dump of the buffered thinking: that
+# text is internal reasoning-in-progress (drafts, self-corrections, "let me
+# check..."), not a legal answer, and showing it verbatim is worse for a demo
+# than an honest "please retry".
+_INCOMPLETE_GENERATION_NOTE = (
+    "I wasn't able to finish formulating a complete answer to that in time. "
+    "Please try again, or rephrase the question — this can happen with more "
+    "complex or multi-part questions."
+)
+
+
+async def invoke_llm_safely(
+    llm: ChatOllama, prompt: str, stream: bool = True
+) -> str:
+    """Safely invoke LLM with proper error handling. Supports streaming via
+    context queue. Pass stream=False for internal/auxiliary calls (e.g. the
+    grounding fact-checker) whose raw output must never reach the user's
+    token stream even when called from within a streaming handler task.
+
+    Every model here runs with reasoning=False (see get_llm()), so a
+    thinking preamble arrives inline in the token stream ending with a
+    literal `</think>`, not as a separate field, and every generation starts
+    inside that preamble (the opening tag is injected server-side). Both
+    branches below withhold/strip it: streaming buffers tokens until the
+    closing tag is seen so the preamble is never shown live; non-streaming
+    strips everything up to and including it. If generation ends — safety
+    cap, num_predict exhausted, or the model just stops — without a closing
+    tag ever appearing, that means the model never actually finished
+    formulating an answer (measured live: it can spend its whole budget
+    re-drafting inside the thinking phase), so both branches return
+    _INCOMPLETE_GENERATION_NOTE rather than the raw buffered thinking text —
+    showing that verbatim would leak internal monologue/drafts to the user.
+    """
+    queue = _stream_queue_var.get(None) if stream else None
 
     if queue is not None:
-        # Streaming mode - use astream and push chunks to queue
-        try:
-            full_response = ""
+        # Streaming mode - use astream and push chunks to queue, filtering
+        # out a leading thinking preamble before anything reaches the queue.
+        visible_response = ""
+
+        async def _drain() -> str:
+            nonlocal visible_response
+            in_thinking = True
+            buffer = ""
             async for chunk in llm.astream([HumanMessage(content=prompt)]):
                 token = chunk.content if hasattr(chunk, "content") else str(chunk)
-                if token:
-                    full_response += token
+                if not token:
+                    continue
+                if not in_thinking:
+                    visible_response += token
                     await queue.put(token)
-            return full_response
+                    continue
+                buffer += token
+                if "</think>" in buffer:
+                    after = buffer.split("</think>", 1)[1]
+                    in_thinking = False
+                    buffer = ""
+                    if after:
+                        visible_response += after
+                        await queue.put(after)
+                elif len(buffer) > _THINKING_BUFFER_SAFETY_CAP:
+                    # Absolute backstop against a runaway/never-closing
+                    # generation. Stop consuming the stream entirely rather
+                    # than falling through to the normal per-token path —
+                    # otherwise the model's continued thinking output would
+                    # keep arriving as if it were real content.
+                    print(
+                        f"[LLM] thinking exceeded {_THINKING_BUFFER_SAFETY_CAP} "
+                        "chars without closing — giving up"
+                    )
+                    visible_response = _INCOMPLETE_GENERATION_NOTE
+                    await queue.put(_INCOMPLETE_GENERATION_NOTE)
+                    return visible_response
+            if in_thinking and buffer:
+                # Stream ended (hit num_predict or stopped) before a closing
+                # tag ever showed up — the buffered text is unfinished
+                # thinking, not an answer.
+                print(
+                    f"[LLM] generation ended mid-thinking ({len(buffer)} "
+                    "buffered chars, no closing tag)"
+                )
+                visible_response = _INCOMPLETE_GENERATION_NOTE
+                await queue.put(_INCOMPLETE_GENERATION_NOTE)
+            return visible_response
+
+        try:
+            return await asyncio.wait_for(_drain(), timeout=_LLM_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            # Same treatment as a user-initiated Stop: keep whatever was
+            # already streamed to the client rather than discarding it.
+            note = "\n\n*(Response generation took too long and was cut short.)*"
+            visible_response += note
+            await queue.put(note)
+            print(f"[LLM] generation exceeded {_LLM_TIMEOUT_SECONDS}s, returning partial output")
+            return visible_response
         except Exception as e:
             print(f"LLM streaming error: {e}")
             raise
@@ -230,10 +362,25 @@ async def invoke_llm_safely(llm: ChatOllama, prompt: str) -> str:
         # Normal (non-streaming) mode
         try:
             loop: AbstractEventLoop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, lambda: llm.invoke([HumanMessage(content=prompt)])
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, lambda: llm.invoke([HumanMessage(content=prompt)])
+                ),
+                timeout=_LLM_TIMEOUT_SECONDS,
             )
-            return response.content
+            raw = response.content
+            if "</think>" not in raw:
+                # Never closed the thinking phase — raw is entirely internal
+                # monologue, not an answer (see docstring).
+                print(
+                    f"[LLM] non-streaming generation ended without </think> "
+                    f"({len(raw)} chars) — giving up"
+                )
+                return _INCOMPLETE_GENERATION_NOTE
+            return strip_reasoning_tags(raw)
+        except asyncio.TimeoutError:
+            print(f"[LLM] generation exceeded {_LLM_TIMEOUT_SECONDS}s")
+            raise
         except Exception as e:
             print(f"LLM invocation error: {e}")
             raise
@@ -1057,7 +1204,9 @@ async def handle_general_query(state: ChatState) -> ChatState:
         )
 
         async def _grounding_correction_invoke(prompt: str) -> str:
-            raw = await invoke_llm_safely(get_grounding_correction_llm(), prompt)
+            raw = await invoke_llm_safely(
+                get_grounding_correction_llm(), prompt, stream=False
+            )
             return strip_reasoning_tags(raw)
 
         final_response = await _verify_response_citations(
@@ -1575,6 +1724,15 @@ class LegalChatbot:
             response_text = english_text
             if not tokens_streamed and response_text:
                 yield {"type": "token", "content": response_text}
+
+        if superseded:
+            # A newer stream_chat() call for this session_id already started
+            # (or finished) before we did — our result is stale. Emitting a
+            # normal "stopped"/"done" event here would make the router
+            # persist this superseded partial into the transcript, possibly
+            # landing it in the DB after the newer, already-completed turn.
+            yield {"type": "superseded", "session_id": session_id}
+            return
 
         if stopped:
             yield {

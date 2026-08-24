@@ -38,7 +38,14 @@ export function BareActExplorer() {
     setError(null);
     try {
       const data = await searchBareAct(q);
-      setResult(data);
+      // Normalize once here rather than guarding every .length/.map below —
+      // a partial/legacy response missing these arrays would otherwise
+      // throw during render and take down the whole screen.
+      setResult({
+        ...data,
+        matches: data.matches ?? [],
+        landmarkJudgments: data.landmarkJudgments ?? [],
+      });
     } catch {
       setError("Couldn't find that section or topic. Try rephrasing.");
       setResult(null);

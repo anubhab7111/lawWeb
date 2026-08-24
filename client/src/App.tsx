@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Nav } from "./components/Nav";
 import { Home } from "./components/Home";
 import { AskAI } from "./components/AskAI";
@@ -23,22 +24,88 @@ export type View =
   | "bookings" | "documents" | "signin" | "signup"
   | "bare-acts" | "similar-cases" | "my-cases" | "cause-list" | "vault" | "calendar";
 
-const AUTH_REQUIRED: View[] = ["bookings", "payment", "profile", "my-cases", "vault", "calendar"];
+const ALL_VIEWS: View[] = [
+  "home", "chat", "lawyers", "profile", "payment",
+  "bookings", "documents", "signin", "signup",
+  "bare-acts", "similar-cases", "my-cases", "cause-list", "vault", "calendar",
+];
+
+// Views that render around an in-memory object (the selected lawyer) rather
+// than anything fetchable from a URL — a cold deep-link or a Back/Forward
+// landing here with nothing selected has no data to show.
+const NEEDS_SELECTED_LAWYER: View[] = ["profile", "payment"];
+
+function hashToView(hash: string): View | null {
+  const v = hash.replace(/^#\/?/, "");
+  return (ALL_VIEWS as string[]).includes(v) ? (v as View) : null;
+}
+
+// "profile" (a lawyer's public profile) is deliberately not gated — it's
+// browsable by guests; only booking requires auth. It was previously listed
+// here but unreachable via navigate() anyway (handleSelectLawyer sets the
+// view directly), so the entry was inert rather than intentional.
+const AUTH_REQUIRED: View[] = ["bookings", "payment", "my-cases", "vault", "calendar"];
 
 export default function App() {
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View>(() => hashToView(window.location.hash) ?? "home");
   const [user, setUser] = useState<UserProfile | null>(null);
+  // Distinguishes "haven't checked the stored token yet" from "checked, and
+  // there's no user" — components gated on `user` (MyBookings, Payment) used
+  // to hang or silently no-op during the brief window after mount where a
+  // valid token exists but the /auth/me fetch hasn't resolved, because
+  // navigate() gated on localStorage's token while those components gated
+  // on `user`. Gating navigate() on this instead closes that race instead
+  // of just papering over it in each component.
+  const [authChecked, setAuthChecked] = useState(false);
   const [selectedLawyer, setSelectedLawyer] = useState<Lawyer | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // What actually renders: falls back to "lawyers" for profile/payment
+  // reached with no lawyer in memory — a cold deep-link, a Back/Forward
+  // navigation, or a manually-edited URL, none of which carry the selected
+  // lawyer object. Without this the app used to render just the nav with
+  // nothing below it (App.tsx previously had no fallback branch at all).
+  const effectiveView: View =
+    NEEDS_SELECTED_LAWYER.includes(view) && !selectedLawyer ? "lawyers" : view;
+
+  // Browser Back/Forward and manually-edited URLs.
+  useEffect(() => {
+    const onHashChange = () => setView(hashToView(window.location.hash) ?? "home");
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // Keep the URL in sync with what's actually on screen (effectiveView, not
+  // view) so Back/Forward and a page refresh land somewhere real instead of
+  // replaying a stale profile/payment hash with nothing to show.
+  useEffect(() => {
+    const target = `#/${effectiveView}`;
+    if (window.location.hash !== target) window.location.hash = target;
+  }, [effectiveView]);
+
+  // navigate() gates click-driven navigation, but a cold deep-link (e.g.
+  // opening #/bookings directly) sets `view` from the URL without ever
+  // going through navigate() — gate those once the stored token has been
+  // checked, same rule, so a guest can't land straight on a protected view.
+  useEffect(() => {
+    if (authChecked && AUTH_REQUIRED.includes(view) && !user) {
+      setView("signin");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked]);
+
   // Restore session from a stored token.
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token) return;
+    if (!token) {
+      setAuthChecked(true);
+      return;
+    }
     fetchUserProfile()
       .then((u) => setUser(u))
-      .catch(() => localStorage.removeItem("token"));
+      .catch(() => localStorage.removeItem("token"))
+      .finally(() => setAuthChecked(true));
   }, []);
 
   const showToast = useCallback((msg: string) => {
@@ -47,12 +114,12 @@ export default function App() {
   }, []);
 
   const navigate = useCallback((v: View) => {
-    if (AUTH_REQUIRED.includes(v) && !localStorage.getItem("token")) {
-      setView("signin");
-      return;
+    if (AUTH_REQUIRED.includes(v)) {
+      if (!authChecked) return; // still resolving the stored token — ignore the click rather than bounce to signin
+      if (!user) { setView("signin"); return; }
     }
     setView(v);
-  }, []);
+  }, [authChecked, user]);
 
   const handleLoginSuccess = (u: UserProfile) => {
     setUser(u);
@@ -72,6 +139,7 @@ export default function App() {
 
   const handleBook = (l: Lawyer) => {
     setSelectedLawyer(l);
+    if (!authChecked) return; // still resolving the stored token
     if (!user) { setView("signin"); return; }
     setView("payment");
   };
@@ -81,15 +149,19 @@ export default function App() {
     setView("chat");
   };
 
-  const marketing = view === "home" && !user;
+  const marketing = effectiveView === "home" && !user;
 
   return (
     <div className="app">
-      <Nav view={view} user={user} marketing={marketing} onNavigate={navigate} onLogout={handleLogout} />
+      <Nav view={effectiveView} user={user} marketing={marketing} onNavigate={navigate} onLogout={handleLogout} />
 
-      {view === "home" && <Home onNavigate={navigate} onAsk={handleAskFromHero} />}
+      {/* key resets the boundary's error state on navigation, so a crash on
+          one screen doesn't stay stuck once the user moves on. */}
+      <ErrorBoundary key={effectiveView} onReset={() => setView("home")}>
 
-      {view === "chat" && (
+      {effectiveView === "home" && <Home onNavigate={navigate} onAsk={handleAskFromHero} />}
+
+      {effectiveView === "chat" && (
         <AskAI
           user={user}
           initialQuestion={pendingQuestion}
@@ -100,15 +172,15 @@ export default function App() {
         />
       )}
 
-      {view === "lawyers" && (
+      {effectiveView === "lawyers" && (
         <FindLawyers onSelectLawyer={handleSelectLawyer} onBook={handleBook} />
       )}
 
-      {view === "profile" && selectedLawyer && (
+      {effectiveView === "profile" && selectedLawyer && (
         <LawyerProfile lawyer={selectedLawyer} onBook={handleBook} onBack={() => setView("lawyers")} />
       )}
 
-      {view === "payment" && selectedLawyer && (
+      {effectiveView === "payment" && selectedLawyer && (
         <Payment
           lawyer={selectedLawyer}
           user={user}
@@ -117,28 +189,30 @@ export default function App() {
         />
       )}
 
-      {view === "bookings" && <MyBookings user={user} onNavigate={navigate} />}
+      {effectiveView === "bookings" && <MyBookings user={user} onNavigate={navigate} />}
 
-      {view === "documents" && <DocumentAnalysis />}
+      {effectiveView === "documents" && <DocumentAnalysis />}
 
-      {view === "bare-acts" && <BareActExplorer />}
+      {effectiveView === "bare-acts" && <BareActExplorer />}
 
-      {view === "similar-cases" && <SimilarCaseSearch />}
+      {effectiveView === "similar-cases" && <SimilarCaseSearch />}
 
-      {view === "my-cases" && <MyCases user={user} />}
+      {effectiveView === "my-cases" && <MyCases user={user} />}
 
-      {view === "cause-list" && <CauseListSearch />}
+      {effectiveView === "cause-list" && <CauseListSearch />}
 
-      {view === "vault" && <Vault user={user} />}
+      {effectiveView === "vault" && <Vault user={user} />}
 
-      {view === "calendar" && <LegalCalendar user={user} />}
+      {effectiveView === "calendar" && <LegalCalendar user={user} />}
 
-      {view === "signin" && (
+      {effectiveView === "signin" && (
         <SignIn onSuccess={handleLoginSuccess} onNavigateToSignUp={() => setView("signup")} />
       )}
-      {view === "signup" && (
+      {effectiveView === "signup" && (
         <SignUp onSuccess={handleLoginSuccess} onNavigateToSignIn={() => setView("signin")} />
       )}
+
+      </ErrorBoundary>
 
       {toast && (
         <div className="toast-wrap"><div className="toast">✓ {toast}</div></div>

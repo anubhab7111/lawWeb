@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.db.engine import get_engine
@@ -71,15 +72,29 @@ async def search(
                 cached.entries = entries_json
                 cached.fetched_at = datetime.now(timezone.utc)
             session.add(cached)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                # Another concurrent request for the same (court, date)
+                # already inserted the row between our SELECT and this
+                # INSERT — fetch what it wrote instead of erroring out.
+                session.rollback()
+                cached = session.exec(
+                    select(CauseListCache).where(
+                        CauseListCache.court == court, CauseListCache.list_date == list_date
+                    )
+                ).first()
 
         results = cached.entries
         if advocate:
-            results = [e for e in results if advocate.lower() in e.get("advocate", "").lower()]
+            needle = advocate.lower()
+            results = [e for e in results if needle in (e.get("advocate") or "").lower()]
         if judge:
-            results = [e for e in results if judge.lower() in e.get("judge", "").lower()]
+            needle = judge.lower()
+            results = [e for e in results if needle in (e.get("judge") or "").lower()]
         if case_number:
-            results = [e for e in results if case_number.lower() in e.get("caseNumber", "").lower()]
+            needle = case_number.lower()
+            results = [e for e in results if needle in (e.get("caseNumber") or "").lower()]
 
         return {
             "court": court,

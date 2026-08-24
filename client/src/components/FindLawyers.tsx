@@ -25,7 +25,7 @@ export function FindLawyers({ onSelectLawyer, onBook }: Props) {
 
   useEffect(() => {
     fetchLawyers()
-      .then((data) => setAll(data))
+      .then((data) => setAll(Array.isArray(data) ? data : []))
       .catch(() => setError("Couldn't load lawyers. Is the backend running?"))
       .finally(() => setLoading(false));
   }, []);

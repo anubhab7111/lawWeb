@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     # Ollama configuration
     ollama_base_url: str = "http://localhost:11434"
     # llm_model: str = "mistral-indian-law:latest"
-    llm_model: str = "qwen3:14b"
+    # qwen3:14b Q4 (~9GB) spills off a 4GB GPU onto CPU (~3 tok/s, ~500s/answer).
+    # qwen3:4b (~2.5GB) fits fully in VRAM and matches fast_llm_model, so Ollama
+    # never swaps models mid-request.
+    llm_model: str = "qwen3:4b"
     # Small model for classification/routing/query-rewrite calls
     fast_llm_model: str = "qwen3:4b"
     llm_temperature: float = 0.1
@@ -47,6 +50,11 @@ class Settings(BaseSettings):
     # Server configuration
     host: str = "0.0.0.0"
     python_port: int = 8000
+    # Auto-restart on source change. Off by default: every model/embedding/
+    # reranker singleton and the RAG indices get reloaded from scratch on
+    # each restart, which is exactly what NOT to trigger mid-demo. Set
+    # RELOAD=true for local development.
+    reload: bool = False
 
     # When True, unhandled errors return their message to the client (dev only).
     # Default False so 500 responses never leak internal exception details.
@@ -54,8 +62,14 @@ class Settings(BaseSettings):
 
     # Allowed CORS origins (comma-separated). Kept explicit rather than "*"
     # because allow_credentials=True + wildcard lets any origin make
-    # credentialed requests. Default is the local Vite dev server.
-    cors_allow_origins: str = "http://localhost:5173"
+    # credentialed requests. Covers both the client's configured dev port
+    # (vite.config.ts: 3000) and Vite's own default (5173, e.g. docs/README
+    # examples) so a fresh clone isn't CORS-blocked before anyone touches
+    # .env — override for a LAN/deployed frontend origin.
+    cors_allow_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
 
     # PostgreSQL connection string
     database_url: str = ""

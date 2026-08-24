@@ -4,6 +4,8 @@ Single Python backend: chatbot/RAG plus auth, lawyers, and bookings
 (previously served by the Express server).
 """
 
+import asyncio
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -30,6 +32,42 @@ from app.routers import (
 from app.scheduler import get_scheduler, register_jobs
 
 
+async def _warmup() -> None:
+    """Pre-load everything the chatbot lazily initializes on first use —
+    BGE-M3 embeddings, the reranker, the unified + case-law FAISS/BM25
+    indices, the fastText language detector, and the Ollama LLM (into VRAM,
+    kept resident via keep_alive) — so the first real user query isn't the
+    one paying for it. Measured cold-start cost without this: 10+ minutes.
+
+    Runs as a background task so it never delays uvicorn accepting
+    connections, and must never raise: any failure here just means the
+    first request falls back to the existing per-component lazy-init path.
+
+    Uses print(), not the logging module — nothing in this app configures a
+    logging handler/level (uvicorn only configures its own loggers), so
+    logger.info()/logger.exception() calls here would be silently dropped.
+    print() is what every other diagnostic line in this codebase uses.
+    """
+    try:
+        from app.chatbot import get_fast_llm, get_llm, invoke_llm_safely
+        from app.intent_classifier import classify_intent_embedding
+        from app.multilingual.language_detection import detect_language
+        from app.tools.case_law_rag import get_case_law_rag_system
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        print("[Warmup] starting background warmup...")
+        await get_unified_rag_system().initialize()
+        await get_case_law_rag_system().initialize()
+        await classify_intent_embedding("What is the punishment for theft?", False)
+        await detect_language("test")
+        await invoke_llm_safely(get_llm(), "Reply with OK.", stream=False)
+        await invoke_llm_safely(get_fast_llm(), "Reply with OK.", stream=False)
+        print("[Warmup] complete.")
+    except Exception:
+        print("[Warmup] failed; components will lazy-init on first request")
+        traceback.print_exc()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # First-ever startup hook in this app. Scheduler jobs are durable
@@ -39,9 +77,11 @@ async def lifespan(app: FastAPI):
     scheduler = get_scheduler()
     register_jobs(scheduler)
     scheduler.start()
+    warmup_task = asyncio.create_task(_warmup())
     try:
         yield
     finally:
+        warmup_task.cancel()
         scheduler.shutdown(wait=False)
 
 
@@ -113,16 +153,31 @@ async def message_http_exception_handler(request, exc: MessageHTTPException):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler for unhandled errors."""
-    return JSONResponse(
+    """Global exception handler for unhandled errors.
+
+    FastAPI/Starlette places a bare-Exception handler in
+    ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware — so a response
+    built here never gets CORS headers from that middleware, and the browser
+    reports every unhandled 500 as an opaque "Failed to fetch"/CORS error
+    instead of surfacing the actual message. Attach the header manually
+    (only for an origin already on the allowlist), and use the
+    {"message": ...} shape the client's error handling expects everywhere
+    else (see app.deps.errors.MessageHTTPException).
+    """
+    print(f"Unhandled exception on {request.method} {request.url.path}")
+    traceback.print_exc()
+    settings = get_settings()
+    response = JSONResponse(
         status_code=500,
         content={
-            "error": "Internal server error",
-            "detail": (
-                str(exc) if get_settings().debug else "An error occurred"
-            ),
+            "message": str(exc) if settings.debug else "An unexpected error occurred."
         },
     )
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origins_list:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 
 # ============================================================================
@@ -139,4 +194,6 @@ if __name__ == "__main__":
     import uvicorn
 
     settings = get_settings()
-    uvicorn.run("app.main:app", host=settings.host, port=settings.port, reload=True)
+    uvicorn.run(
+        "app.main:app", host=settings.host, port=settings.port, reload=settings.reload
+    )
