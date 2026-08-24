@@ -9,7 +9,16 @@ import contextvars
 import re
 from asyncio.events import AbstractEventLoop
 from functools import lru_cache
-from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Literal, Optional
+from typing import (
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+)
 
 from langchain_core.messages import HumanMessage
 from langchain_ollama import ChatOllama
@@ -297,9 +306,7 @@ async def _rewrite_query_for_retrieval(
     if not any(m["role"] == "assistant" for m in prior):
         return current_input
 
-    history_lines = [
-        f"{m['role'].upper()}: {m['content'][:300]}" for m in prior[-4:]
-    ]
+    history_lines = [f"{m['role'].upper()}: {m['content'][:300]}" for m in prior[-4:]]
     prompt = QUERY_REWRITE_PROMPT.format(
         history="\n".join(history_lines), question=current_input
     )
@@ -743,7 +750,9 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     from sqlmodel import Session as DBSession
 
     with DBSession(get_engine()) as session:
-        lawyers = await recommend_lawyers_core(session, problem_description=lawyer_query, limit=5)
+        lawyers = await recommend_lawyers_core(
+            session, problem_description=lawyer_query, limit=5
+        )
     formatted_results = format_lawyer_results(lawyers)
 
     # Optionally use Indian Kanoon to provide legal context for lawyer search —
@@ -893,7 +902,9 @@ async def handle_general_query(state: ChatState) -> ChatState:
     domain_hint = state.get("domain_hint")
     extracted_entities = state.get("extracted_entities", [])
 
-    print(f"[GeneralQuery] domain_hint={domain_hint} extracted_entities={extracted_entities}")
+    print(
+        f"[GeneralQuery] domain_hint={domain_hint} extracted_entities={extracted_entities}"
+    )
 
     # Build conversation context from recent messages (last 3-4 exchanges)
     conversation_context = ""
@@ -959,7 +970,9 @@ async def handle_general_query(state: ChatState) -> ChatState:
 
     disclaimer_prefix, prompt_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
-    retrieved_context = ""  # populated inside the try — guarded so it's always defined below
+    retrieved_context = (
+        ""  # populated inside the try — guarded so it's always defined below
+    )
     try:
         llm = get_llm()
 
@@ -1427,7 +1440,9 @@ class LegalChatbot:
         # only after the full English answer exists, so for those we suppress
         # per-token output and emit one translated message at the end.
         english_message, lang = await preprocess_query(message)
-        translate_out = lang.is_reliable and lang.language != get_settings().default_language
+        translate_out = (
+            lang.is_reliable and lang.language != get_settings().default_language
+        )
 
         # Get session history — snapshot into a new list so a concurrent
         # request for the same session_id (double-submit/retry) appending
@@ -1668,9 +1683,10 @@ class LegalChatbot:
 
         # Translate the final answer back into the user's language (no-op for
         # English / when disabled). Falls back to English text on failure.
-        display_response = await postprocess_response(
-            english_response or "", lang
-        ) or "I'm sorry, I couldn't process your request."
+        display_response = (
+            await postprocess_response(english_response or "", lang)
+            or "I'm sorry, I couldn't process your request."
+        )
 
         # Return structured response. response_en/query_en are the canonical
         # English texts for language-independent persistence; response is the
