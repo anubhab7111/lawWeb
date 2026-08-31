@@ -41,7 +41,7 @@ Requirements
 Environment / config
 --------------------
     Set OPENROUTER_API_KEY in server/.env (get one free at openrouter.ai/keys).
-    OPENROUTER_MODEL        default: openai/gpt-oss-20b:free
+    OPENROUTER_MODEL        default: minimax/minimax-m2.7:free
     OPENROUTER_DAILY_LIMIT  default: 50  (raise to 1000 after a $10+ topup)
     See https://openrouter.ai/models?max_price=0 for the current free-model
     catalog — it rotates, so the default above may need updating over time.
@@ -69,7 +69,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Model constants
 # ---------------------------------------------------------------------------
-OPENROUTER_DEFAULT_MODEL = "openai/gpt-oss-20b:free"
+OPENROUTER_DEFAULT_MODEL = "minimax/minimax-m2.7:free"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # Quota-protection state files (git-ignored; see server/.gitignore)
@@ -472,7 +472,7 @@ class LLMJudge:
     1. Constructor kwargs
     2. app.config.get_settings()  fields:
          - openrouter_api_key     (str) — from openrouter.ai/keys
-         - openrouter_model       (str) — default: openai/gpt-oss-20b:free
+         - openrouter_model       (str) — default: minimax/minimax-m2.7:free
          - openrouter_base_url    (str) — default: https://openrouter.ai/api/v1
          - openrouter_daily_limit (int) — default: 50 (free-tier daily cap)
     3. Defaults above.
@@ -767,8 +767,9 @@ class LLMJudge:
         raw = cached.get("raw") if cached else None
         elapsed = 0.0
         if not raw:  # not cached, or a previous empty response we won't trust
-            # gpt-oss is a reasoning model; the 4-metric prompt needs a generous
-            # token budget so hidden reasoning doesn't crowd out the JSON answer.
+            # Some free judge models wrap output in hidden reasoning; the
+            # 4-metric prompt needs a generous token budget so that doesn't
+            # crowd out the JSON answer.
             raw, elapsed, reason = await self._post_chat(prompt, max_tokens=2048)
             if not raw:
                 return {
