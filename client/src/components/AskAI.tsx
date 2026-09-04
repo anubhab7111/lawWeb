@@ -11,6 +11,8 @@ import {
   type ChatSessionSummary,
 } from "../api";
 import { RichText } from "./RichText";
+import { IconSearch, IconPlus, IconPaperclip, IconClose, IconScale, IconCalendar } from "./icons";
+import type { ReactNode } from "react";
 import { initials, avatarTint, type UserProfile } from "../lib/ui";
 
 // crypto.randomUUID is only defined in secure contexts (https:// or
@@ -47,10 +49,10 @@ const EXAMPLE_PROMPTS = [
   "Trademark registration steps",
 ];
 
-const CMDK_ACTIONS: { icon: string; label: string; view: View }[] = [
-  { icon: "+", label: "New conversation", view: "chat" },
-  { icon: "⚖", label: "Find Lawyers", view: "lawyers" },
-  { icon: "📅", label: "My Bookings", view: "bookings" },
+const CMDK_ACTIONS: { icon: ReactNode; label: string; view: View }[] = [
+  { icon: <IconPlus size={14} />, label: "New conversation", view: "chat" },
+  { icon: <IconScale size={14} />, label: "Find Lawyers", view: "lawyers" },
+  { icon: <IconCalendar size={14} />, label: "My Bookings", view: "bookings" },
 ];
 
 interface AskAIProps {
@@ -280,11 +282,11 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
       {/* sidebar */}
       <div style={{ width: 248, flex: "none", background: "var(--surface-alt)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", padding: "18px 16px" }} className="lw-sidebar">
         <button onClick={() => setCmdkOpen(true)} className="side-search">
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}><span>🔍</span>Search</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}><IconSearch />Search</span>
           <span className="kbd">⌘K</span>
         </button>
         <button onClick={newConversation} className="side-new">
-          <span style={{ fontSize: 15, color: "var(--accent)" }}>+</span> New conversation
+          <span style={{ display: "flex", alignItems: "center", color: "var(--accent)" }}><IconPlus /></span> New consultation
         </button>
         <div className="eyebrow" style={{ padding: "0 12px 8px", fontSize: 11 }}>Recent</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, overflow: "auto" }}>
@@ -302,10 +304,10 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
               <span
                 onClick={(e) => deleteSession(e, s.id)}
                 className="side-thread-delete"
-                style={{ flex: "none", opacity: 0, cursor: "pointer" }}
+                style={{ flex: "none", opacity: 0, cursor: "pointer", display: "inline-flex" }}
                 title="Delete conversation"
               >
-                ✕
+                <IconClose size={12} />
               </span>
             </button>
           ))}
@@ -323,15 +325,19 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
             </div>
           </div>
         ) : isEmpty ? (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", gap: 22 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", font: "700 20px var(--font-head)" }}>L</div>
+          <div className="fade-in" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", gap: 26 }}>
+            <div className="brand-logo" style={{ width: 52, height: 52, fontSize: 26, borderRadius: "var(--r)" }}>L</div>
             <div>
-              <div style={{ font: "800 27px var(--font-head)" }}>{greeting}, {firstName}</div>
-              <div style={{ font: "400 15px/1.6 var(--font-body)", color: "var(--muted-2)", marginTop: 8, maxWidth: 440 }}>
-                Ask anything about Indian law in plain language — I'll cite the relevant sections and connect you with a lawyer if you need one.
+              <div className="eyebrow" style={{ marginBottom: 14 }}>{greeting}, {firstName}</div>
+              <div style={{ font: "600 clamp(28px, 4vw, 38px)/1.15 var(--font-head)", letterSpacing: "-.02em", maxWidth: 560 }}>
+                What is on your mind, <span style={{ fontStyle: "italic", color: "var(--accent)" }}>legally?</span>
+              </div>
+              <div style={{ font: "400 15.5px/1.65 var(--font-serif)", color: "var(--muted)", marginTop: 16, maxWidth: 440, marginInline: "auto" }}>
+                Describe your situation in plain words. Answers are cited to the relevant
+                Indian acts and sections.
               </div>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", maxWidth: 560 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 9, justifyContent: "center", maxWidth: 580 }}>
               {EXAMPLE_PROMPTS.map((p) => (
                 <button key={p} className="chip" onClick={() => send(p)}>{p}</button>
               ))}
@@ -341,12 +347,12 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
           <div style={{ flex: 1, overflow: "auto", display: "flex", justifyContent: "center" }}>
             <div style={{ width: "100%", maxWidth: 720, padding: "48px 24px 24px", display: "flex", flexDirection: "column", gap: 32 }}>
               {messages.map((m) => (m.role === "user" ? (
-                <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "72%", background: "var(--user-bubble-bg)", color: "var(--user-bubble-fg)", padding: "14px 18px", borderRadius: 18, font: "400 15px/1.6 var(--font-body)", whiteSpace: "pre-wrap" }}>{m.content}</div>
+                <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "72%", background: "var(--user-bubble-bg)", color: "var(--user-bubble-fg)", padding: "13px 18px", borderRadius: "var(--r-2xl)", borderTopRightRadius: "var(--r-sm)", font: "400 15px/1.6 var(--font-body)", whiteSpace: "pre-wrap" }}>{m.content}</div>
               ) : (
-                <div key={m.id} className="fade-up" style={{ display: "flex", gap: 12 }}>
-                  <div style={{ width: 30, height: 30, flex: "none", borderRadius: 9, background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", font: "700 13px var(--font-head)" }}>L</div>
+                <div key={m.id} className="fade-up" style={{ display: "flex", gap: 14 }}>
+                  <div className="brand-logo" style={{ width: 30, height: 30, flex: "none", fontSize: 15 }}>L</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ font: "600 13px var(--font-body)", color: "var(--muted-2)", marginBottom: 6 }}>LawWeb AI</div>
+                    <div style={{ font: "600 10.5px var(--font-body)", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--muted-2)", marginBottom: 8 }}>LawWeb · Counsel</div>
                     {m.streaming && !m.content ? (
                       <div style={{ display: "flex", gap: 4, padding: "10px 0" }}>
                         {[0, 1, 2].map((i) => (
@@ -354,7 +360,7 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
                         ))}
                       </div>
                     ) : (
-                      <div style={{ font: "400 16px/1.75 var(--font-body)", color: m.error ? "var(--danger)" : "var(--text-strong)" }}>
+                      <div style={{ font: "400 16.5px/1.8 var(--font-serif)", color: m.error ? "var(--danger)" : "var(--text-strong)" }}>
                         <RichText text={m.content} />
                       </div>
                     )}
@@ -387,15 +393,13 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
                       <div style={{ marginTop: 16 }}>
                         <button
                           onClick={() => setOpenSources((s) => ({ ...s, [m.id]: !s[m.id] }))}
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "500 13px var(--font-body)", color: "#7c8794", cursor: "pointer", background: "none", border: "none", padding: "4px 0" }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "500 13px var(--font-body)", color: "var(--muted-2)", cursor: "pointer", background: "none", border: "none", padding: "4px 0" }}
                         >
                           <span style={{ display: "inline-block", transition: "transform .15s", transform: openSources[m.id] ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
                           {openSources[m.id] ? "Hide details" : "Show details"}
                         </button>
                         {openSources[m.id] && (
-                          <pre style={{ marginTop: 8, background: "var(--surface-tint)", border: "1px solid var(--divider)", borderRadius: 12, padding: "14px 16px", font: "400 12.5px/1.6 var(--font-body)", color: "var(--muted)", whiteSpace: "pre-wrap", overflowX: "auto" }}>
-                            {JSON.stringify(m.meta?.document_info || m.meta?.crime_report, null, 2)}
-                          </pre>
+                          <pre className="data-pre">{JSON.stringify(m.meta?.document_info || m.meta?.crime_report, null, 2)}</pre>
                         )}
                       </div>
                     )}
@@ -418,14 +422,14 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
         <div style={{ display: "flex", justifyContent: "center", padding: "0 24px 22px", flex: "none" }}>
           <div style={{ width: "100%", maxWidth: 720 }}>
             {file && (
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 12px", background: "var(--accent-tint)", color: "var(--accent)", borderRadius: 99, font: "500 12.5px var(--font-body)" }}>
-                📎 {file.name}
-                <button onClick={() => setFile(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)" }}>✕</button>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 12px", background: "var(--accent-tint)", color: "var(--accent)", borderRadius: "var(--r)", font: "500 12.5px var(--font-body)" }}>
+                <IconPaperclip /> {file.name}
+                <button onClick={() => setFile(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", display: "flex" }}><IconClose /></button>
               </div>
             )}
             <form
               onSubmit={(e) => { e.preventDefault(); send(input, file); }}
-              style={{ display: "flex", alignItems: "flex-end", gap: 10, background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 18, padding: "12px 12px 12px 18px", boxShadow: "var(--shadow-soft)" }}
+              style={{ display: "flex", alignItems: "flex-end", gap: 10, background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: "var(--r-lg)", padding: "12px 12px 12px 18px", boxShadow: "var(--shadow-soft)" }}
             >
               <textarea
                 value={input}
@@ -436,10 +440,10 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
                 style={{ flex: 1, border: "none", outline: "none", resize: "none", background: "transparent", font: "400 15px/1.5 var(--font-body)", color: "var(--text)", maxHeight: 160 }}
               />
               <input ref={fileRef} type="file" hidden accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-              <button type="button" onClick={() => fileRef.current?.click()} title="Attach a document" style={{ width: 34, height: 34, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-2)", cursor: "pointer", background: "none", border: "none", fontSize: 16 }}>📎</button>
+              <button type="button" onClick={() => fileRef.current?.click()} title="Attach a document" style={{ width: 36, height: 36, borderRadius: "var(--r)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-2)", cursor: "pointer", background: "none", border: "none" }}><IconPaperclip /></button>
               {busy ? (
                 <button type="button" onClick={stopGenerating} className="composer-send" title="Stop generating" style={{ background: "var(--text-strong)" }}>
-                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#fff" }} />
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "var(--r-sm)", background: "currentColor" }} />
                 </button>
               ) : (
                 <button type="submit" className="composer-send" title="Send">↑</button>
@@ -457,21 +461,21 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
         <div className="backdrop" style={{ paddingTop: "12vh" }} onClick={() => setCmdkOpen(false)}>
           <div className="modal" style={{ width: 560, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
-              <span style={{ color: "var(--muted-3)" }}>🔍</span>
-              <input autoFocus value={cmdkQuery} onChange={(e) => setCmdkQuery(e.target.value)} placeholder="Jump to bookings, lawyers, or a past thread…" style={{ flex: 1, border: "none", outline: "none", font: "400 15px var(--font-body)", color: "var(--text)" }} />
+              <span style={{ color: "var(--muted-3)", display: "flex" }}><IconSearch /></span>
+              <input autoFocus value={cmdkQuery} onChange={(e) => setCmdkQuery(e.target.value)} placeholder="Jump to bookings, lawyers, or a past thread…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", font: "400 15px var(--font-body)", color: "var(--text)" }} />
               <span className="kbd">Esc</span>
             </div>
             <div style={{ maxHeight: 360, overflow: "auto", padding: 8 }}>
               <div className="eyebrow" style={{ padding: "8px 12px 4px", fontSize: 11 }}>Quick actions</div>
               {CMDK_ACTIONS.filter((a) => a.label.toLowerCase().includes(q)).map((a) => (
                 <button key={a.label} className="menu-row" onClick={() => { setCmdkOpen(false); if (a.label === "New conversation") newConversation(); else onNavigate(a.view); }}>
-                  <span style={{ color: "var(--accent)", width: 16, display: "inline-block", textAlign: "center", marginRight: 8 }}>{a.icon}</span>{a.label}
+                  <span style={{ color: "var(--accent)", width: 16, display: "inline-flex", justifyContent: "center", marginRight: 8 }}>{a.icon}</span>{a.label}
                 </button>
               ))}
               {sessions.length > 0 && <div className="eyebrow" style={{ padding: "12px 12px 4px", fontSize: 11 }}>Recent threads</div>}
               {sessions.filter((s) => (s.title || "").toLowerCase().includes(q)).map((s) => (
                 <button key={s.id} className="menu-row" onClick={() => { setCmdkOpen(false); loadSession(s.id); }}>
-                  <span style={{ color: "#c3c2bc", width: 16, display: "inline-block", textAlign: "center", marginRight: 8 }}>💬</span>{s.title || "Untitled"}
+                  <span style={{ color: "var(--faint)", width: 16, display: "inline-block", textAlign: "center", marginRight: 8 }}>&#8213;</span>{s.title || "Untitled"}
                 </button>
               ))}
             </div>

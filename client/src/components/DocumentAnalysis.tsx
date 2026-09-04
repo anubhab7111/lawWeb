@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { uploadDocumentForAnalysis, analyzeDocumentText, type ChatResponse } from "../api";
 import { RichText } from "./RichText";
+import { IconUpload, IconPaperclip } from "./icons";
 
 export function DocumentAnalysis() {
   const [mode, setMode] = useState<"upload" | "paste">("upload");
@@ -38,9 +39,9 @@ export function DocumentAnalysis() {
         <p className="page-sub">Upload a contract or notice — we classify it, check statutory requirements, and flag likely defects.</p>
 
         {/* mode toggle */}
-        <div style={{ display: "inline-flex", background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 12, padding: 4, marginBottom: 18 }}>
+        <div className="segmented" style={{ marginBottom: 18 }}>
           {(["upload", "paste"] as const).map((m) => (
-            <button key={m} onClick={() => setMode(m)} className="btn btn-sm" style={{ background: mode === m ? "var(--accent-tint)" : "transparent", color: mode === m ? "var(--accent)" : "var(--muted)", boxShadow: "none" }}>
+            <button key={m} onClick={() => setMode(m)} className={mode === m ? "is-on" : ""}>
               {m === "upload" ? "Upload file" : "Paste text"}
             </button>
           ))}
@@ -48,16 +49,16 @@ export function DocumentAnalysis() {
 
         {mode === "upload" ? (
           <div
+            className={`dropzone${dragOver ? " is-over" : ""}`}
             onClick={() => fileRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={(e) => { e.preventDefault(); setDragOver(false); setFile(e.dataTransfer.files?.[0] ?? null); }}
-            style={{ border: `1.5px dashed ${dragOver ? "var(--accent)" : "var(--border-2)"}`, background: dragOver ? "var(--accent-soft)" : "var(--surface)", borderRadius: 16, padding: "48px 24px", textAlign: "center", cursor: "pointer", transition: "border-color .15s, background .15s" }}
           >
             <input ref={fileRef} type="file" hidden accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            <div style={{ font: "700 28px var(--font-head)", color: "var(--accent)", marginBottom: 10 }}>▤</div>
+            <div style={{ color: "var(--accent)", marginBottom: 12, display: "flex", justifyContent: "center" }}><IconUpload size={30} /></div>
             {file ? (
-              <div style={{ font: "600 14.5px var(--font-body)" }}>📎 {file.name}</div>
+              <div style={{ font: "600 14.5px var(--font-body)", display: "inline-flex", alignItems: "center", gap: 7 }}><IconPaperclip size={15} /> {file.name}</div>
             ) : (
               <>
                 <div style={{ font: "600 15px var(--font-body)" }}>Drop a file here, or click to browse</div>
@@ -79,7 +80,7 @@ export function DocumentAnalysis() {
           </div>
         )}
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginTop: 18 }}>{error}</div>}
+        {error && <div className="error-banner" style={{ marginTop: 18 }}>{error}</div>}
 
         {result && (
           <div className="card" style={{ padding: 24, marginTop: 22 }}>
@@ -92,10 +93,8 @@ export function DocumentAnalysis() {
             </div>
             {details && (
               <details style={{ marginTop: 16 }}>
-                <summary style={{ cursor: "pointer", font: "500 13px var(--font-body)", color: "#7c8794" }}>Structured findings</summary>
-                <pre style={{ marginTop: 8, background: "var(--surface-tint)", border: "1px solid var(--divider)", borderRadius: 12, padding: "14px 16px", font: "400 12.5px/1.6 var(--font-body)", color: "var(--muted)", whiteSpace: "pre-wrap", overflowX: "auto" }}>
-                  {JSON.stringify(details, null, 2)}
-                </pre>
+                <summary style={{ cursor: "pointer", font: "500 13px var(--font-body)", color: "var(--muted-2)" }}>Structured findings</summary>
+                <pre className="data-pre">{JSON.stringify(details, null, 2)}</pre>
               </details>
             )}
             <div style={{ marginTop: 14, font: "400 12.5px var(--font-body)", color: "var(--muted-3)" }}>Educational information, not legal advice.</div>

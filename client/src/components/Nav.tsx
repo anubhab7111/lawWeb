@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import type { View } from "../App";
 import { initials, type UserProfile } from "../lib/ui";
 import { NotificationBell } from "./NotificationBell";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface NavProps {
   view: View;
@@ -54,6 +55,7 @@ export function Nav({ view, user, marketing, onNavigate, onLogout }: NavProps) {
       )}
 
       <div className="nav-right" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <ThemeToggle />
         {user && <NotificationBell user={user} />}
         {user ? (
           <div ref={menuRef} style={{ position: "relative" }}>
@@ -67,7 +69,7 @@ export function Nav({ view, user, marketing, onNavigate, onLogout }: NavProps) {
               <span className="nav-user">{user.name}</span>
               <span
                 className="avatar avatar-round"
-                style={{ width: 30, height: 30, background: "#e4e2dc", color: "#5c6068", fontSize: 12 }}
+                style={{ width: 32, height: 32, background: "var(--accent-tint)", color: "var(--accent)", fontSize: 12 }}
               >
                 {initials(user.name)}
               </span>

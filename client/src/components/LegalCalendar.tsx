@@ -55,12 +55,12 @@ export function LegalCalendar({ user }: Props) {
           <button className="btn btn-primary" onClick={handleAdd}>Add</button>
         </div>
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
 
         {loading ? (
-          <div className="shimmer" style={{ height: 140, borderRadius: 16 }} />
+          <div className="shimmer" style={{ height: 140, borderRadius: "var(--r-lg)" }} />
         ) : events.length === 0 ? (
-          <div className="card" style={{ padding: 40, textAlign: "center", borderStyle: "dashed" }}>No upcoming events.</div>
+          <div className="empty-state"><div className="empty-sub">No upcoming events.</div></div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {events.map((e) => (

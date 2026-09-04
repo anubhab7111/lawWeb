@@ -75,15 +75,15 @@ export function MyCases({ user }: Props) {
           <button className="btn btn-primary" onClick={handleSave}>Save case</button>
         </div>
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
 
         {selected ? (
           <div>
-            <button className="btn btn-sm" style={{ marginBottom: 14 }} onClick={() => setSelected(null)}>← Back to all cases</button>
+            <button className="btn btn-ghost btn-sm" style={{ marginBottom: 14, paddingLeft: 0 }} onClick={() => setSelected(null)}>← Back to all cases</button>
             <div className="card" style={{ padding: "18px 20px", marginBottom: 18 }}>
               <div style={{ font: "700 16px var(--font-head)" }}>{selected.title || selected.cnr}</div>
               <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>{selected.court} · {selected.status}</div>
-              <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => syncCase(selected.id).then(() => openCase(selected.id))}>
+              <button className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => syncCase(selected.id).then(() => openCase(selected.id))}>
                 Re-sync now
               </button>
             </div>
@@ -113,7 +113,7 @@ export function MyCases({ user }: Props) {
             <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
               <input className="input" style={{ flex: 1 }} placeholder="Add a note…" value={note} onChange={(e) => setNote(e.target.value)} />
               <button
-                className="btn"
+                className="btn btn-outline"
                 onClick={async () => { if (!note.trim()) return; await addCaseNote(selected.id, note); setNote(""); openCase(selected.id); }}
               >
                 Add
@@ -124,10 +124,10 @@ export function MyCases({ user }: Props) {
             ))}
           </div>
         ) : loading ? (
-          <div className="shimmer" style={{ height: 120, borderRadius: 16 }} />
+          <div className="shimmer" style={{ height: 120, borderRadius: "var(--r-lg)" }} />
         ) : cases.length === 0 ? (
-          <div className="card" style={{ padding: 40, textAlign: "center", borderStyle: "dashed" }}>
-            No saved cases yet — enter a CNR above to get started.
+          <div className="empty-state">
+            <div className="empty-sub">No saved cases yet — enter a CNR above to get started.</div>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

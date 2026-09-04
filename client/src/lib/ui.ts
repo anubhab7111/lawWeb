@@ -29,14 +29,16 @@ export function initials(name: string): string {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
-// Warm avatar tints matching the wireframe palette; picked deterministically.
+// Muted, in-palette avatar tints; picked deterministically per name. The
+// values are CSS custom properties (defined for both themes in theme.css) so
+// avatars stay legible on the parchment and the dark grounds alike.
 const AVATAR_TINTS: { bg: string; fg: string }[] = [
-  { bg: "#f1ede4", fg: "#8b7355" },
-  { bg: "#e5eef0", fg: "#4a7c85" },
-  { bg: "#f1e4ec", fg: "#916080" },
-  { bg: "#eaeef1", fg: "#5a6c8a" },
-  { bg: "#e9f0e5", fg: "#5f7d4a" },
-  { bg: "#f0e9e4", fg: "#8a6a4a" },
+  { bg: "var(--av1-bg)", fg: "var(--av1-fg)" },
+  { bg: "var(--av2-bg)", fg: "var(--av2-fg)" },
+  { bg: "var(--av3-bg)", fg: "var(--av3-fg)" },
+  { bg: "var(--av4-bg)", fg: "var(--av4-fg)" },
+  { bg: "var(--av5-bg)", fg: "var(--av5-fg)" },
+  { bg: "var(--av6-bg)", fg: "var(--av6-fg)" },
 ];
 
 export function avatarTint(seed: string): { bg: string; fg: string } {
@@ -54,10 +56,10 @@ export function formatMoney(amount: number): string {
   return `₹${Number(amount).toLocaleString("en-IN")}`;
 }
 
-// Maps a free-text availability string to a status dot color.
+// Maps a free-text availability string to a status dot color (theme tokens).
 export function availabilityColor(availability: string): string {
   const a = (availability || "").toLowerCase();
-  if (a.includes("today") || a.includes("available now") || a.includes("now")) return "#3e9a5f";
-  if (a.includes("tomorrow") || a.includes("soon")) return "#c98a1e";
-  return "#a3a29c";
+  if (a.includes("today") || a.includes("available now") || a.includes("now")) return "var(--green)";
+  if (a.includes("tomorrow") || a.includes("soon")) return "var(--amber)";
+  return "var(--muted-3)";
 }
