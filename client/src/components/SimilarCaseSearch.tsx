@@ -90,7 +90,7 @@ export function SimilarCaseSearch() {
             >
               {loading ? "Analyzing…" : "Search from text"}
             </button>
-            <button className="btn" disabled={loading} onClick={() => fileInput.current?.click()}>
+            <button className="btn btn-outline" disabled={loading} onClick={() => fileInput.current?.click()}>
               Upload file instead
             </button>
             <input
@@ -106,8 +106,8 @@ export function SimilarCaseSearch() {
           </div>
         </div>
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
-        {loading && <div className="shimmer" style={{ height: 160, borderRadius: 16 }} />}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
+        {loading && <div className="shimmer" style={{ height: 160, borderRadius: "var(--r-lg)" }} />}
 
         {result && !loading && (
           <>

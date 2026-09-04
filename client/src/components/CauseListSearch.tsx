@@ -57,8 +57,8 @@ export function CauseListSearch() {
           <button className="btn btn-primary" onClick={run} disabled={loading}>{loading ? "Searching…" : "Search cause list"}</button>
         </div>
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
-        {loading && <div className="shimmer" style={{ height: 140, borderRadius: 16 }} />}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
+        {loading && <div className="shimmer" style={{ height: 140, borderRadius: "var(--r-lg)" }} />}
 
         {results && !loading && (
           !published ? (

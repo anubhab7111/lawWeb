@@ -69,15 +69,15 @@ export function Vault({ user }: Props) {
 
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <input className="input" style={{ flex: 1 }} placeholder="Search your documents…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
-          <button className="btn" onClick={handleSearch}>Search</button>
+          <button className="btn btn-outline" onClick={handleSearch}>Search</button>
         </div>
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
 
         {loading ? (
-          <div className="shimmer" style={{ height: 140, borderRadius: 16 }} />
+          <div className="shimmer" style={{ height: 140, borderRadius: "var(--r-lg)" }} />
         ) : list.length === 0 ? (
-          <div className="card" style={{ padding: 40, textAlign: "center", borderStyle: "dashed" }}>No documents yet.</div>
+          <div className="empty-state"><div className="empty-sub">No documents yet.</div></div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {list.map((d) => (

@@ -78,22 +78,20 @@ export function BareActExplorer() {
           </button>
         </form>
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
 
-        {loading && <div className="shimmer" style={{ height: 140, borderRadius: 16 }} />}
+        {loading && <div className="shimmer" style={{ height: 140, borderRadius: "var(--r-lg)" }} />}
 
         {result && !loading && (
           <>
             {result.ambiguous && (
-              <div className="card" style={{ padding: 14, marginBottom: 16, borderColor: "#e6d9a8" }}>
+              <div className="card" style={{ padding: 14, marginBottom: 16, borderColor: "var(--accent-line)", background: "var(--accent-soft)" }}>
                 This section number appears in multiple acts — showing all matches below.
               </div>
             )}
 
             {result.matches.length === 0 && (
-              <div className="card" style={{ padding: 40, textAlign: "center", borderStyle: "dashed" }}>
-                No matching provision found.
-              </div>
+              <div className="empty-state"><div className="empty-sub">No matching provision found.</div></div>
             )}
 
             {result.matches.map((m, i) => (
@@ -105,7 +103,7 @@ export function BareActExplorer() {
             ))}
 
             {result.explanation && (
-              <div className="card" style={{ padding: "18px 20px", marginBottom: 14, background: "var(--surface-2, #f6f5f1)" }}>
+              <div className="card" style={{ padding: "18px 20px", marginBottom: 14, background: "var(--surface-tint)" }}>
                 <div className="section-label">In plain language</div>
                 <p style={{ font: "400 13.5px var(--font-body)", color: "var(--text-2)" }}>{result.explanation}</p>
               </div>

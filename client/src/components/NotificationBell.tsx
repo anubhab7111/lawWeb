@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchNotifications, markNotificationRead, type AppNotification } from "../api";
+import { IconBell } from "./icons";
 import type { UserProfile } from "../lib/ui";
 
 interface Props {
@@ -32,14 +33,15 @@ export function NotificationBell({ user }: Props) {
     <div ref={ref} style={{ position: "relative" }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        style={{ position: "relative", background: "none", border: "none", cursor: "pointer", padding: 6, fontSize: 18 }}
+        className="theme-toggle"
+        style={{ position: "relative" }}
         aria-label="Notifications"
       >
-        🔔
+        <IconBell size={17} />
         {unread > 0 && (
           <span style={{
-            position: "absolute", top: 2, right: 2, width: 8, height: 8, borderRadius: "50%",
-            background: "var(--danger, #c0392b)",
+            position: "absolute", top: 5, right: 5, width: 7, height: 7, borderRadius: "50%",
+            background: "var(--danger)", border: "1.5px solid var(--surface)",
           }} />
         )}
       </button>

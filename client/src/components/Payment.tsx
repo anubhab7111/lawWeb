@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import DropIn from "braintree-web-drop-in-react";
 import { fetchBraintreeClientToken, checkoutBooking } from "../api";
+import { IconLock } from "./icons";
 import { initials, avatarTint, formatMoney, type Lawyer, type UserProfile } from "../lib/ui";
 
 interface Props {
@@ -88,7 +89,7 @@ export function Payment({ lawyer, user, onBack, onSuccess }: Props) {
           <div style={{ font: "700 16px var(--font-head)", marginBottom: 4 }}>Secure payment</div>
           <div style={{ font: "400 13px var(--font-body)", color: "var(--muted-2)", marginBottom: 18 }}>Card details are processed by Braintree (sandbox). Use a test card to complete a booking.</div>
 
-          {error && <div style={{ background: "#fbecea", color: "var(--danger)", borderRadius: 10, padding: "10px 14px", font: "500 13px var(--font-body)", marginBottom: 14 }}>{error}</div>}
+          {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
 
           {clientToken ? (
             <>
@@ -99,11 +100,11 @@ export function Payment({ lawyer, user, onBack, onSuccess }: Props) {
               <button className="btn btn-primary btn-block btn-lg" disabled={processing} onClick={pay} style={{ marginTop: 12 }}>
                 {processing ? "Processing…" : `Pay ${formatMoney(total)}`}
               </button>
-              <div style={{ textAlign: "center", marginTop: 12, font: "500 11px var(--font-body)", letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted-3)" }}>🔒 PCI-DSS compliant gateway</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12, font: "500 11px var(--font-body)", letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted-3)" }}><IconLock size={13} /> PCI-DSS compliant gateway</div>
             </>
           ) : !error ? (
             <div style={{ padding: "48px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-              <div className="spinner" style={{ width: 28, height: 28, borderColor: "rgba(44,110,107,.25)", borderTopColor: "var(--accent)" }} />
+              <div className="spinner" style={{ width: 28, height: 28, borderColor: "var(--border-2)", borderTopColor: "var(--accent)" }} />
               <div style={{ font: "500 13px var(--font-body)", color: "var(--muted-2)" }}>Establishing a secure connection…</div>
             </div>
           ) : null}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { fetchLawyers, recommendLawyers } from "../api";
 import { LawyerCard } from "./LawyerCard";
+import { IconSearch, IconClose } from "./icons";
 import type { Lawyer } from "../lib/ui";
 
 interface Props {
@@ -68,9 +69,9 @@ export function FindLawyers({ onSelectLawyer, onBook }: Props) {
         <p className="page-sub">Filter by specialty and location, or describe your case for a ranked match.</p>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 220, display: "flex", alignItems: "center", gap: 8, background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 12, padding: "11px 16px" }}>
-            <span style={{ color: "var(--muted-3)" }}>⌕</span>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or specialty…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", font: "400 14px var(--font-body)", color: "var(--text)" }} />
+          <div className="search-field" style={{ flex: 1, minWidth: 220 }}>
+            <IconSearch />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or specialty…" />
           </div>
           <div className="filter-select">
             <select value={spec} onChange={(e) => setSpec(e.target.value)}>
@@ -90,29 +91,29 @@ export function FindLawyers({ onSelectLawyer, onBook }: Props) {
         {activeChips.length > 0 && (
           <div style={{ display: "flex", gap: 8, marginBottom: 26, flexWrap: "wrap" }}>
             {activeChips.map((c) => (
-              <button key={c.label} className="pill pill-accent" onClick={c.clear} style={{ cursor: "pointer", border: "none" }}>{c.label} ✕</button>
+              <button key={c.label} className="pill pill-accent" onClick={c.clear} style={{ cursor: "pointer", border: "none" }}>{c.label} <IconClose size={11} /></button>
             ))}
           </div>
         )}
         {activeChips.length === 0 && <div style={{ height: 26 }} />}
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
 
         {loading ? (
           <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 18 }}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div className="shimmer" style={{ height: 46, width: 46, borderRadius: 12 }} />
+                <div className="shimmer" style={{ height: 48, width: 48, borderRadius: "var(--r)" }} />
                 <div className="shimmer" style={{ height: 14, width: "60%" }} />
                 <div className="shimmer" style={{ height: 12, width: "80%" }} />
-                <div className="shimmer" style={{ height: 34, width: "100%", borderRadius: 10 }} />
+                <div className="shimmer" style={{ height: 34, width: "100%" }} />
               </div>
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="card" style={{ padding: 40, textAlign: "center", borderStyle: "dashed" }}>
-            <div style={{ font: "600 15px var(--font-body)", marginBottom: 6 }}>No lawyers match those filters</div>
-            <div style={{ font: "400 13.5px var(--font-body)", color: "var(--muted-2)" }}>Try clearing a filter or broadening your search.</div>
+          <div className="empty-state">
+            <div className="empty-title">No lawyers match those filters</div>
+            <div className="empty-sub">Try clearing a filter or broadening your search.</div>
           </div>
         ) : (
           <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 18 }}>

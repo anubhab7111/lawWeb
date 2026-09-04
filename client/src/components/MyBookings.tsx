@@ -59,23 +59,23 @@ export function MyBookings({ user, onNavigate }: Props) {
         {/* stats strip */}
         <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 32 }}>
           {stats.map((s) => (
-            <div key={s.label} className="card" style={{ padding: "16px 18px", borderRadius: 14 }}>
-              <div style={{ font: "600 12px var(--font-body)", color: "var(--muted-3)" }}>{s.label}</div>
-              <div style={{ font: "700 24px var(--font-head)", marginTop: 4, color: s.accent ? "var(--accent)" : "var(--text)" }}>{s.value}</div>
+            <div key={s.label} className="card stat-card">
+              <div className="stat-label">{s.label}</div>
+              <div className={`stat-value${s.accent ? " accent" : ""}`}>{s.value}</div>
             </div>
           ))}
         </div>
 
-        {error && <div className="card" style={{ borderColor: "#f0d9d6", color: "var(--danger)", marginBottom: 18 }}>{error}</div>}
+        {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
 
         {loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {Array.from({ length: 2 }).map((_, i) => <div key={i} className="shimmer" style={{ height: 96, borderRadius: 16 }} />)}
+            {Array.from({ length: 2 }).map((_, i) => <div key={i} className="shimmer" style={{ height: 96, borderRadius: "var(--r-lg)" }} />)}
           </div>
         ) : bookings.length === 0 ? (
-          <div className="card" style={{ padding: 40, textAlign: "center", borderStyle: "dashed" }}>
-            <div style={{ font: "600 15px var(--font-body)", color: "var(--text-2)", marginBottom: 6 }}>No consultations yet</div>
-            <div style={{ font: "400 13.5px var(--font-body)", color: "var(--muted-2)", marginBottom: 18 }}>Ask a question first — we'll suggest lawyers who fit your case.</div>
+          <div className="empty-state">
+            <div className="empty-title">No consultations yet</div>
+            <div className="empty-sub" style={{ marginBottom: 18 }}>Ask a question first — we'll suggest lawyers who fit your case.</div>
             <button className="btn btn-primary" onClick={() => onNavigate("chat")}>Ask the Legal AI</button>
           </div>
         ) : (

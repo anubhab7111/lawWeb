@@ -24,18 +24,18 @@ export function LawyerProfile({ lawyer, onBook, onBack }: Props) {
         {/* header card */}
         <div className="card" style={{ padding: 24, marginBottom: 18 }}>
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-            <div className="avatar" style={{ width: 72, height: 72, background: tint.bg, color: tint.fg, fontSize: 24, borderRadius: 18 }}>{initials(lawyer.name)}</div>
+            <div className="avatar" style={{ width: 72, height: 72, background: tint.bg, color: tint.fg, fontSize: 24, borderRadius: "var(--r-xl)" }}>{initials(lawyer.name)}</div>
             <div style={{ flex: 1, minWidth: 220 }}>
               <h1 style={{ font: "700 24px var(--font-head)" }}>{lawyer.name}</h1>
               <div style={{ font: "500 13.5px var(--font-body)", color: "var(--muted)", marginTop: 4 }}>{lawyer.specialty}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap", font: "500 13px var(--font-body)", color: "var(--muted)" }}>
                 <span><span className="star">★</span> {lawyer.rating}</span>
-                <span style={{ color: "#dcdad4" }}>·</span>
+                <span style={{ color: "var(--faint)" }}>·</span>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <span className="dot" style={{ background: availColor }} />
                   <span style={{ color: availColor }}>{lawyer.availability}</span>
                 </span>
-                <span style={{ color: "#dcdad4" }}>·</span>
+                <span style={{ color: "var(--faint)" }}>·</span>
                 <span>{lawyer.location}</span>
               </div>
             </div>
