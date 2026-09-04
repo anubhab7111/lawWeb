@@ -39,7 +39,7 @@ export function LawyerCard({ lawyer, onView, onBook }: Props) {
 
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div>
-          <div style={{ font: "600 18px var(--font-head)", letterSpacing: "-.01em" }}>{formatRate(lawyer.hourlyRate)}</div>
+          <div className="mono-num" style={{ font: "600 18px var(--font-head)", letterSpacing: "-.01em" }}>{formatRate(lawyer.hourlyRate)}</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button className="btn btn-outline btn-sm" onClick={() => onView(lawyer)}>Profile</button>

@@ -14,7 +14,7 @@
    hard-coded values — this file is the single source of truth for the look.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Newsreader:opsz,wght@6..72,400..600&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
   /* ground + surfaces — warm parchment */
@@ -86,6 +86,18 @@
   --font-head: 'Fraunces', Georgia, 'Times New Roman', serif;
   --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* fluid type scale — headings + reading sizes derive from these rather
+     than one-off px values, so the hierarchy stays consistent as it grows */
+  --text-h3: clamp(1.3rem, 1.12rem + .9vw, 1.7rem);
+  --text-h2: clamp(1.65rem, 1.28rem + 1.8vw, 2.3rem);
+  --text-h1: clamp(2.4rem, 1.7rem + 3.4vw, 4.1rem);
+  --text-display: clamp(2.75rem, 1.7rem + 5vw, 5.4rem);
+
+  /* uppercase-label tracking — two steps instead of five ad-hoc em values */
+  --tracking-label: .08em;
+  --tracking-eyebrow: .16em;
+  --leading-prose: 1.75;
 
   --sel: #e7dbb4;
 
@@ -178,8 +190,13 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -.015em;
   font-weight: 600;
   color: var(--text-strong);
+  font-optical-sizing: auto;
+  text-wrap: balance;
 }
-p { margin: 0; }
+h1 { font-size: var(--text-h1); line-height: 1.08; letter-spacing: -.025em; }
+h2 { font-size: var(--text-h2); line-height: 1.16; letter-spacing: -.02em; }
+h3 { font-size: var(--text-h3); line-height: 1.25; letter-spacing: -.015em; }
+p { margin: 0; text-wrap: pretty; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); }
 button { font-family: inherit; }
@@ -298,7 +315,7 @@ img { display: block; max-width: 100%; }
 .pill {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
   border-radius: var(--r-sm); font: 600 10.5px var(--font-body);
-  letter-spacing: .07em; text-transform: uppercase;
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
   background: var(--surface); border: 1px solid var(--border-2); color: var(--muted);
 }
 .pill-accent { background: var(--accent-tint); color: var(--accent); border-color: transparent; }
@@ -351,19 +368,61 @@ textarea.input { resize: vertical; min-height: 100px; line-height: 1.6; }
 
 /* ---- misc layout ---- */
 .container { width: 100%; margin: 0 auto; padding: 44px 28px 72px; }
-.page-title { font: 600 30px var(--font-head); letter-spacing: -.02em; margin-bottom: 8px; }
-.page-sub { font: 400 15px var(--font-serif); color: var(--muted); margin-bottom: 28px; }
+.page-title {
+  font-family: var(--font-head); font-weight: 600;
+  font-size: clamp(1.55rem, 1.35rem + 1vw, 1.95rem); line-height: 1.15;
+  letter-spacing: -.02em; margin-bottom: 8px;
+}
+.page-sub {
+  font-family: var(--font-serif); font-weight: 400;
+  font-size: 15.5px; line-height: 1.6; color: var(--muted);
+  margin-bottom: 28px; max-width: 62ch;
+}
 .section-label {
-  font: 600 11px var(--font-body); letter-spacing: .14em; text-transform: uppercase;
+  font: 600 11px var(--font-body); letter-spacing: var(--tracking-label); text-transform: uppercase;
   color: var(--muted-2); margin-bottom: 14px;
 }
 .eyebrow {
-  font: 600 11px var(--font-body); letter-spacing: .18em; text-transform: uppercase;
+  font: 600 11px var(--font-body); letter-spacing: var(--tracking-eyebrow); text-transform: uppercase;
   color: var(--accent);
 }
 .divider { height: 1px; background: var(--border); border: 0; margin: 0; }
 .star { color: var(--star); }
 .dot { width: 7px; height: 7px; border-radius: var(--pill); display: inline-block; }
+
+/* ---- typography utilities ---- */
+
+/* long-form reading content — statute text, bios, chat answers, plain-
+   language explanations. Caps measure, adds generous leading, and switches
+   to oldstyle figures so inline numbers (section refs, dates) sit with the
+   lowercase letters instead of standing up like a table of data. */
+.prose {
+  max-width: 68ch;
+  line-height: var(--leading-prose);
+  text-wrap: pretty;
+  font-variant-numeric: oldstyle-nums proportional-nums;
+}
+
+/* hero-scale display headline (landing page only) */
+.display-1 {
+  font-family: var(--font-head); font-weight: 560; font-optical-sizing: auto;
+  font-size: var(--text-display); line-height: 1.04; letter-spacing: -.03em;
+  color: var(--text-strong); text-wrap: balance;
+}
+/* section headline, one step down from the hero */
+.display-2 {
+  font-family: var(--font-head); font-weight: 600; font-optical-sizing: auto;
+  font-size: var(--text-h2); line-height: 1.15; letter-spacing: -.02em;
+  color: var(--text-strong); text-wrap: balance;
+}
+.pull-quote {
+  font-family: var(--font-head); font-weight: 500;
+  font-size: clamp(1.5rem, 1.14rem + 2vw, 2.3rem); line-height: 1.34;
+  letter-spacing: -.015em; color: var(--text-strong); text-wrap: balance;
+}
+/* case-name citation convention — italicized wherever a real title is
+   known, never applied to a bare CNR/citation code fallback */
+.cite { font-style: italic; }
 
 /* ---- ask-ai sidebar ---- */
 .kbd {
@@ -503,7 +562,7 @@ textarea.input { resize: vertical; min-height: 100px; line-height: 1.6; }
 .stat-card .stat-label {
   font: 600 10.5px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted-3);
 }
-.stat-card .stat-value { font: 600 26px var(--font-head); letter-spacing: -.02em; margin-top: 5px; color: var(--text-strong); }
+.stat-card .stat-value { font: 600 26px var(--font-head); letter-spacing: -.02em; margin-top: 5px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .stat-card .stat-value.accent { color: var(--accent); }
 
 /* raw JSON / structured-findings block */

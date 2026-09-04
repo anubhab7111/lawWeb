@@ -360,7 +360,7 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
                         ))}
                       </div>
                     ) : (
-                      <div style={{ font: "400 16.5px/1.8 var(--font-serif)", color: m.error ? "var(--danger)" : "var(--text-strong)" }}>
+                      <div className="prose" style={{ font: "400 16.5px var(--font-serif)", color: m.error ? "var(--danger)" : "var(--text-strong)" }}>
                         <RichText text={m.content} />
                       </div>
                     )}

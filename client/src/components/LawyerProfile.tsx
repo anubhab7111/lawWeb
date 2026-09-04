@@ -29,7 +29,7 @@ export function LawyerProfile({ lawyer, onBook, onBack }: Props) {
               <h1 style={{ font: "700 24px var(--font-head)" }}>{lawyer.name}</h1>
               <div style={{ font: "500 13.5px var(--font-body)", color: "var(--muted)", marginTop: 4 }}>{lawyer.specialty}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap", font: "500 13px var(--font-body)", color: "var(--muted)" }}>
-                <span><span className="star">★</span> {lawyer.rating}</span>
+                <span className="mono-num"><span className="star">★</span> {lawyer.rating}</span>
                 <span style={{ color: "var(--faint)" }}>·</span>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <span className="dot" style={{ background: availColor }} />
@@ -40,7 +40,7 @@ export function LawyerProfile({ lawyer, onBook, onBack }: Props) {
               </div>
             </div>
             <div style={{ textAlign: "right", display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
-              <div style={{ font: "700 20px var(--font-head)" }}>{formatRate(lawyer.hourlyRate)}</div>
+              <div className="mono-num" style={{ font: "700 20px var(--font-head)" }}>{formatRate(lawyer.hourlyRate)}</div>
               <button className="btn btn-primary btn-lg" onClick={() => onBook(lawyer)}>Book consultation</button>
             </div>
           </div>
@@ -51,7 +51,7 @@ export function LawyerProfile({ lawyer, onBook, onBack }: Props) {
           {stats.map((s) => (
             <div key={s.label} className="card" style={{ padding: "16px 18px" }}>
               <div style={{ font: "600 12px var(--font-body)", color: "var(--muted-3)" }}>{s.label}</div>
-              <div style={{ font: "700 22px var(--font-head)", marginTop: 4 }}>{s.value}</div>
+              <div className="mono-num" style={{ font: "700 22px var(--font-head)", marginTop: 4 }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -59,7 +59,7 @@ export function LawyerProfile({ lawyer, onBook, onBack }: Props) {
         {/* bio */}
         <div className="card" style={{ padding: 24, marginBottom: 18 }}>
           <div className="section-label">About</div>
-          <p style={{ font: "400 14.5px/1.7 var(--font-body)", color: "var(--text-2)" }}>{lawyer.bio}</p>
+          <p className="prose" style={{ font: "400 16px var(--font-serif)", color: "var(--text-2)" }}>{lawyer.bio}</p>
         </div>
 
         {/* details */}

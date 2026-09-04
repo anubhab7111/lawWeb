@@ -94,7 +94,7 @@ export function MyBookings({ user, onNavigate }: Props) {
                         <div style={{ font: "700 14.5px var(--font-head)" }}>{name}</div>
                         <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>{formatDate(b.createdAt)}{lawyer ? ` · ${lawyer.specialty}` : ""}</div>
                       </div>
-                      <div style={{ font: "600 14px var(--font-body)" }}>{formatMoney(b.amount)}</div>
+                      <div className="mono-num" style={{ font: "600 14px var(--font-body)" }}>{formatMoney(b.amount)}</div>
                       <span className="pill pill-green" style={{ textTransform: "capitalize" }}>{b.status}</span>
                     </div>
                     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--divider)", font: "400 12px var(--font-body)", color: "var(--muted-2)" }}>

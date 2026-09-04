@@ -74,13 +74,13 @@ export function Payment({ lawyer, user, onBack, onSuccess }: Props) {
             { label: "Platform fee (5%)", value: formatMoney(fee) },
           ].map((r) => (
             <div key={r.label} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", font: "400 13.5px var(--font-body)", color: "var(--muted)" }}>
-              <span>{r.label}</span><span>{r.value}</span>
+              <span>{r.label}</span><span className="mono-num">{r.value}</span>
             </div>
           ))}
           <div className="divider" style={{ margin: "10px 0" }} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ font: "600 14px var(--font-body)" }}>Total</span>
-            <span style={{ font: "700 22px var(--font-head)", color: "var(--accent)" }}>{formatMoney(total)}</span>
+            <span className="mono-num" style={{ font: "700 22px var(--font-head)", color: "var(--accent)" }}>{formatMoney(total)}</span>
           </div>
         </div>
 

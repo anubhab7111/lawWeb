@@ -88,7 +88,7 @@ export function DocumentAnalysis() {
               <span className="pill pill-accent">Analysis complete</span>
               {result.intent && <span className="pill pill-neutral" style={{ textTransform: "capitalize" }}>{result.intent.replace(/_/g, " ")}</span>}
             </div>
-            <div style={{ font: "400 15px/1.7 var(--font-body)", color: "var(--text-strong)" }}>
+            <div className="prose" style={{ font: "400 16.5px var(--font-serif)", color: "var(--text-strong)" }}>
               <RichText text={result.response || ""} />
             </div>
             {details && (
