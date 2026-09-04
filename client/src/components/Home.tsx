@@ -52,7 +52,7 @@ export function Home({ onNavigate, onAsk }: HomeProps) {
         <div style={{ width: "100%", maxWidth: 760, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
           <div className="eyebrow" style={{ marginBottom: 26 }}>Indian Law · Retrieval-backed Counsel</div>
 
-          <h1 style={{ font: "600 clamp(40px, 6.4vw, 68px)/1.06 var(--font-head)", letterSpacing: "-.025em", maxWidth: 720 }}>
+          <h1 className="display-1" style={{ maxWidth: 720 }}>
             Understand exactly
             <br />
             where you <span style={{ fontStyle: "italic", color: "var(--accent)" }}>stand.</span>
@@ -96,7 +96,7 @@ export function Home({ onNavigate, onAsk }: HomeProps) {
       <section style={{ display: "flex", justifyContent: "center", padding: "clamp(72px, 12vh, 120px) 24px 0" }}>
         <div style={{ width: "100%", maxWidth: 1040 }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>The practice</div>
-          <h2 style={{ font: "600 clamp(24px, 3.4vw, 34px) var(--font-head)", letterSpacing: "-.02em", marginBottom: 34, maxWidth: 560 }}>
+          <h2 className="display-2" style={{ marginBottom: 34, maxWidth: 560 }}>
             Three ways to move forward with confidence.
           </h2>
 
@@ -123,7 +123,7 @@ export function Home({ onNavigate, onAsk }: HomeProps) {
       {/* ── pull quote ───────────────────────────────────────── */}
       <section style={{ display: "flex", justifyContent: "center", padding: "clamp(80px, 13vh, 128px) 24px" }}>
         <blockquote style={{ maxWidth: 780, textAlign: "center", margin: 0 }}>
-          <p style={{ font: "500 clamp(24px, 3.6vw, 38px)/1.32 var(--font-head)", letterSpacing: "-.02em", color: "var(--text-strong)" }}>
+          <p className="pull-quote">
             “The law is reason, free from passion.”
           </p>
           <footer style={{ font: "500 12px var(--font-body)", letterSpacing: ".16em", textTransform: "uppercase", color: "var(--muted-2)", marginTop: 22 }}>
@@ -136,7 +136,7 @@ export function Home({ onNavigate, onAsk }: HomeProps) {
       <section style={{ display: "flex", justifyContent: "center", padding: "0 24px clamp(72px, 12vh, 120px)" }}>
         <div style={{ width: "100%", maxWidth: 1040 }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>How it works</div>
-          <h2 style={{ font: "600 clamp(24px, 3.4vw, 34px) var(--font-head)", letterSpacing: "-.02em", marginBottom: 42, maxWidth: 520 }}>
+          <h2 className="display-2" style={{ marginBottom: 42, maxWidth: 520 }}>
             From an unformed worry to a clear next step.
           </h2>
           <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 40 }}>

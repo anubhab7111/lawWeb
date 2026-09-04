@@ -81,7 +81,7 @@ export function MyCases({ user }: Props) {
           <div>
             <button className="btn btn-ghost btn-sm" style={{ marginBottom: 14, paddingLeft: 0 }} onClick={() => setSelected(null)}>← Back to all cases</button>
             <div className="card" style={{ padding: "18px 20px", marginBottom: 18 }}>
-              <div style={{ font: "700 16px var(--font-head)" }}>{selected.title || selected.cnr}</div>
+              <div className={selected.title ? "cite" : undefined} style={{ font: "700 16px var(--font-head)" }}>{selected.title || selected.cnr}</div>
               <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>{selected.court} · {selected.status}</div>
               <button className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => syncCase(selected.id).then(() => openCase(selected.id))}>
                 Re-sync now
@@ -133,7 +133,7 @@ export function MyCases({ user }: Props) {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {cases.map((c) => (
               <div key={c.id} className="card" style={{ padding: "16px 18px", cursor: "pointer" }} onClick={() => openCase(c.id)}>
-                <div style={{ font: "700 14.5px var(--font-head)" }}>{c.title || c.cnr}</div>
+                <div className={c.title ? "cite" : undefined} style={{ font: "700 14.5px var(--font-head)" }}>{c.title || c.cnr}</div>
                 <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>{c.court} · {c.status}</div>
               </div>
             ))}

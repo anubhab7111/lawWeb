@@ -98,14 +98,14 @@ export function BareActExplorer() {
               <div key={i} className="card" style={{ padding: "18px 20px", marginBottom: 14 }}>
                 <div style={{ font: "700 15px var(--font-head)" }}>{m.actName} — Section {m.sectionNumber}</div>
                 <div style={{ font: "600 13px var(--font-body)", color: "var(--muted-2)", marginTop: 2 }}>{m.title}</div>
-                <p style={{ font: "400 13.5px var(--font-body)", color: "var(--text-2)", marginTop: 10, whiteSpace: "pre-wrap" }}>{m.text}</p>
+                <p className="prose" style={{ font: "400 15.5px var(--font-serif)", color: "var(--text-2)", marginTop: 10, whiteSpace: "pre-wrap" }}>{m.text}</p>
               </div>
             ))}
 
             {result.explanation && (
               <div className="card" style={{ padding: "18px 20px", marginBottom: 14, background: "var(--surface-tint)" }}>
                 <div className="section-label">In plain language</div>
-                <p style={{ font: "400 13.5px var(--font-body)", color: "var(--text-2)" }}>{result.explanation}</p>
+                <p className="prose" style={{ font: "400 15.5px var(--font-serif)", color: "var(--text-2)" }}>{result.explanation}</p>
               </div>
             )}
 
@@ -115,7 +115,7 @@ export function BareActExplorer() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {result.landmarkJudgments.map((j, i) => (
                     <div key={i} className="card" style={{ padding: "14px 16px" }}>
-                      <div style={{ font: "600 13.5px var(--font-body)" }}>{j.caseName}</div>
+                      <div className="cite" style={{ font: "600 13.5px var(--font-body)" }}>{j.caseName}</div>
                       <div style={{ font: "400 12px var(--font-body)", color: "var(--muted-2)" }}>
                         {j.court}{j.citation ? ` · ${j.citation}` : ""}{j.date ? ` · ${j.date.slice(0, 4)}` : ""}
                       </div>
