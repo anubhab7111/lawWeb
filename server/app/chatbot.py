@@ -71,14 +71,24 @@ from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
 from app.tools.statutory_validator import get_statutory_validator
 
 
-LLM_NUM_CTX = 6144  # Ollama defaults to 2048, which silently clips grounded prompts
-# qwen3:4b's thinking-phase length is variable and can run to 1000+ tokens on
-# its own for a grounded legal prompt (measured live) — 1536 total left too
-# little room for the actual answer often enough to matter (verified: empty
-# or thinking-text-only responses in repeated live trials). Shrinks the
-# context-block budget in _fit_context_blocks, which is an acceptable
-# tradeoff against silently returning no real answer.
-LLM_NUM_PREDICT = 3072  # tokens reserved for thinking + the answer
+LLM_NUM_CTX = 8192  # Ollama defaults to 2048, which silently clips grounded prompts
+# 8192 is the largest window that still keeps qwen3:4b 100% on the 4GB GPU
+# (measured live via `ollama ps`: 3.65GB resident, 0 CPU spill; 10240+ spills
+# ~0.64GB to CPU and slows generation). num_ctx was 6144 with num_predict 3072,
+# which left ~3072 tokens for thinking+answer — and on complex, multi-part
+# grounded questions (privacy limits, FIR quashing, marital rape, force
+# majeure) qwen3:4b routinely spent that entire budget re-drafting inside its
+# own <think> block and never emitted the closing </think>, so the whole
+# generation was discarded and the user got _INCOMPLETE_GENERATION_NOTE
+# instead of an answer (measured: 4/18 eval queries gave up this way). Raising
+# the window to 8192 and num_predict to 4608 gives thinking room to finish and
+# still answer — verified over the full 18-prompt eval: all four give-up queries
+# now return full grounded answers (0/18 give-ups vs 4/18), lifting answer
+# relevance 0.61->0.67 and rag-triad 0.56->0.59, at a mean-latency cost of
+# ~93s->116s (p95 113s->154s). The extra 1024 tokens of
+# window also grows the _fit_context_blocks budget (num_ctx - num_predict) from
+# 3072 to 3584, so retrieved context is not starved to pay for it.
+LLM_NUM_PREDICT = 4608  # tokens reserved for thinking + the answer
 _PROMPT_SAFETY_MARGIN = 256  # headroom for chat scaffolding the estimate can't see
 _MAX_QUERY_CHARS = 8000  # clamp on user-derived text so one huge query can't overflow
 
@@ -105,7 +115,7 @@ def get_llm() -> ChatOllama:
         base_url=settings.ollama_base_url,
         num_ctx=LLM_NUM_CTX,
         num_predict=LLM_NUM_PREDICT,
-        timeout=180.0,
+        timeout=210.0,  # kept above _LLM_TIMEOUT_SECONDS (the real, enforced cap)
         reasoning=False,
         keep_alive="1h",  # loading the 14B model is the OOM-prone step — do it rarely
     )
@@ -241,7 +251,17 @@ _stream_queue_var: contextvars.ContextVar[asyncio.Queue | None] = (
 )
 
 
-_LLM_TIMEOUT_SECONDS = 120  # ChatOllama's own timeout= kwarg is a silent no-op
+# Wall-clock cap on a single answer generation (asyncio.wait_for enforces it;
+# ChatOllama's own timeout= kwarg is a silent no-op). Sized to the LLM_NUM_PREDICT
+# budget: 4608 tokens at qwen3:4b's measured ~30-35 tok/s can take ~130-150s of
+# generation on the hardest multi-part grounded questions. At 120s those exact
+# queries (privacy limits, basic-structure doctrine, marital rape, contract
+# under economic pressure) were killed mid-answer and served GENERAL_QUERY_ERROR
+# — a 386-char "having trouble" fallback the LLM judge scores 0 for relevance and
+# recall. 180s lets the full think+answer finish (verified live) with headroom
+# below the worst case, trading ~30-50s of tail latency on the 4 hardest queries
+# for a real answer instead of an error.
+_LLM_TIMEOUT_SECONDS = 180
 
 # get_llm()'s prompt template always opens an implicit <think> block server-side
 # (confirmed against the raw Ollama API — see strip_reasoning_tags), so every
