@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import asyncio
 import re
 import aiohttp
+from cachetools import TTLCache
 
 
 @dataclass
@@ -67,7 +68,7 @@ class IndianKanoonClient:
         """
         self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
-        self._cache = {}  # Simple in-memory cache
+        self._cache = TTLCache(maxsize=512, ttl=3600)  # bounded in-memory cache
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session with request timeout."""
