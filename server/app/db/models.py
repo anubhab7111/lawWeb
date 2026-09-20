@@ -92,6 +92,7 @@ class Booking(SQLModel, table=True):
     )
     appointment_date: Optional[str] = None
     appointment_time: Optional[str] = None
+    idempotency_key: Optional[str] = Field(default=None, unique=True)
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
