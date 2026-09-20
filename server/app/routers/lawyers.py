@@ -5,9 +5,10 @@ ported from the old Express server/src/routes/lawyers.ts.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app.db.engine import get_session
@@ -26,9 +27,46 @@ class RecommendRequest(BaseModel):
 
 
 @router.get("")
-def list_lawyers(session: Session = Depends(get_session)):
-    lawyers = session.exec(select(Lawyer).order_by(Lawyer.id)).all()
-    return [lawyer.to_dict() for lawyer in lawyers]
+def list_lawyers(
+    page: Optional[int] = Query(default=None, ge=1),
+    pageSize: int = Query(default=24, ge=1, le=100),
+    q: Optional[str] = None,
+    specialty: Optional[str] = None,
+    location: Optional[str] = None,
+    ids: Optional[str] = Query(default=None, description="Comma-separated lawyer ids"),
+    session: Session = Depends(get_session),
+):
+    """Without `page` (or `ids`) this returns the whole directory as a plain
+    array, as before. With `page`, it returns {items, total, page, pageSize};
+    with `ids`, just those lawyers."""
+    stmt = select(Lawyer)
+    if ids:
+        stmt = stmt.where(Lawyer.id.in_([i for i in ids.split(",") if i][:100]))
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Lawyer.name.ilike(like), Lawyer.specialty.ilike(like)))
+    if specialty:
+        stmt = stmt.where(Lawyer.specialty == specialty)
+    if location:
+        stmt = stmt.where(Lawyer.location.ilike(f"%{location}%"))
+
+    if page is None:
+        return [l.to_dict() for l in session.exec(stmt.order_by(Lawyer.id)).all()]
+
+    total = session.exec(select(func.count()).select_from(stmt.subquery())).one()
+    rows = session.exec(
+        stmt.order_by(Lawyer.rating.desc(), Lawyer.id).offset((page - 1) * pageSize).limit(pageSize)
+    ).all()
+    return {"items": [l.to_dict() for l in rows], "total": total, "page": page, "pageSize": pageSize}
+
+
+@router.get("/filters")
+def lawyer_filters(session: Session = Depends(get_session)):
+    """Values for the directory's filter dropdowns."""
+    specialties = session.exec(select(Lawyer.specialty).distinct().order_by(Lawyer.specialty)).all()
+    locations = session.exec(select(Lawyer.location).distinct()).all()
+    states = sorted({loc.split(", ", 1)[1] for loc in locations if ", " in loc})
+    return {"specialties": specialties, "states": states}
 
 
 @router.get("/{lawyer_id}")
