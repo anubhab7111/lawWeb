@@ -309,13 +309,12 @@ class LegalDefectAnalyzer:
 
     async def _invoke_llm(self, prompt: str) -> str:
         """Invoke the LLM with a prompt and return the response content."""
-        loop = asyncio.get_event_loop()
-        from langchain_core.messages import HumanMessage
+        from app.chatbot import _INCOMPLETE_GENERATION_NOTE, invoke_llm_safely
 
-        response = await loop.run_in_executor(
-            None, lambda: self.llm.invoke([HumanMessage(content=prompt)])
-        )
-        return response.content
+        text = await invoke_llm_safely(self.llm, prompt, stream=False)
+        if text == _INCOMPLETE_GENERATION_NOTE:
+            raise RuntimeError("LLM did not finish this step")
+        return text
 
     # ======================================================================
     # Fallback Methods (when LLM is unavailable)

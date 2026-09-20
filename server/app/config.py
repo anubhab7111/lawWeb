@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Small model for classification/routing/query-rewrite calls
     fast_llm_model: str = "qwen3:4b"
     llm_temperature: float = 0.1
+    # True for qwen3-style models whose output opens with an implicit thinking
+    # block closed by </think>; False for models that answer directly.
+    llm_thinking: bool = True
 
     # Cross-encoder used to rerank fused BM25+dense candidates. Ranking
     # quality is what matters (scores are used relatively); the base model

@@ -222,7 +222,7 @@ def get_grounding_correction_llm() -> ChatOllama:
         model=settings.fast_llm_model,
         temperature=0,
         base_url=settings.ollama_base_url,
-        num_ctx=4096,
+        num_ctx=LLM_NUM_CTX,
         num_predict=1200,
         timeout=60.0,
         reasoning=False,
@@ -323,7 +323,7 @@ async def invoke_llm_safely(
 
         async def _drain() -> str:
             nonlocal visible_response
-            in_thinking = True
+            in_thinking = get_settings().llm_thinking
             buffer = ""
             async for chunk in llm.astream([HumanMessage(content=prompt)]):
                 token = chunk.content if hasattr(chunk, "content") else str(chunk)
@@ -390,6 +390,8 @@ async def invoke_llm_safely(
                 timeout=_LLM_TIMEOUT_SECONDS,
             )
             raw = response.content
+            if "</think>" not in raw and not get_settings().llm_thinking:
+                return raw.strip()
             if "</think>" not in raw:
                 # Never closed the thinking phase — raw is entirely internal
                 # monologue, not an answer (see docstring).
@@ -457,6 +459,15 @@ def _extract_legal_entities(text: str) -> List[str]:
     return list(set(entities))
 
 
+async def _invoke_fast_text(prompt: str, timeout: float) -> str:
+    """Short auxiliary generation with the thinking preamble stripped. Uses the
+    prose-sized budget: the 128-token classification LLM spends its whole budget
+    on thinking and never reaches the answer."""
+    return await asyncio.wait_for(
+        invoke_llm_safely(get_fast_llm_prose(), prompt, stream=False), timeout=timeout
+    )
+
+
 async def _rewrite_query_for_retrieval(
     messages: List[Message], current_input: str
 ) -> str:
@@ -479,15 +490,10 @@ async def _rewrite_query_for_retrieval(
     )
 
     try:
-        loop = asyncio.get_event_loop()
-        response = await asyncio.wait_for(
-            loop.run_in_executor(
-                None, lambda: get_fast_llm().invoke([HumanMessage(content=prompt)])
-            ),
-            timeout=8.0,
-        )
-        rewritten = str(response.content).strip().strip('"').strip()
-        if not rewritten or len(rewritten) > 300 or "\n" in rewritten:
+        rewritten = (
+            await _invoke_fast_text(prompt, timeout=25.0)
+        ).strip().strip('"').strip()
+        if rewritten == _INCOMPLETE_GENERATION_NOTE or not rewritten or len(rewritten) > 300 or "\n" in rewritten:
             return current_input
         if rewritten.lower() != current_input.lower():
             print(f"[Router] Retrieval query rewritten: {rewritten[:120]}")
@@ -577,11 +583,10 @@ async def classify_intent(state: ChatState) -> ChatState:
     # margin is thin: collapsing an ambiguous non_legal read into
     # general_query would silently reintroduce the old "assume legal when
     # unsure" bias non_legal was added to remove.
-    intent = (
-        "general_query"
-        if result.is_ambiguous and result.primary_intent != "non_legal"
-        else result.primary_intent
-    )
+    intent = result.primary_intent
+    if result.is_ambiguous and intent != "non_legal":
+        # An attached document must not be silently dropped by the fallback.
+        intent = "document_analysis" if has_document else "general_query"
 
     if intent == "non_legal":
         print(
@@ -864,7 +869,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
 
     rag_section = ""
     if rag_sections_text:
-        rag_section = f"""\n\nAPPLICABLE IPC SECTIONS:
+        rag_section = f"""\n\nAPPLICABLE PROVISIONS (cite the Act named with each section):
 {rag_sections_text}"""
 
     # Compulsory RAG: when RAG failed, instruct LLM not to fabricate sections
@@ -1089,14 +1094,7 @@ async def handle_general_query(state: ChatState) -> ChatState:
     is_multi_offense = crime_count >= 2
 
     async def _fast_llm_invoke(prompt: str) -> str:
-        loop = asyncio.get_event_loop()
-        response = await asyncio.wait_for(
-            loop.run_in_executor(
-                None, lambda: get_fast_llm().invoke([HumanMessage(content=prompt)])
-            ),
-            timeout=8.0,
-        )
-        return str(response.content)
+        return await _invoke_fast_text(prompt, timeout=25.0)
 
     # =========================================================================
     # PARALLEL TOOL EXECUTION — both tools always run for general_query
@@ -1317,10 +1315,22 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             except Exception:
                 return None
 
-        indian_kanoon, crime_rag = await asyncio.gather(init_ik(), init_rag())
+        async def init_civil():
+            try:
+                from app.tools.civil_rag import get_civil_rag_system
+
+                rag_system = get_civil_rag_system()
+                await rag_system.initialize()
+                return rag_system
+            except Exception:
+                return None
+
+        indian_kanoon, crime_rag, civil_rag = await asyncio.gather(
+            init_ik(), init_rag(), init_civil()
+        )
 
         # Get Indian law context via RAG tool
-        law_rag = get_indian_law_rag(indian_kanoon, crime_rag)
+        law_rag = get_indian_law_rag(indian_kanoon, crime_rag, civil_rag=civil_rag)
         law_context = await law_rag.retrieve_context(
             document_type=classification.document_type,
             missing_elements=validation.missing_elements,

@@ -80,6 +80,7 @@ class SectionMatch:
     punishment: str
     definition: str
     review_required: bool = False
+    act_name: str = ""
 
 
 @dataclass
@@ -567,9 +568,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
 
             for chunk in chunks:
                 sec_num = chunk.section_number
-                if not sec_num or sec_num in seen:
+                if not sec_num or (chunk.act_name, sec_num) in seen:
                     continue
-                seen.add(sec_num)
+                seen.add((chunk.act_name, sec_num))
 
                 # Punishment clause is only required for substantive penal
                 # statutes (IPC/BNS/NDPS/POCSO/etc.) — matches _parse_legal_sections'
@@ -601,6 +602,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                         punishment=punishment,
                         definition=chunk.text,
                         review_required=chunk.score < 0.6,
+                        act_name=chunk.act_name,
                     )
                 )
 
@@ -610,7 +612,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             avg_conf = (
                 sum(m.confidence for m in matches) / len(matches) if matches else 0.0
             )
-            sources = list({f"Section {m.section}" for m in matches})
+            sources = list({f"{m.act_name} § {m.section}" for m in matches})
 
             return RAGResult(
                 crime_type=crime_type or "general",
@@ -652,10 +654,10 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         sources = []
         for match in result.ipc_sections:
             passages.append(
-                f"Section {match.section} — {match.title}\n"
+                f"{match.act_name} § {match.section} — {match.title}\n"
                 f"{match.definition}\nPunishment: {match.punishment}"
             )
-            sources.append(f"Section {match.section}")
+            sources.append(f"{match.act_name} § {match.section}")
         return CrimeContext(
             crime_type=result.crime_type,
             relevant_passages=passages,

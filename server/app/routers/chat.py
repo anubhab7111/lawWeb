@@ -4,6 +4,7 @@ client keeps the exact paths it used through the old Express proxy.
 """
 
 import json
+import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -28,6 +29,18 @@ from app.tools.lawyer_recommender import (
 )
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+def _public_message(prefix: str, exc: Exception) -> str:
+    """Internal exception text only reaches clients when DEBUG is on."""
+    traceback.print_exception(exc)
+    if get_settings().debug:
+        return f"{prefix}: {exc}"
+    return f"{prefix}. Please try again."
+
+
+def _server_error(prefix: str, exc: Exception) -> HTTPException:
+    return HTTPException(status_code=500, detail=_public_message(prefix, exc))
+
 
 # ============================================================================
 # Pydantic Models
@@ -291,7 +304,7 @@ async def chat(
             lawyers_found=result.get("lawyers_found"),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chat processing error: {str(e)}")
+        raise _server_error("Chat processing error", e)
 
 
 @router.post("/stream")
@@ -343,7 +356,7 @@ async def chat_stream(
                         )
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'content': _public_message('Chat processing error', e)})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -448,9 +461,7 @@ async def chat_with_document(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Document processing error: {str(e)}"
-        )
+        raise _server_error("Document processing error", e)
 
 
 @router.post("/analyze-document", response_model=ChatResponse)
@@ -487,7 +498,7 @@ async def analyze_document_text(
             lawyers_found=None,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
+        raise _server_error("Analysis error", e)
 
 
 @router.post("/validate-document", response_model=ChatResponse)
@@ -530,7 +541,7 @@ async def validate_document_text(
             lawyers_found=None,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Validation error: {str(e)}")
+        raise _server_error("Validation error", e)
 
 
 @router.post("/validate-document/upload", response_model=ChatResponse)
@@ -602,9 +613,7 @@ async def validate_document_upload(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Document validation error: {str(e)}"
-        )
+        raise _server_error("Document validation error", e)
 
 
 @router.post("/crime-report", response_model=ChatResponse)
@@ -640,7 +649,7 @@ async def get_crime_report_guidance(
             lawyers_found=None,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Crime report error: {str(e)}")
+        raise _server_error("Crime report error", e)
 
 
 @router.post("/find-lawyer")
@@ -665,7 +674,7 @@ async def find_lawyers(
             "count": len(lawyers),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lawyer search error: {str(e)}")
+        raise _server_error("Lawyer search error", e)
 
 
 @router.get("/specializations")
@@ -694,7 +703,7 @@ async def list_sessions(
         ).all()
         return {"sessions": [s.to_dict() for s in rows], "count": len(rows)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing sessions: {str(e)}")
+        raise _server_error("Error listing sessions", e)
 
 
 @router.delete("/session/{session_id}")
@@ -726,7 +735,7 @@ async def clear_session(
 
         return {"message": f"Session {session_id} cleared"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error clearing session: {str(e)}")
+        raise _server_error("Error clearing session", e)
 
 
 @router.get("/session/{session_id}/history")
@@ -768,4 +777,4 @@ async def get_session_history(
         history = chatbot.get_session_history(session_id)
         return {"session_id": session_id, "messages": history, "count": len(history)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting history: {str(e)}")
+        raise _server_error("Error getting history", e)

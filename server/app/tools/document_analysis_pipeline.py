@@ -310,14 +310,11 @@ Provide your analysis in a structured format."""
 
         # Invoke LLM
         try:
-            loop = asyncio.get_event_loop()
-            from langchain_core.messages import HumanMessage
+            from app.chatbot import _INCOMPLETE_GENERATION_NOTE, invoke_llm_safely
 
-            response = await loop.run_in_executor(
-                None, lambda: self.llm.invoke([HumanMessage(content=prompt)])
-            )
-
-            analysis_text = response.content
+            analysis_text = await invoke_llm_safely(self.llm, prompt, stream=False)
+            if analysis_text == _INCOMPLETE_GENERATION_NOTE:
+                raise RuntimeError("LLM did not finish the analysis")
 
             # Parse the response
             summary_match = re.search(
