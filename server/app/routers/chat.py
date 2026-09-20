@@ -30,6 +30,13 @@ from app.tools.lawyer_recommender import (
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
+def _memory_key(user: Optional[User], session_id: str) -> str:
+    """Key for the chatbot's in-memory conversation cache. Scoped by account so
+    a guest (or another user) who supplies someone's session id can't read or
+    continue that conversation."""
+    return f"{user.id if user else 'guest'}:{session_id}"
+
+
 def _public_message(prefix: str, exc: Exception) -> str:
     """Internal exception text only reaches clients when DEBUG is on."""
     traceback.print_exception(exc)
@@ -154,7 +161,7 @@ async def _seed_from_db_if_needed(
     server restart). Assumes session_id has already been through
     _resolve_session_id, so any DB row found here is guaranteed owned by
     `user`."""
-    if user is None or chatbot.has_session(session_id):
+    if user is None or chatbot.has_session(_memory_key(user, session_id)):
         return
     chat_session = session.get(ChatSession, session_id)
     if chat_session is None or chat_session.user_id != user.id:
@@ -165,7 +172,7 @@ async def _seed_from_db_if_needed(
         .order_by(ChatMessage.created_at)
     ).all()
     chatbot.seed_session(
-        session_id, [{"role": r.role.value, "content": r.content} for r in rows]
+        _memory_key(user, session_id), [{"role": r.role.value, "content": r.content} for r in rows]
     )
 
 
@@ -279,7 +286,7 @@ async def chat(
         session_id = await _resolve_session_id(session, user, session_id)
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
-        result = await chatbot.chat(message=request.message, session_id=session_id)
+        result = await chatbot.chat(message=request.message, session_id=_memory_key(user, session_id))
         language = result.get("language", "en")
         is_translated = language != "en"
         await _persist_turn(
@@ -331,8 +338,10 @@ async def chat_stream(
 
             async for event in chatbot.stream_chat(
                 message=request.message,
-                session_id=resolved_session_id,
+                session_id=_memory_key(user, resolved_session_id),
             ):
+                if "session_id" in event:
+                    event["session_id"] = resolved_session_id
                 # "stopped" (Stop button cancelled generation mid-stream) also
                 # carries a "response" — the partial text already shown to
                 # the user — and must be persisted the same as "done", or a
@@ -392,7 +401,7 @@ async def stop_stream(
         # account's in-flight generation.
         return {"stopped": False}
 
-    stopped = get_chatbot().stop_stream(request.session_id)
+    stopped = get_chatbot().stop_stream(_memory_key(user, request.session_id))
     return {"stopped": stopped}
 
 
@@ -440,7 +449,7 @@ async def chat_with_document(
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
             message=message,
-            session_id=session_id,
+            session_id=_memory_key(user, session_id),
             document_content=document_text,
             document_type=doc_type,  # Pass document type for pipeline
         )
@@ -483,7 +492,7 @@ async def analyze_document_text(
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
             message=analyze_message,
-            session_id=session_id,
+            session_id=_memory_key(user, session_id),
             document_content=request.document_text,
         )
         await _persist_turn(session, user, session_id, analyze_message, result.get("response", ""))
@@ -525,7 +534,7 @@ async def validate_document_text(
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
             message=validate_message,
-            session_id=session_id,
+            session_id=_memory_key(user, session_id),
             document_content=request.document_text,
             document_type="text",
         )
@@ -592,7 +601,7 @@ async def validate_document_upload(
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
             message=validation_message,
-            session_id=session_id,
+            session_id=_memory_key(user, session_id),
             document_content=document_text,
             document_type=doc_type,
         )
@@ -635,7 +644,7 @@ async def get_crime_report_guidance(
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(
             message=crime_message,
-            session_id=session_id,
+            session_id=_memory_key(user, session_id),
         )
         await _persist_turn(session, user, session_id, crime_message, result.get("response", ""))
 
@@ -727,7 +736,7 @@ async def clear_session(
             return {"message": f"Session {session_id} cleared"}
 
         chatbot = get_chatbot()
-        chatbot.clear_session(session_id)
+        chatbot.clear_session(_memory_key(user, session_id))
 
         if chat_session is not None:
             session.delete(chat_session)  # cascades to chat_messages
@@ -774,7 +783,7 @@ async def get_session_history(
             return {"session_id": session_id, "messages": messages, "count": len(messages)}
 
         chatbot = get_chatbot()
-        history = chatbot.get_session_history(session_id)
+        history = chatbot.get_session_history(_memory_key(user, session_id))
         return {"session_id": session_id, "messages": history, "count": len(history)}
     except Exception as e:
         raise _server_error("Error getting history", e)

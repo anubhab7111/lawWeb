@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.db.engine import get_session
-from app.db.models import CalendarEvent, User
+from app.db.models import CalendarEvent, SavedCase, User
 from app.deps.auth import get_current_user
 from app.deps.errors import MessageHTTPException
 
@@ -56,6 +56,10 @@ def create_event(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    if body.related_case_id:
+        case = session.get(SavedCase, body.related_case_id)
+        if case is None or case.user_id != current_user.id:
+            raise MessageHTTPException(status_code=404, detail="Case not found")
     event = CalendarEvent(
         user_id=current_user.id,
         title=body.title,

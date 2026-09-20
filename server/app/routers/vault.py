@@ -14,11 +14,11 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlmodel import Session, or_, select
+from sqlmodel import Session, delete, or_, select
 
 from app.config import get_settings
 from app.db.engine import get_session
-from app.db.models import User, VaultDocument, VaultDocumentEmbedding, VaultDocumentPermission
+from app.db.models import SavedCase, User, VaultDocument, VaultDocumentEmbedding, VaultDocumentPermission
 from app.deps.auth import get_current_user
 from app.deps.errors import MessageHTTPException
 from app.deps.uploads import read_upload_within_limit
@@ -36,8 +36,39 @@ class SearchRequest(BaseModel):
 
 
 class ShareRequest(BaseModel):
-    sharedWithUserId: str
+    sharedWithUserId: Optional[str] = None
+    email: Optional[str] = None
     permission: str = "view"
+
+
+class UpdateDocumentRequest(BaseModel):
+    title: Optional[str] = None
+    documentType: Optional[str] = None
+
+
+def _view(document: VaultDocument, user: User) -> dict:
+    return {**document.to_dict(), "isOwner": document.user_id == user.id}
+
+
+def _can_edit(session: Session, document: VaultDocument, user: User) -> bool:
+    if document.user_id == user.id:
+        return True
+    grant = session.exec(
+        select(VaultDocumentPermission).where(
+            VaultDocumentPermission.vault_document_id == document.id,
+            VaultDocumentPermission.shared_with_user_id == user.id,
+            VaultDocumentPermission.permission == "edit",
+        )
+    ).first()
+    return grant is not None
+
+
+def _check_owned_case(session: Session, case_id: Optional[str], user: User) -> None:
+    if not case_id:
+        return
+    case = session.get(SavedCase, case_id)
+    if case is None or case.user_id != user.id:
+        raise MessageHTTPException(status_code=404, detail="Case not found")
 
 
 def _accessible_ids_subquery(session: Session, user_id: str):
@@ -76,6 +107,7 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    _check_owned_case(session, related_case_id, current_user)
     max_size = get_settings().max_document_size_mb * 1024 * 1024
     file_bytes = await read_upload_within_limit(file, max_size)
 
@@ -99,7 +131,15 @@ async def upload_document(
         indexing_status="pending",
     )
     session.add(document)
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        try:
+            storage.delete_object(object_key)
+        except Exception as cleanup_error:
+            print(f"[Vault] orphaned object {object_key}: {cleanup_error}")
+        raise
     session.refresh(document)
 
     extractor = get_document_extractor()
@@ -116,7 +156,7 @@ async def upload_document(
         session.add(document)
         session.commit()
 
-    return document.to_dict()
+    return _view(document, current_user)
 
 
 @router.get("/documents")
@@ -139,7 +179,7 @@ def list_documents(
     stmt = stmt.order_by(VaultDocument.created_at.desc())
 
     documents = session.exec(stmt).all()
-    return [d.to_dict() for d in documents]
+    return [_view(d, current_user) for d in documents]
 
 
 @router.get("/documents/{document_id}")
@@ -151,7 +191,7 @@ def get_document(
     document = _get_accessible_document(session, document_id, current_user)
     storage = get_object_storage()
     return {
-        **document.to_dict(),
+        **_view(document, current_user),
         "downloadUrl": storage.get_download_url(document.object_key, document.id),
     }
 
@@ -176,7 +216,12 @@ def local_download(
     except (FileNotFoundError, ValueError):
         # ValueError == the key escaped LOCAL_VAULT_DIR (path-traversal attempt).
         raise MessageHTTPException(status_code=404, detail="Not found")
-    return Response(content=data, media_type="application/octet-stream")
+    filename = Path(document.object_key).name.split("-", 5)[-1] or document.title
+    return Response(
+        content=data,
+        media_type=document.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/search")
@@ -217,7 +262,7 @@ async def search_documents(
             continue
         results.append(
             {
-                **document.to_dict(),
+                **_view(document, current_user),
                 "matchedSnippet": embedding.chunk_text[:400],
                 "relevance": round(1 - float(distance), 4),
             }
@@ -236,15 +281,33 @@ def share_document(
     if document is None or document.user_id != current_user.id:
         raise MessageHTTPException(status_code=404, detail="Document not found")
 
-    target_user = session.get(User, body.sharedWithUserId)
+    if body.permission not in ("view", "edit"):
+        raise MessageHTTPException(status_code=400, detail="Permission must be 'view' or 'edit'")
+    if body.email:
+        target_user = session.exec(select(User).where(User.email == body.email.strip())).first()
+    elif body.sharedWithUserId:
+        target_user = session.get(User, body.sharedWithUserId)
+    else:
+        raise MessageHTTPException(status_code=400, detail="Provide the recipient's email")
     if target_user is None:
         raise MessageHTTPException(status_code=404, detail="User not found")
+    if target_user.id == current_user.id:
+        raise MessageHTTPException(status_code=400, detail="You already own this document")
 
-    permission = VaultDocumentPermission(
-        vault_document_id=document_id,
-        shared_with_user_id=body.sharedWithUserId,
-        permission=body.permission,
-    )
+    permission = session.exec(
+        select(VaultDocumentPermission).where(
+            VaultDocumentPermission.vault_document_id == document_id,
+            VaultDocumentPermission.shared_with_user_id == target_user.id,
+        )
+    ).first()
+    if permission is None:
+        permission = VaultDocumentPermission(
+            vault_document_id=document_id,
+            shared_with_user_id=target_user.id,
+            permission=body.permission,
+        )
+    else:
+        permission.permission = body.permission
     session.add(permission)
     session.commit()
     session.refresh(permission)
@@ -256,7 +319,7 @@ def share_document(
     try:
         send_notification(
             session,
-            user_id=body.sharedWithUserId,
+            user_id=target_user.id,
             type_="document_shared",
             title=f'"{document.title}" was shared with you',
             body=f"{current_user.name} shared a document in your Legal Document Vault.",
@@ -287,3 +350,55 @@ def delete_document(
     session.delete(document)
     session.commit()
     return {"message": "Document deleted"}
+
+
+@router.patch("/documents/{document_id}")
+def update_document(
+    document_id: str,
+    body: UpdateDocumentRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    document = _get_accessible_document(session, document_id, current_user)
+    if not _can_edit(session, document, current_user):
+        raise MessageHTTPException(status_code=403, detail="You only have view access to this document")
+    if body.title is not None and body.title.strip():
+        document.title = body.title.strip()
+    if body.documentType is not None and body.documentType.strip():
+        document.document_type = body.documentType.strip()
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+    return _view(document, current_user)
+
+
+@router.post("/documents/{document_id}/reindex")
+async def reindex_document(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Retry indexing (e.g. after a failed/empty extraction or an embedding-model change)."""
+    document = session.get(VaultDocument, document_id)
+    if document is None or document.user_id != current_user.id:
+        raise MessageHTTPException(status_code=404, detail="Document not found")
+
+    text = document.extracted_text or ""
+    if not text.strip():
+        try:
+            data = get_object_storage().read_object(document.object_key)
+            text, _ = await get_document_extractor().extract_text(data, Path(document.object_key).name)
+        except Exception as e:
+            print(f"[Vault] re-extraction failed for {document.id}: {e}")
+            text = ""
+    if not text.strip():
+        raise MessageHTTPException(status_code=422, detail="Could not extract any text from this document")
+
+    session.exec(delete(VaultDocumentEmbedding).where(VaultDocumentEmbedding.vault_document_id == document.id))
+    document.indexing_status = "pending"
+    session.add(document)
+    session.commit()
+    background_tasks.add_task(index_vault_document, document.id, text)
+    session.refresh(document)
+    return _view(document, current_user)
