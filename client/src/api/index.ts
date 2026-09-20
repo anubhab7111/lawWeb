@@ -847,6 +847,30 @@ export interface CalendarEvent {
     relatedCaseId: string | null;
 }
 
+export interface CalendarProviderStatus {
+    provider: 'google' | 'outlook';
+    configured: boolean;
+    connected: boolean;
+    lastSyncedAt: string | null;
+}
+
+export async function fetchCalendarProviders(): Promise<CalendarProviderStatus[]> {
+    return requestJson('/calendar/sync/providers');
+}
+
+export async function connectCalendarProvider(provider: string): Promise<string> {
+    const data = await requestJson(`/calendar/sync/${provider}/connect`);
+    return data.url;
+}
+
+export async function syncCalendarProvider(provider: string): Promise<{ pushed: number; failed: number }> {
+    return requestJson(`/calendar/sync/${provider}`, { method: 'POST' });
+}
+
+export async function disconnectCalendarProvider(provider: string) {
+    return requestJson(`/calendar/sync/${provider}`, { method: 'DELETE' });
+}
+
 export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
     return requestJson('/calendar/events');
 }

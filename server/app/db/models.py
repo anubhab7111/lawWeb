@@ -499,6 +499,22 @@ class ChatMessage(SQLModel, table=True):
 # ============================================================================
 
 
+class CalendarConnection(SQLModel, table=True):
+    __tablename__ = "calendar_connections"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    user_id: str = Field(foreign_key="users.id")
+    provider: str  # "google" | "outlook"
+    refresh_token_enc: str
+    last_synced_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True))
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class CalendarEvent(SQLModel, table=True):
     __tablename__ = "calendar_events"
 

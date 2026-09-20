@@ -312,6 +312,19 @@ CREATE TABLE "calendar_events" (
 -- One calendar_events row per source case_events hearing row — lets
 -- sync_case_events() upsert instead of creating stale duplicates if a
 -- hearing's own case_event row is ever updated in place.
+CREATE TABLE "calendar_connections" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "refresh_token_enc" TEXT NOT NULL,
+    "last_synced_at" TIMESTAMPTZ(6),
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "calendar_connections_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "calendar_connections_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE,
+    CONSTRAINT "calendar_connections_user_provider_key" UNIQUE ("user_id", "provider")
+);
+
 CREATE UNIQUE INDEX "calendar_events_related_case_event_id_key" ON "calendar_events"("related_case_event_id") WHERE "related_case_event_id" IS NOT NULL;
 
 CREATE INDEX "calendar_events_user_id_start_at_idx" ON "calendar_events"("user_id", "start_at");

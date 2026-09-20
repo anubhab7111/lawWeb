@@ -100,6 +100,19 @@ class Settings(BaseSettings):
     case_data_api_key: str = ""
     case_data_api_base_url: str = ""
 
+    # Calendar sync (Google Calendar / Microsoft Outlook). A provider is offered
+    # only when both its client id and secret are set. `public_api_url` is where
+    # the browser reaches this server (OAuth redirect target); `client_app_url`
+    # is where users land afterwards. `token_enc_key` encrypts stored refresh
+    # tokens (falls back to a key derived from JWT_SECRET).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    ms_client_id: str = ""
+    ms_client_secret: str = ""
+    public_api_url: str = "http://localhost:8000"
+    client_app_url: str = "http://localhost:3000"
+    token_enc_key: str = ""
+
     # Notifications (Hearing Reminders / Smart Notifications). Left blank ->
     # notification_dispatch logs instead of sending (safe local-dev default).
     smtp_host: str = ""
