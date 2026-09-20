@@ -10,6 +10,7 @@ HUGGINGFACE_TOKEN in server/.env before using this module.
 """
 
 import random
+import re
 from typing import Any, Dict, List, Optional
 
 from app.config import get_settings
@@ -26,21 +27,19 @@ _PROMPT_TEMPLATE = (
 
 def load_iltur_lsi_test_split():
     """Download (or use the cached copy of) the IL-TUR `lsi` test split."""
-    from datasets import load_dataset
+    try:
+        from datasets import load_dataset
+    except ImportError as e:
+        raise RuntimeError("The `datasets` package is required: pip install datasets") from e
 
     token = get_settings().huggingface_token or None
     try:
         ds = load_dataset(DATASET_ID, DATASET_CONFIG, token=token)
-    except Exception:
-        # Some HF dataset-viewer conversions require the loading-script
-        # revision explicitly rather than the auto-converted parquet default.
-        ds = load_dataset(
-            DATASET_ID,
-            DATASET_CONFIG,
-            revision="script",
-            trust_remote_code=True,
-            token=token,
-        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Couldn't load {DATASET_ID}/{DATASET_CONFIG}: {e}. The dataset is gated — "
+            "accept its license on HuggingFace and set HUGGINGFACE_TOKEN in server/.env."
+        ) from e
 
     if "test" not in ds:
         raise RuntimeError(
@@ -70,6 +69,12 @@ def iltur_case_to_prompt(row: Dict[str, Any]) -> str:
     return _PROMPT_TEMPLATE.format(facts=facts.strip())
 
 
+def _section_number(label: Any) -> str:
+    """"IPC_302" / "Section 302" / 302 -> "302" (the index matches on numbers)."""
+    match = re.search(r"\d+[A-Za-z]{0,2}", str(label))
+    return match.group(0).upper() if match else str(label)
+
+
 def iltur_case_to_ground_truth(row: Dict[str, Any], prompt: str) -> GroundTruthEntry:
     """Build a GroundTruthEntry from an IL-TUR lsi row for Hit Rate@k / MRR scoring.
 
@@ -80,7 +85,7 @@ def iltur_case_to_ground_truth(row: Dict[str, Any], prompt: str) -> GroundTruthE
     ground truth, same as any other query MetricsEvaluator can't find a
     reference answer for.
     """
-    sections = [str(s) for s in row["labels"]]
+    sections = [_section_number(s) for s in row["labels"]]
     return GroundTruthEntry(
         query=prompt,
         relevant_ipc_sections=[],

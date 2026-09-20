@@ -46,7 +46,7 @@ from test_chatbot import (  # noqa: E402
 
 def prepare_iltur_prompts(sample_size: int, seed: "int | None"):
     """Sample IL-TUR cases, register their ground truth, and return prompts."""
-    print(f"[IL-TUR] Loading '{iltur_case_to_prompt.__module__}' lsi test split...")
+    print("[IL-TUR] Loading the Exploration-Lab/IL-TUR lsi test split...")
     rows = sample_iltur_cases(sample_size, seed=seed)
 
     prompts = []
@@ -87,10 +87,11 @@ Examples:
         help="Seed the sample for reproducibility. Default: fresh random sample every run.",
     )
     parser.add_argument(
-        "--metrics",
+        "--no-metrics",
         action="store_true",
-        default=True,
-        help="Run the full 9-metric evaluation suite (default: on).",
+        default=False,
+        dest="no_metrics",
+        help="Only run the chatbot and save answers; skip the metric suite.",
     )
     parser.add_argument(
         "--no-llm-judge",
@@ -127,7 +128,7 @@ async def main() -> None:
 async def _run(args: argparse.Namespace, timestamp: str) -> None:
     prompts = prepare_iltur_prompts(args.sample_size, args.seed)
 
-    use_llm_judge = args.metrics and not args.no_llm_judge
+    use_llm_judge = not args.no_metrics and not args.no_llm_judge
     if use_llm_judge:
         from app.config import get_settings
 
@@ -145,7 +146,7 @@ async def _run(args: argparse.Namespace, timestamp: str) -> None:
     save_csv(chatbot_results, basic_csv_path)
     print_summary(chatbot_results)
 
-    if args.metrics:
+    if not args.no_metrics:
         await run_metrics_evaluation(
             chatbot_results=chatbot_results,
             timestamp=f"iltur_{timestamp}",
@@ -153,7 +154,7 @@ async def _run(args: argparse.Namespace, timestamp: str) -> None:
         )
     else:
         print(
-            "\nTip: re-run with --metrics to compute Hit Rate@k, MRR, "
+            "\nTip: re-run without --no-metrics to compute Hit Rate@k, MRR, "
             "Faithfulness, Answer Relevance, Context Recall, Latency stats, "
             "Cost estimates, and Token Efficiency.\n"
         )
