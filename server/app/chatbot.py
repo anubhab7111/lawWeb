@@ -966,6 +966,7 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     # Convert to LawyerInfo format
     lawyers_info: List[LawyerInfo] = [
         {
+            "id": l.id,
             "name": l.name,
             "specialization": l.specialty,
             "location": l.location,
