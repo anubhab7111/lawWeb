@@ -90,12 +90,15 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
         "property": "PRP",
         "notifications": "NTF",
         "explanatory": "EXP",
+        "mappings": "MAP",
+        "rules": "RUL",
+        "guides": "GDE",
     }
 
     # Prose corpora outside bare_acts/ (enforcement notifications, judiciary
     # explainers). These aren't section-numbered statutes: they get sliding-
     # window chunking instead of the section parser.
-    PROSE_DIRS = ("notifications", "explanatory")
+    PROSE_DIRS = ("notifications", "explanatory", "mappings", "rules", "guides")
 
     def __init__(self, data_dir: str = "app/data"):
         super().__init__(data_dir=data_dir)
