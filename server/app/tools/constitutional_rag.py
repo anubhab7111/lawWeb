@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from app.text_match import any_word
 from typing import List, Optional
 
 from app.tools.base_legal_rag import (
@@ -115,7 +116,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         # optional "N[" prefix is tolerated: amended Articles are often
         # annotated with a footnote-bracket marker, e.g. "3[226. Power of...".
         article_pattern = re.compile(
-            r"\n\s*(?:Article\s+)?(?:\d+\[)?(\d{1,3}[A-Z]?)\.\s*([^\n.—]{3,}?)(?:[.—])\s*",
+            r"\n\s*(?:Article\s+)?(?:\d+\[)?(\d{1,3}[A-Z]{0,2})\.\s*([^\n.—]{3,}?)(?:[.—])\s*",
             re.MULTILINE,
         )
 
@@ -191,11 +192,9 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         terms: List[str] = []
 
         # Fundamental rights
-        if any(w in q for w in ["right to equality", "equal protection", "article 14"]):
+        if any_word(q, ["right to equality", "equal protection", "article 14"]):
             terms.extend(["Article 14", "right to equality", "equal protection of law"])
-        if any(
-            w in q
-            for w in [
+        if any_word(q, [
                 "free speech",
                 "freedom of speech",
                 "article 19",
@@ -210,9 +209,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
                     "reasonable restriction",
                 ]
             )
-        if any(
-            w in q
-            for w in [
+        if any_word(q, [
                 "right to life",
                 "personal liberty",
                 "article 21",
@@ -224,11 +221,9 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             terms.extend(
                 ["Article 21", "right to life", "personal liberty", "right to privacy"]
             )
-        if any(w in q for w in ["right to education", "article 21a"]):
+        if any_word(q, ["right to education", "article 21a"]):
             terms.extend(["Article 21A", "right to education"])
-        if any(
-            w in q
-            for w in [
+        if any_word(q, [
                 "protection against arrest",
                 "double jeopardy",
                 "self-incrimination",
@@ -236,28 +231,24 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             ]
         ):
             terms.extend(["Article 20", "protection against arbitrary arrest"])
-        if any(
-            w in q
-            for w in ["article 32", "supreme court writ", "constitutional remedy"]
+        if any_word(q, ["article 32", "supreme court writ", "constitutional remedy"]
         ):
             terms.extend(["Article 32", "right to constitutional remedies"])
-        if any(w in q for w in ["article 226", "high court writ"]):
+        if any_word(q, ["article 226", "high court writ"]):
             terms.extend(["Article 226", "power of high courts to issue writs"])
 
         # Writs
-        if any(w in q for w in ["habeas corpus"]):
+        if any_word(q, ["habeas corpus"]):
             terms.extend(["habeas corpus", "Article 32", "Article 226"])
-        if any(w in q for w in ["mandamus"]):
+        if any_word(q, ["mandamus"]):
             terms.extend(["mandamus", "writ of mandamus"])
-        if any(w in q for w in ["certiorari"]):
+        if any_word(q, ["certiorari"]):
             terms.extend(["certiorari", "writ of certiorari"])
 
         # Federalism
-        if any(w in q for w in ["president rule", "article 356", "emergency"]):
+        if any_word(q, ["president rule", "article 356", "emergency"]):
             terms.extend(["Article 356", "President's rule", "emergency provisions"])
-        if any(
-            w in q
-            for w in ["union list", "state list", "concurrent list", "seventh schedule"]
+        if any_word(q, ["union list", "state list", "concurrent list", "seventh schedule"]
         ):
             terms.extend(
                 [
@@ -269,7 +260,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             )
 
         # Amendment / basic structure
-        if any(w in q for w in ["amendment", "article 368", "basic structure"]):
+        if any_word(q, ["amendment", "article 368", "basic structure"]):
             terms.extend(
                 [
                     "Article 368",
@@ -280,9 +271,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             )
 
         # Directive Principles
-        if any(
-            w in q
-            for w in ["dpsp", "directive principles", "article 36", "welfare state"]
+        if any_word(q, ["dpsp", "directive principles", "article 36", "welfare state"]
         ):
             terms.extend(
                 [
@@ -295,9 +284,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             )
 
         # Parliament / legislature
-        if any(
-            w in q
-            for w in ["parliament", "lok sabha", "rajya sabha", "legislative power"]
+        if any_word(q, ["parliament", "lok sabha", "rajya sabha", "legislative power"]
         ):
             terms.extend(
                 ["Article 79", "Parliament", "Article 105", "legislative powers"]

@@ -269,6 +269,8 @@ async def _get_shared_reranker() -> Optional[Any]:
                             device = "cuda"
                 except ImportError:
                     pass
+                except Exception as e:
+                    print(f"[rag] CUDA device probe failed ({e}) — reranker on CPU.")
 
             model_name = get_settings().reranker_model
             loop = asyncio.get_event_loop()
@@ -291,6 +293,10 @@ async def _get_shared_reranker() -> Optional[Any]:
             _shared_reranker_failed = True
             print(f"[rag] Reranker unavailable ({e}) — falling back to fused order.")
         return _shared_reranker
+
+
+def _natural_key(chunk: "LegalChunk"):
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", chunk.chunk_id)]
 
 
 def _sigmoid(x: float) -> float:
@@ -803,7 +809,7 @@ class BaseLegalRAGSystem(ABC):
             if c.section_number.lower().replace("article", "").strip() == want
             and (not hint or hint in c.act_name.lower())
         ]
-        hits.sort(key=lambda c: c.chunk_id)  # parts in order (_p1, _p2, …)
+        hits.sort(key=_natural_key)  # parts in order (_p1, _p2, …, _p10)
         return hits[:max_parts]
 
     def _build_bm25(self):

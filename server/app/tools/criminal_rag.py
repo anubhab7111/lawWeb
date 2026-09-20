@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from app.text_match import any_word
 from typing import List, Optional
 
 from app.tools.base_legal_rag import (
@@ -129,7 +130,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "fracture",
         "broken bone",
     ]
-    f.violence = any(w in t for w in violence_words)
+    f.violence = any_word(t, violence_words)
 
     death_words = [
         "kill",
@@ -141,7 +142,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "body found",
         "corpse",
     ]
-    f.death = any(w in t for w in death_words)
+    f.death = any_word(t, death_words)
 
     weapons = {
         "knife": ["knife", "stabbed", "stabbing", "blade"],
@@ -152,7 +153,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "vehicle": ["run over", "hit by car", "vehicle"],
     }
     for weapon, keywords in weapons.items():
-        if any(w in t for w in keywords):
+        if any_word(t, keywords):
             f.weapon = weapon
             f.violence = True
             break
@@ -176,9 +177,9 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "drunk driving",
         "rash driving",
     ]
-    if any(w in t for w in intentional_words):
+    if any_word(t, intentional_words):
         f.intent = "intentional"
-    elif any(w in t for w in reckless_words):
+    elif any_word(t, reckless_words):
         f.intent = "reckless"
     elif f.death and not f.violence:
         f.intent = "negligent"
@@ -200,7 +201,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "encroached",
         "illegally taken",
     ]
-    f.property_loss = any(w in t for w in property_words)
+    f.property_loss = any_word(t, property_words)
 
     sexual_words = [
         "rape",
@@ -212,7 +213,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "indecent",
         "obscene",
     ]
-    f.sexual = any(w in t for w in sexual_words)
+    f.sexual = any_word(t, sexual_words)
 
     fraud_words = [
         "fraud",
@@ -226,7 +227,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "swindled",
         "duped",
     ]
-    f.fraud = any(w in t for w in fraud_words)
+    f.fraud = any_word(t, fraud_words)
 
     domestic_words = [
         "husband",
@@ -239,7 +240,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "marriage",
         "matrimonial",
     ]
-    f.domestic = any(w in t for w in domestic_words)
+    f.domestic = any_word(t, domestic_words)
 
     trespass_words = [
         "trespass",
@@ -253,7 +254,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "land taken",
         "property grabbed",
     ]
-    f.trespass = any(w in t for w in trespass_words)
+    f.trespass = any_word(t, trespass_words)
 
     fire_words = [
         "fire",
@@ -265,7 +266,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "house fire",
         "on fire",
     ]
-    f.fire = any(w in t for w in fire_words)
+    f.fire = any_word(t, fire_words)
 
     kidnap_words = [
         "kidnap",
@@ -275,7 +276,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "missing child",
         "hostage",
     ]
-    f.kidnapping = any(w in t for w in kidnap_words)
+    f.kidnapping = any_word(t, kidnap_words)
 
     threat_words = [
         "threatened",
@@ -287,7 +288,7 @@ def extract_crime_features(text: str) -> CrimeFeatures:
         "warned me",
         "death threat",
     ]
-    f.threat = any(w in t for w in threat_words)
+    f.threat = any_word(t, threat_words)
 
     return f
 
@@ -419,39 +420,36 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         terms: List[str] = []
 
         # Physical violence → relevant IPC headings
-        if any(w in q for w in ["stabbed", "slash", "cut with knife", "blade"]):
+        if any_word(q, ["stabbed", "slash", "cut with knife", "blade"]):
             terms.extend(["grievous hurt", "hurt", "dangerous weapon"])
-        if any(w in q for w in ["beaten", "punched", "hit", "physically assaulted"]):
+        if any_word(q, ["beaten", "punched", "hit", "physically assaulted"]):
             terms.extend(["hurt", "voluntarily causing hurt"])
-        if any(w in q for w in ["killed", "murdered", "dead", "death"]):
+        if any_word(q, ["killed", "murdered", "dead", "death"]):
             terms.extend(["culpable homicide", "murder", "causing death"])
 
         # Sexual offences
-        if any(w in q for w in ["rape", "sexual assault", "molest"]):
+        if any_word(q, ["rape", "sexual assault", "molest"]):
             terms.extend(["rape", "sexual intent", "outraging modesty"])
-        if any(w in q for w in ["stalking", "following woman", "monitor woman"]):
+        if any_word(q, ["stalking", "following woman", "monitor woman"]):
             terms.extend(["stalking", "following woman"])
 
         # Kidnapping / abduction
-        if any(w in q for w in ["kidnap", "abduct", "hostage", "ransom"]):
+        if any_word(q, ["kidnap", "abduct", "hostage", "ransom"]):
             terms.extend(["kidnapping", "abduction", "ransom"])
 
         # Domestic violence / dowry (genuinely criminal provisions)
-        if any(w in q for w in ["dowry", "498a", "cruelty by husband"]):
+        if any_word(q, ["dowry", "498a", "cruelty by husband"]):
             terms.extend(["cruelty by husband", "dowry death", "abetment of suicide"])
 
         # Explicit criminal fraud / forgery (only when combined with criminal act verbs)
-        if any(
-            w in q for w in ["forged document", "forged signature", "fake document"]
+        if any_word(q, ["forged document", "forged signature", "fake document"]
         ):
             terms.extend(["forgery", "using forged document"])
-        if any(w in q for w in ["cheated me", "cheated out of", "deceived me into"]):
+        if any_word(q, ["cheated me", "cheated out of", "deceived me into"]):
             terms.extend(["cheating", "dishonestly inducing delivery of property"])
 
         # Electronic evidence (WhatsApp/email/CCTV → statutory vocabulary)
-        if any(
-            w in q
-            for w in [
+        if any_word(q, [
                 "whatsapp",
                 "electronic evidence",
                 "digital evidence",
@@ -470,20 +468,19 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             )
 
         # FIR / procedure queries
-        if any(w in q for w in ["fir", "police complaint", "cognizable", "arrest"]):
+        if any_word(q, ["fir", "police complaint", "cognizable", "arrest"]):
             terms.extend(["cognizable offence", "complaint", "investigation"])
 
         # Bail
-        if any(w in q for w in ["bail", "anticipatory bail", "custody"]):
+        if any_word(q, ["bail", "anticipatory bail", "custody"]):
             terms.extend(["bail", "custody", "arrest"])
 
         # Arson
-        if any(w in q for w in ["set fire", "arson", "burnt my house"]):
+        if any_word(q, ["set fire", "arson", "burnt my house"]):
             terms.extend(["arson", "fire to property"])
 
         # Criminal trespass (breaking and entering — not civil land disputes)
-        if any(
-            w in q for w in ["broke into", "illegal entry", "trespassed into house"]
+        if any_word(q, ["broke into", "illegal entry", "trespassed into house"]
         ):
             terms.extend(["criminal trespass", "house-breaking"])
 

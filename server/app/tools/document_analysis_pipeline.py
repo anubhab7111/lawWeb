@@ -9,6 +9,8 @@ from dataclasses import dataclass
 import asyncio
 import re
 
+from app.text_match import any_word
+
 
 @dataclass
 class DocumentAnalysisResult:
@@ -108,9 +110,7 @@ class DocumentAnalysisPipeline:
         text_lower = text.lower()
 
         # Check for legal document indicators
-        is_legal = any(
-            kw in text_lower
-            for kw in [
+        is_legal = any_word(text_lower, [
                 "agreement",
                 "contract",
                 "petition",
@@ -128,9 +128,7 @@ class DocumentAnalysisPipeline:
         )
 
         # Check for crime-related content
-        is_crime_related = any(
-            kw in text_lower
-            for kw in [
+        is_crime_related = any_word(text_lower, [
                 "fir",
                 "complaint",
                 "crime",
@@ -152,13 +150,10 @@ class DocumentAnalysisPipeline:
         )
 
         # Check for specific document types
-        is_contract = any(
-            kw in text_lower
-            for kw in ["agreement", "contract", "terms and conditions", "party agrees"]
+        is_contract = any_word(text_lower, ["agreement", "contract", "terms and conditions", "party agrees"]
         )
 
-        is_notice = any(
-            kw in text_lower for kw in ["notice", "hereby notified", "take notice"]
+        is_notice = any_word(text_lower, ["notice", "hereby notified", "take notice"]
         )
 
         return {

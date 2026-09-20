@@ -6,6 +6,8 @@ The finetuned LLM handles generating guidance, IPC sections, punishment, and fur
 
 from typing import Dict, List
 
+from app.text_match import count_words
+
 # List of recognized crime types for the /crime-types API endpoint
 CRIME_TYPES: List[str] = [
     "theft",
@@ -197,7 +199,7 @@ def detect_crime_type(description: str) -> str:
 
     scores: Dict[str, int] = {}
     for crime_type, keywords in CRIME_KEYWORDS.items():
-        score = sum(1 for keyword in keywords if keyword in description_lower)
+        score = count_words(description_lower, keywords)
         if score > 0:
             scores[crime_type] = score
 

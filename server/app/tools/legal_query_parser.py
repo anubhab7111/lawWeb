@@ -80,7 +80,7 @@ ACT_HINTS: Dict[str, str] = {
 
 # "section 420 of the IPC", "sec. 438 CrPC", "u/s 302", "article 21", "art. 356"
 _CITATION_RE = re.compile(
-    r"(?:\b(?:section|sec\.?|s\.|u/s)\s*(\d{1,4}[A-Z]{0,2})\b|\b(?:article|art\.?)\s*(\d{1,3}[A-Z]?)\b)",
+    r"(?:\b(?:section|sec\.?|s\.|u/s)\s*(\d{1,4}[A-Z]{0,2})\b|\b(?:article|art\.?)\s*(\d{1,3}[A-Z]{0,2})\b)",
     re.IGNORECASE,
 )
 
@@ -143,7 +143,7 @@ def _find_act_hint(query_lower: str) -> str:
     """Longest act abbreviation/name mentioned in the query, if any."""
     best = ""
     for alias, hint in ACT_HINTS.items():
-        if alias in query_lower and len(alias) > len(best):
+        if len(alias) > len(best) and _alias_in(alias, query_lower):
             best = alias
     return ACT_HINTS.get(best, "")
 
