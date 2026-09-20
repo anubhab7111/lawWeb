@@ -14,7 +14,11 @@ export function ThemeToggle() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("theme", theme);
+    try {
+      localStorage.setItem("theme", theme);
+    } catch {
+      // storage blocked — the choice just won't persist
+    }
   }, [theme]);
 
   const isDark = theme === "dark";

@@ -220,7 +220,7 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
               } : msg));
             },
             (err) => {
-              setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, error: true, content: err } : msg));
+              setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, error: true, content: msg.content ? `${msg.content}\n\n${err}` : err } : msg));
             },
             controller.signal,
           );

@@ -47,13 +47,32 @@ export function avatarTint(seed: string): { bg: string; fg: string } {
   return AVATAR_TINTS[h % AVATAR_TINTS.length];
 }
 
-/** Format an integer hourly rate as the wireframe's "₹2,500/hr". */
+// The currency Braintree actually charges (from /api/config); prices are shown
+// in it rather than assuming rupees.
+let currencyCode = "USD";
+
+export function setCurrency(code: string) {
+  if (code) currencyCode = code.toUpperCase();
+}
+
+export function currentCurrency(): string {
+  return currencyCode;
+}
+
+function money(amount: number): string {
+  try {
+    return new Intl.NumberFormat("en-IN", { style: "currency", currency: currencyCode, maximumFractionDigits: 0 }).format(Number(amount));
+  } catch {
+    return `${currencyCode} ${Number(amount).toLocaleString("en-IN")}`;
+  }
+}
+
 export function formatRate(rate: number): string {
-  return `₹${Number(rate).toLocaleString("en-IN")}/hr`;
+  return `${money(rate)}/hr`;
 }
 
 export function formatMoney(amount: number): string {
-  return `₹${Number(amount).toLocaleString("en-IN")}`;
+  return money(amount);
 }
 
 // Maps a free-text availability string to a status dot color (theme tokens).
