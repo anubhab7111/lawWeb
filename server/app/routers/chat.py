@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -137,7 +138,7 @@ class HealthResponse(BaseModel):
 # ============================================================================
 
 
-async def _resolve_session_id(session: Session, user: Optional[User], session_id: str) -> str:
+def _resolve_session_id_sync(session: Session, user: Optional[User], session_id: str) -> str:
     """If session_id belongs to a different account, mint a fresh one instead
     of reusing it. This must run before the chatbot is ever invoked: the
     in-memory LangGraph cache (LegalChatbot._sessions) is a single
@@ -153,7 +154,7 @@ async def _resolve_session_id(session: Session, user: Optional[User], session_id
     return session_id
 
 
-async def _seed_from_db_if_needed(
+def _seed_from_db_if_needed_sync(
     session: Session, chatbot, user: Optional[User], session_id: str
 ) -> None:
     """Load prior DB history into the in-memory cache for an authenticated
@@ -176,7 +177,7 @@ async def _seed_from_db_if_needed(
     )
 
 
-async def _persist_turn(
+def _persist_turn_sync(
     session: Session,
     user: Optional[User],
     session_id: str,
@@ -257,6 +258,20 @@ async def _persist_turn(
     )
     chat_session.updated_at = datetime.now(timezone.utc)
     session.commit()
+
+
+# The DB helpers above are plain blocking SQLAlchemy calls; run them in the
+# thread pool so a slow query never stalls the (single-worker) event loop.
+async def _resolve_session_id(*args, **kwargs):
+    return await run_in_threadpool(_resolve_session_id_sync, *args, **kwargs)
+
+
+async def _seed_from_db_if_needed(*args, **kwargs):
+    return await run_in_threadpool(_seed_from_db_if_needed_sync, *args, **kwargs)
+
+
+async def _persist_turn(*args, **kwargs):
+    return await run_in_threadpool(_persist_turn_sync, *args, **kwargs)
 
 
 # ============================================================================
@@ -383,7 +398,7 @@ class StopStreamRequest(BaseModel):
 
 
 @router.post("/stream/stop")
-async def stop_stream(
+def stop_stream(
     request: StopStreamRequest,
     user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session),
@@ -699,7 +714,7 @@ async def get_crime_types():
 
 
 @router.get("/sessions")
-async def list_sessions(
+def list_sessions(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -716,7 +731,7 @@ async def list_sessions(
 
 
 @router.delete("/session/{session_id}")
-async def clear_session(
+def clear_session(
     session_id: str,
     user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session),
@@ -748,7 +763,7 @@ async def clear_session(
 
 
 @router.get("/session/{session_id}/history")
-async def get_session_history(
+def get_session_history(
     session_id: str,
     user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session),

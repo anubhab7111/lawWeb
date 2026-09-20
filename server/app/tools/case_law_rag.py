@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.tools.base_legal_rag import (
+    file_fingerprint,
     _bm25_tokenize,
     _get_shared_embeddings,
     _get_shared_reranker,
@@ -264,8 +265,8 @@ class CaseLawRAGSystem:
         return stored_fingerprint != self._current_case_fingerprint()
 
     @staticmethod
-    def _current_case_fingerprint() -> Dict[str, int]:
-        return {p.name: p.stat().st_size for p in CASE_LAW_DIR.glob("*.json")}
+    def _current_case_fingerprint() -> Dict[str, str]:
+        return {p.name: file_fingerprint(p) for p in CASE_LAW_DIR.glob("*.json")}
 
     async def _build_vectorstore(self):
         from langchain_community.vectorstores import FAISS

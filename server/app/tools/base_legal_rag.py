@@ -295,6 +295,19 @@ async def _get_shared_reranker() -> Optional[Any]:
         return _shared_reranker
 
 
+def file_fingerprint(path: Path) -> str:
+    """Size plus a hash of the head and tail — detects same-size edits that a
+    size-only check misses, without reading whole PDFs."""
+    import hashlib
+
+    size = path.stat().st_size
+    with open(path, "rb") as f:
+        head = f.read(65536)
+        f.seek(max(size - 65536, 0))
+        tail = f.read(65536)
+    return f"{size}:{hashlib.sha1(head + tail).hexdigest()[:12]}"
+
+
 def _natural_key(chunk: "LegalChunk"):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", chunk.chunk_id)]
 
@@ -970,10 +983,10 @@ class BaseLegalRAGSystem(ABC):
             return True
         return stored_fingerprint != self._current_pdf_fingerprint()
 
-    def _current_pdf_fingerprint(self) -> Dict[str, int]:
-        """(relative_path -> byte size) for every source PDF, cheap to compute."""
+    def _current_pdf_fingerprint(self) -> Dict[str, str]:
+        """(relative_path -> size:hash) for every source PDF, cheap to compute."""
         return {
-            str(p.relative_to(self._bare_acts_dir)): p.stat().st_size
+            str(p.relative_to(self._bare_acts_dir)): file_fingerprint(p)
             for p in self._bare_acts_dir.rglob("*.pdf")
         }
 

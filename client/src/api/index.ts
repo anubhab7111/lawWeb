@@ -15,6 +15,10 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 /** fetch() that signs the user out the moment the server rejects their token. */
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
     const response = await fetch(input, init);
+    const refreshed = response.headers.get('X-Refreshed-Token');
+    if (refreshed && localStorage.getItem('token')) {
+        localStorage.setItem('token', refreshed);
+    }
     if (response.status === 401 && localStorage.getItem('token')) {
         localStorage.removeItem('token');
         onUnauthorized?.();

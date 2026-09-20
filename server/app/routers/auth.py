@@ -10,7 +10,7 @@ from typing import Optional
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
@@ -122,6 +122,7 @@ def lookup_user(
 
 @router.get("/me")
 def me(
+    response: Response,
     authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
@@ -137,5 +138,12 @@ def me(
     user = session.get(User, decoded.get("id"))
     if not user:
         return _error(404, "User not found")
+
+    # Sliding session: hand back a fresh token once the current one is close
+    # to expiry, so an active user isn't signed out mid-session.
+    remaining = decoded.get("exp", 0) - datetime.now(timezone.utc).timestamp()
+    if remaining < 15 * 60:
+        response.headers["X-Refreshed-Token"] = _make_token(user.id)
+        response.headers["Access-Control-Expose-Headers"] = "X-Refreshed-Token"
 
     return _user_json(user)

@@ -115,6 +115,28 @@ class RetrievalMetricsResult:
 # ---------------------------------------------------------------------------
 
 
+def act_aware_sections(
+    retrieved: Sequence[Sequence[str]], expected_acts: Sequence[str]
+) -> List[str]:
+    """Section numbers from (act, section) pairs, keeping rank positions but
+    blanking any hit from an Act the ground truth doesn't expect — so "420" in
+    the wrong statute no longer counts as a hit. If no retrieved pair matches
+    an expected Act (e.g. the ground truth names articles or topics rather than
+    Acts), fall back to plain section numbers."""
+    from app.tools.case_law_rag import _acts_match, normalize_act
+
+    wanted = [normalize_act(a) for a in expected_acts if a]
+    sections = [str(sec) for _, sec in retrieved]
+    if not wanted:
+        return sections
+    keep = [
+        any(_acts_match(w, normalize_act(act)) for w in wanted) for act, _ in retrieved
+    ]
+    if not any(keep):
+        return sections
+    return [sec if ok else "" for sec, ok in zip(sections, keep)]
+
+
 def compute_hit_rate(
     retrieved: Sequence[str],
     relevant: Sequence[str],
