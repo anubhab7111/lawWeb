@@ -75,7 +75,6 @@ class DocumentExtractor:
     SUPPORTED_EXTENSIONS = {
         ".pdf",
         ".docx",
-        ".doc",
         ".txt",
         ".jpg",
         ".jpeg",
@@ -142,12 +141,19 @@ class DocumentExtractor:
                     print(f"OCR fallback failed: {e}")
 
             return text, "pdf"
-        elif extension in (".docx", ".doc"):
+        elif extension == ".docx":
             text = await self._extract_docx_async(file_bytes)
             return text, "docx"
         elif extension == ".txt":
-            text = file_bytes.decode("utf-8", errors="ignore")
+            if file_bytes[:2] in (b"\xff\xfe", b"\xfe\xff"):
+                text = file_bytes.decode("utf-16", errors="ignore")
+            else:
+                text = file_bytes.decode("utf-8-sig", errors="ignore")
             return text, "txt"
+        elif extension == ".doc":
+            raise ValueError(
+                "Legacy .doc files aren't supported — please save the document as .docx or PDF."
+            )
         else:
             raise ValueError(f"Unsupported file type: {extension}")
 
@@ -321,7 +327,10 @@ class DocumentExtractor:
             )
 
         file_stream = io.BytesIO(file_bytes)
-        doc = DocxDocument(file_stream)
+        try:
+            doc = DocxDocument(file_stream)
+        except Exception as exc:
+            raise ValueError("This file isn't a valid .docx document.") from exc
 
         paragraphs = []
         for para in doc.paragraphs:

@@ -439,7 +439,7 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
                 rows={1}
                 style={{ flex: 1, border: "none", outline: "none", resize: "none", background: "transparent", font: "400 15px/1.5 var(--font-body)", color: "var(--text)", maxHeight: 160 }}
               />
-              <input ref={fileRef} type="file" hidden accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <input ref={fileRef} type="file" hidden accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               <button type="button" onClick={() => fileRef.current?.click()} title="Attach a document" style={{ width: 36, height: 36, borderRadius: "var(--r)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted-2)", cursor: "pointer", background: "none", border: "none" }}><IconPaperclip /></button>
               {busy ? (
                 <button type="button" onClick={stopGenerating} className="composer-send" title="Stop generating" style={{ background: "var(--text-strong)" }}>

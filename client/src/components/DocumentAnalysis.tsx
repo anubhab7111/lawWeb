@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { uploadDocumentForAnalysis, analyzeDocumentText, type ChatResponse } from "../api";
+import { uploadDocumentForAnalysis, analyzeDocumentText, uploadDocumentForValidation, validateDocumentText, type ChatResponse } from "../api";
 import { RichText } from "./RichText";
 import { IconUpload, IconPaperclip } from "./icons";
 
@@ -8,6 +8,7 @@ export function DocumentAnalysis() {
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [validate, setValidate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ChatResponse | null>(null);
@@ -19,8 +20,12 @@ export function DocumentAnalysis() {
     setBusy(true);
     try {
       const data = mode === "upload" && file
-        ? await uploadDocumentForAnalysis(file, "Analyze this document", undefined)
-        : await analyzeDocumentText(text, undefined);
+        ? validate
+          ? await uploadDocumentForValidation(file)
+          : await uploadDocumentForAnalysis(file, "Analyze this document", undefined)
+        : validate
+          ? await validateDocumentText(text)
+          : await analyzeDocumentText(text, undefined);
       setResult(data);
     } catch (e: any) {
       setError(e.message || "Analysis failed.");
@@ -55,14 +60,14 @@ export function DocumentAnalysis() {
             onDragLeave={() => setDragOver(false)}
             onDrop={(e) => { e.preventDefault(); setDragOver(false); setFile(e.dataTransfer.files?.[0] ?? null); }}
           >
-            <input ref={fileRef} type="file" hidden accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <input ref={fileRef} type="file" hidden accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             <div style={{ color: "var(--accent)", marginBottom: 12, display: "flex", justifyContent: "center" }}><IconUpload size={30} /></div>
             {file ? (
               <div style={{ font: "600 14.5px var(--font-body)", display: "inline-flex", alignItems: "center", gap: 7 }}><IconPaperclip size={15} /> {file.name}</div>
             ) : (
               <>
                 <div style={{ font: "600 15px var(--font-body)" }}>Drop a file here, or click to browse</div>
-                <div style={{ font: "400 13px var(--font-body)", color: "var(--muted-2)", marginTop: 4 }}>PDF, DOCX, or an image (scanned docs are OCR'd)</div>
+                <div style={{ font: "400 13px var(--font-body)", color: "var(--muted-2)", marginTop: 4 }}>PDF, DOCX, TXT, or an image (scanned docs are OCR'd)</div>
               </>
             )}
           </div>
@@ -70,8 +75,13 @@ export function DocumentAnalysis() {
           <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste the document text here…" style={{ minHeight: 200 }} />
         )}
 
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, font: "500 13.5px var(--font-body)" }}>
+          <input type="checkbox" checked={validate} onChange={(e) => setValidate(e.target.checked)} />
+          Check statutory compliance (classify the document, run the statutory checklist, flag defects)
+        </label>
+
         <button className="btn btn-primary btn-lg" onClick={analyze} disabled={!canSubmit || busy} style={{ marginTop: 16 }}>
-          {busy ? "Analyzing…" : "Analyze document"}
+          {busy ? "Analyzing…" : validate ? "Validate document" : "Analyze document"}
         </button>
 
         {busy && (
