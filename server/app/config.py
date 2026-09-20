@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-m3"
     embedding_query_instruction: str = ""
 
+    # ISO code of the currency Braintree actually charges (sandbox: USD).
+    currency: str = "USD"
+
     # Chat session lifecycle
     session_ttl_seconds: int = 7200
     max_sessions: int = 500

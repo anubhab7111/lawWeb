@@ -5,7 +5,7 @@ from .crime_reporter import detect_crime_type, is_complex_crime, CRIME_TYPES
 from .lawyer_recommender import (
     recommend_lawyers,
     format_lawyer_results,
-    LEGAL_SPECIALIZATIONS,
+    list_specializations,
 )
 from .indian_kanoon import IndianKanoonTool, get_indian_kanoon_tool
 from .document_classifier import DocumentClassifier, get_document_classifier
@@ -28,7 +28,7 @@ __all__ = [
     "CRIME_TYPES",
     "recommend_lawyers",
     "format_lawyer_results",
-    "LEGAL_SPECIALIZATIONS",
+    "list_specializations",
     "IndianKanoonTool",
     "get_indian_kanoon_tool",
     "DocumentClassifier",

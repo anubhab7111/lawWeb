@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.db.engine import get_session
@@ -94,7 +95,11 @@ async def save_case(
         status=record.status,
     )
     session.add(case)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise MessageHTTPException(status_code=400, detail="Case already saved")
     session.refresh(case)
 
     await sync_case_events(session, case)

@@ -24,7 +24,7 @@ from app.deps.uploads import read_upload_within_limit
 from app.tools.crime_reporter import CRIME_TYPES
 from app.tools.document_extractor import get_document_extractor
 from app.tools.lawyer_recommender import (
-    LEGAL_SPECIALIZATIONS,
+    list_specializations,
     recommend_lawyers as recommend_lawyers_core,
 )
 
@@ -678,9 +678,9 @@ async def find_lawyers(
 
 
 @router.get("/specializations")
-async def get_specializations():
-    """Get list of available legal specializations."""
-    return {"specializations": LEGAL_SPECIALIZATIONS}
+def get_specializations(session: Session = Depends(get_session)):
+    """Get list of legal specializations present in the lawyer directory."""
+    return {"specializations": list_specializations(session)}
 
 
 @router.get("/crime-types")

@@ -10,7 +10,6 @@ CREATE TABLE "users" (
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "password" TEXT NOT NULL,
-    "role" TEXT NOT NULL DEFAULT 'client',
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
@@ -32,7 +31,6 @@ CREATE TABLE "lawyers" (
     "languages" TEXT[],
     "availability" TEXT NOT NULL,
     "bio_embedding" vector(1024),
-    "user_id" TEXT,
 
     CONSTRAINT "lawyers_pkey" PRIMARY KEY ("id")
 );
@@ -63,9 +61,6 @@ ALTER TABLE "bookings" ADD CONSTRAINT "bookings_user_id_fkey" FOREIGN KEY ("user
 
 -- AddForeignKey
 ALTER TABLE "bookings" ADD CONSTRAINT "bookings_lawyer_id_fkey" FOREIGN KEY ("lawyer_id") REFERENCES "lawyers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "lawyers" ADD CONSTRAINT "lawyers_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- Note: APScheduler (see app/scheduler.py) creates and owns its own
 -- "apscheduler_jobs" table automatically via SQLAlchemyJobStore. It is not
@@ -159,9 +154,7 @@ CREATE TABLE "notification_preferences" (
     "user_id" TEXT NOT NULL,
     "email_enabled" BOOLEAN NOT NULL DEFAULT true,
     "push_enabled" BOOLEAN NOT NULL DEFAULT false,
-    "sms_enabled" BOOLEAN NOT NULL DEFAULT false,
     "fcm_token" TEXT,
-    "phone_number" TEXT,
     "type_overrides" JSONB NOT NULL DEFAULT '{}',
 
     CONSTRAINT "notification_preferences_pkey" PRIMARY KEY ("id"),
