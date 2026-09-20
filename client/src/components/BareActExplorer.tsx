@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { searchBareAct } from "../api";
+import { useEffect, useState } from "react";
+import { fetchBareActNames, searchBareAct } from "../api";
 
 interface Match {
   actName: string;
@@ -31,13 +31,19 @@ export function BareActExplorer() {
   const [result, setResult] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acts, setActs] = useState<string[]>([]);
+  const [act, setAct] = useState("");
 
-  const runSearch = async (q: string) => {
+  useEffect(() => {
+    fetchBareActNames().then(setActs).catch(() => {});
+  }, []);
+
+  const runSearch = async (q: string, actHint: string = act) => {
     if (!q.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await searchBareAct(q);
+      const data = await searchBareAct(q, actHint || undefined);
       // Normalize once here rather than guarding every .length/.map below —
       // a partial/legacy response missing these arrays would otherwise
       // throw during render and take down the whole screen.
@@ -73,6 +79,10 @@ export function BareActExplorer() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <select className="input" style={{ maxWidth: 220 }} value={act} onChange={(e) => setAct(e.target.value)} aria-label="Act">
+            <option value="">Any act</option>
+            {acts.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
           <button className="btn btn-primary" type="submit" disabled={loading}>
             {loading ? "Searching…" : "Search"}
           </button>
@@ -86,7 +96,12 @@ export function BareActExplorer() {
           <>
             {result.ambiguous && (
               <div className="card" style={{ padding: 14, marginBottom: 16, borderColor: "var(--accent-line)", background: "var(--accent-soft)" }}>
-                This section number appears in multiple acts — showing all matches below.
+                This section number appears in multiple acts — showing all matches below. Narrow it to one:
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  {Array.from(new Set(result.matches.map((m) => m.actName))).map((name) => (
+                    <button key={name} className="chip" type="button" onClick={() => { setAct(name); runSearch(result.query, name); }}>{name}</button>
+                  ))}
+                </div>
               </div>
             )}
 

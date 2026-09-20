@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { RichText } from "./RichText";
 import { searchSimilarCases, searchSimilarCasesByText } from "../api";
 
 interface CaseHit {
@@ -40,6 +41,7 @@ export function SimilarCaseSearch() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [issuesText, setIssuesText] = useState("");
 
   const run = async (fn: () => Promise<Result>) => {
     setLoading(true);
@@ -49,6 +51,7 @@ export function SimilarCaseSearch() {
       // Normalize once here rather than guarding every .length/.map below —
       // a partial/legacy response missing these arrays would otherwise
       // throw during render and take down the whole screen.
+      setIssuesText((data.firac?.issues ?? []).join("\n"));
       setResult({
         ...data,
         firac: { ...data.firac, issues: data.firac?.issues ?? [] },
@@ -122,6 +125,29 @@ export function SimilarCaseSearch() {
                   </ul>
                 </>
               )}
+              {result.firac.rules?.length > 0 && (
+                <>
+                  <div style={{ font: "600 12px var(--font-body)", color: "var(--muted-3)", marginTop: 10 }}>Rules invoked</div>
+                  <ul style={{ margin: "4px 0 0 18px", font: "400 13px var(--font-body)", color: "var(--text-2)" }}>
+                    {result.firac.rules.map((rule, i) => <li key={i}>{rule}</li>)}
+                  </ul>
+                </>
+              )}
+              {result.firac.conclusion && (
+                <p style={{ font: "400 13px var(--font-body)", color: "var(--text-2)", marginTop: 10 }}><strong>Outcome sought:</strong> {result.firac.conclusion}</p>
+              )}
+              <div style={{ font: "600 12px var(--font-body)", color: "var(--muted-3)", marginTop: 14 }}>
+                Not quite right? Edit the issues (one per line) and search again.
+              </div>
+              <textarea className="input" style={{ width: "100%", minHeight: 80, marginTop: 6 }} value={issuesText} onChange={(e) => setIssuesText(e.target.value)} />
+              <button
+                className="btn btn-outline btn-sm"
+                style={{ marginTop: 8 }}
+                disabled={loading || issuesText.trim().length < 20}
+                onClick={() => run(() => searchSimilarCasesByText(`${result.firac.facts}\n\nLegal issues:\n${issuesText}`))}
+              >
+                Search with these issues
+              </button>
             </div>
 
             {result.similarSupremeCourtCases.length > 0 && (
@@ -131,10 +157,12 @@ export function SimilarCaseSearch() {
                   {result.similarSupremeCourtCases.map((c, i) => (
                     <div key={i} className="card" style={{ padding: "14px 16px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                        <div className="cite" style={{ font: "600 13.5px var(--font-body)" }}>{c.caseName}</div>
+                        <div className="cite" style={{ font: "600 13.5px var(--font-body)" }}>
+                          {c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer">{c.caseName}</a> : c.caseName}
+                        </div>
                         {c.score > 0 && (
                           <div className="mono-num" style={{ font: "600 11px var(--font-body)", color: "var(--muted-3)", whiteSpace: "nowrap" }}>
-                            match {Math.round(c.score * 100)}%
+                            relevance {Math.round(c.score * 100)}
                           </div>
                         )}
                       </div>
@@ -153,6 +181,15 @@ export function SimilarCaseSearch() {
                       )}
                     </div>
                   ))}
+                </div>
+              </>
+            )}
+
+            {result.relevantHighCourtCasesText && (
+              <>
+                <div className="section-label">High Court and other cases (Indian Kanoon)</div>
+                <div className="card" style={{ padding: "14px 16px", marginBottom: 18 }}>
+                  <RichText text={result.relevantHighCourtCasesText} />
                 </div>
               </>
             )}
