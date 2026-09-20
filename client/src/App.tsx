@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Nav } from "./components/Nav";
 import { Home } from "./components/Home";
@@ -17,8 +17,8 @@ import { CauseListSearch } from "./components/CauseListSearch";
 import { Vault } from "./components/Vault";
 import { LegalCalendar } from "./components/LegalCalendar";
 import { IconCheck } from "./components/icons";
-import { fetchUserProfile } from "./api";
-import type { Lawyer, UserProfile } from "./lib/ui";
+import { fetchAppConfig, fetchUserProfile, setUnauthorizedHandler } from "./api";
+import { setCurrency, type Lawyer, type UserProfile } from "./lib/ui";
 
 export type View =
   | "home" | "chat" | "lawyers" | "profile" | "payment"
@@ -61,6 +61,9 @@ export default function App() {
   const [selectedLawyer, setSelectedLawyer] = useState<Lawyer | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // A booking started while signed out resumes at payment after sign-in.
+  const resumeBooking = useRef(false);
+  const [, setCurrencyReady] = useState(false);
 
   // What actually renders: falls back to "lawyers" for profile/payment
   // reached with no lawyer in memory — a cold deep-link, a Back/Forward
@@ -103,10 +106,23 @@ export default function App() {
       setAuthChecked(true);
       return;
     }
+    // A 401 clears the token inside the API layer; a network failure keeps it
+    // so a brief backend outage doesn't sign the user out.
     fetchUserProfile()
       .then((u) => setUser(u))
-      .catch(() => localStorage.removeItem("token"))
+      .catch(() => {})
       .finally(() => setAuthChecked(true));
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setView("signin");
+    });
+    fetchAppConfig()
+      .then((c) => { setCurrency(c.currency); setCurrencyReady(true); })
+      .catch(() => {});
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   const showToast = useCallback((msg: string) => {
@@ -124,7 +140,12 @@ export default function App() {
 
   const handleLoginSuccess = (u: UserProfile) => {
     setUser(u);
-    setView("home");
+    if (resumeBooking.current && selectedLawyer) {
+      resumeBooking.current = false;
+      setView("payment");
+    } else {
+      setView("home");
+    }
   };
 
   const handleLogout = () => {
@@ -141,7 +162,7 @@ export default function App() {
   const handleBook = (l: Lawyer) => {
     setSelectedLawyer(l);
     if (!authChecked) return; // still resolving the stored token
-    if (!user) { setView("signin"); return; }
+    if (!user) { resumeBooking.current = true; setView("signin"); return; }
     setView("payment");
   };
 

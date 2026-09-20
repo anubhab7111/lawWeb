@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { View } from "../App";
-import { fetchUserBookings, fetchLawyers, type Booking } from "../api";
+import { fetchUserBookings, fetchLawyersByIds, type Booking } from "../api";
 import { initials, avatarTint, formatMoney, type Lawyer, type UserProfile } from "../lib/ui";
 
 interface Props {
@@ -32,9 +32,10 @@ export function MyBookings({ user, onNavigate }: Props) {
       return;
     }
     setLoading(true);
-    Promise.all([fetchUserBookings(user.id), fetchLawyers().catch(() => [])])
-      .then(([bk, lw]) => {
+    fetchUserBookings(user.id)
+      .then(async (bk) => {
         setBookings(bk);
+        const lw = await fetchLawyersByIds(Array.from(new Set(bk.map((b) => b.lawyerId)))).catch(() => []);
         const map: Record<string, Lawyer> = {};
         (lw as Lawyer[]).forEach((l) => (map[l.id] = l));
         setLawyers(map);
@@ -92,7 +93,7 @@ export function MyBookings({ user, onNavigate }: Props) {
                       <div className="avatar" style={{ width: 44, height: 44, background: tint.bg, color: tint.fg }}>{initials(name)}</div>
                       <div style={{ flex: 1, minWidth: 160 }}>
                         <div style={{ font: "700 14.5px var(--font-head)" }}>{name}</div>
-                        <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>{formatDate(b.createdAt)}{lawyer ? ` · ${lawyer.specialty}` : ""}</div>
+                        <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>{b.appointmentDate ? `${b.appointmentDate} ${b.appointmentTime ?? ""} IST` : formatDate(b.createdAt)}{lawyer ? ` · ${lawyer.specialty}` : ""}</div>
                       </div>
                       <div className="mono-num" style={{ font: "600 14px var(--font-body)" }}>{formatMoney(b.amount)}</div>
                       <span className="pill pill-green" style={{ textTransform: "capitalize" }}>{b.status}</span>

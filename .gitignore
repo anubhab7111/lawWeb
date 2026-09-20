@@ -1,2 +1,7 @@
 CLAUDE.md
 DESIGN.md
+client/node_modules
+client/node_modules/
+client/build/
+client/.env
+.DS_Store

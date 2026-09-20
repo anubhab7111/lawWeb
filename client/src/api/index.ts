@@ -1,9 +1,26 @@
 import { API_BASE_URL } from './config';
 
-const getAuthHeaders = () => {
+const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('token');
     return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
+
+let onUnauthorized: (() => void) | null = null;
+
+/** Called once when a signed-in request comes back 401 (expired/invalid token). */
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+    onUnauthorized = fn;
+}
+
+/** fetch() that signs the user out the moment the server rejects their token. */
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+    const response = await fetch(input, init);
+    if (response.status === 401 && localStorage.getItem('token')) {
+        localStorage.removeItem('token');
+        onUnauthorized?.();
+    }
+    return response;
+}
 
 /**
  * Pull a human-readable message out of an error response body, regardless
@@ -44,7 +61,7 @@ export interface LawyerCriteria {
 }
 
 // ============================================================================
-// Chat API - Connected to Python Chatbot via Express proxy
+// Chat API
 // ============================================================================
 
 export interface ChatResponse {
@@ -65,7 +82,7 @@ export interface ChatMessage {
  * Send a chat message to the AI legal assistant
  */
 export async function sendChatMessage(message: string, sessionId?: string): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE_URL}/chat`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -107,7 +124,7 @@ export async function sendChatMessageStream(
     onError?: (error: string) => void,
     signal?: AbortSignal,
 ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -127,6 +144,7 @@ export async function sendChatMessageStream(
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let sawTerminal = false;
 
     try {
         while (true) {
@@ -150,6 +168,7 @@ export async function sendChatMessageStream(
                     if (event.type === 'token' && event.content) {
                         onToken(event.content);
                     } else if (event.type === 'done' || event.type === 'stopped' || event.type === 'superseded') {
+                        sawTerminal = true;
                         // 'superseded': a newer request for the same session_id
                         // already completed (e.g. two tabs on one conversation).
                         // This stream carries no final response — onDone falls
@@ -159,6 +178,7 @@ export async function sendChatMessageStream(
                         // forever, since no other event ever follows it.
                         onDone(event);
                     } else if (event.type === 'error') {
+                        sawTerminal = true;
                         onError?.(event.content || 'Unknown streaming error');
                     }
                 } catch {
@@ -172,6 +192,10 @@ export async function sendChatMessageStream(
         if (e?.name === 'AbortError') return;
         throw e;
     }
+
+    if (!sawTerminal && !signal?.aborted) {
+        onError?.('The connection was interrupted before the answer finished. Please try again.');
+    }
 }
 
 /**
@@ -180,7 +204,7 @@ export async function sendChatMessageStream(
  * closing the client's connection alone does not stop server-side generation.
  */
 export async function stopChatStream(sessionId: string): Promise<void> {
-    await fetch(`${API_BASE_URL}/chat/stream/stop`, {
+    await apiFetch(`${API_BASE_URL}/chat/stream/stop`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -204,7 +228,7 @@ export async function uploadDocumentForAnalysis(
     if (message) formData.append('message', message);
     if (sessionId) formData.append('session_id', sessionId);
 
-    const response = await fetch(`${API_BASE_URL}/chat/upload`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/upload`, {
         method: 'POST',
         headers: {
             ...getAuthHeaders(),
@@ -226,7 +250,7 @@ export async function analyzeDocumentText(
     documentText: string,
     sessionId?: string
 ): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE_URL}/chat/analyze-document`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/analyze-document`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -248,7 +272,7 @@ export async function getCrimeReportGuidance(
     description: string,
     sessionId?: string
 ): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE_URL}/chat/crime-report`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/crime-report`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -271,7 +295,7 @@ export async function findLawyersAI(
     location?: string,
     specialization?: string
 ) {
-    const response = await fetch(`${API_BASE_URL}/chat/find-lawyer`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/find-lawyer`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -290,7 +314,7 @@ export async function findLawyersAI(
  * Get available legal specializations
  */
 export async function getSpecializations(): Promise<{ specializations: string[] }> {
-    const response = await fetch(`${API_BASE_URL}/chat/specializations`);
+    const response = await apiFetch(`${API_BASE_URL}/chat/specializations`);
     if (!response.ok) {
         throw new Error('Failed to fetch specializations');
     }
@@ -301,7 +325,7 @@ export async function getSpecializations(): Promise<{ specializations: string[] 
  * Get recognized crime types
  */
 export async function getCrimeTypes(): Promise<{ crime_types: string[] }> {
-    const response = await fetch(`${API_BASE_URL}/chat/crime-types`);
+    const response = await apiFetch(`${API_BASE_URL}/chat/crime-types`);
     if (!response.ok) {
         throw new Error('Failed to fetch crime types');
     }
@@ -312,7 +336,7 @@ export async function getCrimeTypes(): Promise<{ crime_types: string[] }> {
  * Clear a chat session
  */
 export async function clearChatSession(sessionId: string): Promise<{ message: string }> {
-    const response = await fetch(`${API_BASE_URL}/chat/session/${sessionId}`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/session/${sessionId}`, {
         method: 'DELETE',
         headers: {
             ...getAuthHeaders(),
@@ -332,7 +356,7 @@ export async function getChatSessionHistory(sessionId: string): Promise<{
     messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
     count: number;
 }> {
-    const response = await fetch(`${API_BASE_URL}/chat/session/${sessionId}/history`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/session/${sessionId}/history`, {
         headers: {
             ...getAuthHeaders(),
         },
@@ -357,7 +381,7 @@ export interface ChatSessionSummary {
  * with no token) as "no sessions" rather than surfacing an error.
  */
 export async function listChatSessions(): Promise<{ sessions: ChatSessionSummary[]; count: number }> {
-    const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
+    const response = await apiFetch(`${API_BASE_URL}/chat/sessions`, {
         headers: {
             ...getAuthHeaders(),
         },
@@ -372,7 +396,7 @@ export async function listChatSessions(): Promise<{ sessions: ChatSessionSummary
  * Check chatbot service health
  */
 export async function checkChatHealth() {
-    const response = await fetch(`${API_BASE_URL}/chat/health`);
+    const response = await apiFetch(`${API_BASE_URL}/chat/health`);
     if (!response.ok) {
         throw new Error('Failed to check chat health');
     }
@@ -384,15 +408,65 @@ export async function checkChatHealth() {
 // ============================================================================
 
 export async function fetchLawyers() {
-    const response = await fetch(`${API_BASE_URL}/lawyers`);
+    const response = await apiFetch(`${API_BASE_URL}/lawyers`);
     if (!response.ok) {
         throw new Error('Failed to fetch lawyers');
     }
     return response.json();
 }
 
+export interface LawyerPage {
+    items: any[];
+    total: number;
+    page: number;
+    pageSize: number;
+}
+
+export async function fetchLawyersPage(params: {
+    page: number;
+    pageSize?: number;
+    q?: string;
+    specialty?: string;
+    location?: string;
+}): Promise<LawyerPage> {
+    const qs = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize ?? 24) });
+    if (params.q) qs.set('q', params.q);
+    if (params.specialty) qs.set('specialty', params.specialty);
+    if (params.location) qs.set('location', params.location);
+    const response = await apiFetch(`${API_BASE_URL}/lawyers?${qs.toString()}`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch lawyers');
+    }
+    return response.json();
+}
+
+export async function fetchLawyerFilters(): Promise<{ specialties: string[]; states: string[] }> {
+    const response = await apiFetch(`${API_BASE_URL}/lawyers/filters`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch filters');
+    }
+    return response.json();
+}
+
+export async function fetchLawyersByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+    const response = await apiFetch(`${API_BASE_URL}/lawyers?ids=${encodeURIComponent(ids.join(','))}`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch lawyers');
+    }
+    return response.json();
+}
+
+export async function fetchAppConfig(): Promise<{ currency: string }> {
+    const response = await apiFetch(`${API_BASE_URL}/config`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch config');
+    }
+    return response.json();
+}
+
 export async function fetchLawyerById(id: string) {
-    const response = await fetch(`${API_BASE_URL}/lawyers/${id}`);
+    const response = await apiFetch(`${API_BASE_URL}/lawyers/${id}`);
     if (!response.ok) {
         throw new Error('Failed to fetch lawyer');
     }
@@ -400,7 +474,7 @@ export async function fetchLawyerById(id: string) {
 }
 
 export async function recommendLawyers(criteria: LawyerCriteria) {
-    const response = await fetch(`${API_BASE_URL}/lawyers/recommend`, {
+    const response = await apiFetch(`${API_BASE_URL}/lawyers/recommend`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -418,7 +492,7 @@ export async function recommendLawyers(criteria: LawyerCriteria) {
 // ============================================================================
 
 export async function login(credentials: LoginCredentials) {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    const response = await apiFetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -433,7 +507,7 @@ export async function login(credentials: LoginCredentials) {
 }
 
 export async function register(userData: RegisterData) {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    const response = await apiFetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -448,7 +522,7 @@ export async function register(userData: RegisterData) {
 }
 
 export async function fetchUserProfile() {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    const response = await apiFetch(`${API_BASE_URL}/auth/me`, {
         headers: {
             ...getAuthHeaders(),
         },
@@ -477,7 +551,7 @@ export interface Booking {
 
 /** One-time Braintree client token authorizing the drop-in UI (plain text). */
 export async function fetchBraintreeClientToken(): Promise<string> {
-    const response = await fetch(`${API_BASE_URL}/bookings/client_token`);
+    const response = await apiFetch(`${API_BASE_URL}/bookings/client_token`);
     if (!response.ok) {
         throw new Error('Failed to get payment token');
     }
@@ -489,14 +563,17 @@ export interface CheckoutPayload {
     paymentMethodNonce: string;
     lawyerId: string;
     userId: string;
+    appointmentDate: string; // YYYY-MM-DD
+    appointmentTime: string; // HH:MM
 }
 
 /** Charge the nonce and record the confirmed booking. */
-export async function checkoutBooking(payload: CheckoutPayload) {
-    const response = await fetch(`${API_BASE_URL}/bookings/checkout`, {
+export async function checkoutBooking(payload: CheckoutPayload, idempotencyKey: string) {
+    const response = await apiFetch(`${API_BASE_URL}/bookings/checkout`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
             ...getAuthHeaders(),
         },
         body: JSON.stringify(payload),
@@ -505,12 +582,12 @@ export async function checkoutBooking(payload: CheckoutPayload) {
     if (!response.ok || data.status === 'error') {
         throw new Error(extractErrorMessage(data, 'Payment failed'));
     }
-    return data as { status: string; transactionId: string };
+    return data as { status: string; transactionId: string; warning?: string };
 }
 
 /** Confirmed appointments for a user, newest first. */
 export async function fetchUserBookings(userId: string): Promise<Booking[]> {
-    const response = await fetch(`${API_BASE_URL}/bookings/user-bookings/${userId}`, {
+    const response = await apiFetch(`${API_BASE_URL}/bookings/user-bookings/${userId}`, {
         headers: { ...getAuthHeaders() },
     });
     if (!response.ok) {
@@ -525,7 +602,7 @@ export async function fetchUserBookings(userId: string): Promise<Booking[]> {
 // ============================================================================
 
 async function requestJson(path: string, options: RequestInit = {}) {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await apiFetch(`${API_BASE_URL}${path}`, {
         ...options,
         headers: { ...(options.headers || {}), ...getAuthHeaders() },
     });

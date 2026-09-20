@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { fetchLawyers, recommendLawyers } from "../api";
+import { useState, useEffect } from "react";
+import { fetchLawyerFilters, fetchLawyersPage, recommendLawyers } from "../api";
 import { LawyerCard } from "./LawyerCard";
 import { IconSearch, IconClose } from "./icons";
 import type { Lawyer } from "../lib/ui";
@@ -11,7 +11,11 @@ interface Props {
 
 export function FindLawyers({ onSelectLawyer, onBook }: Props) {
   const [all, setAll] = useState<Lawyer[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<{ specialties: string[]; states: string[] }>({ specialties: [], states: [] });
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
@@ -25,29 +29,41 @@ export function FindLawyers({ onSelectLawyer, onBook }: Props) {
   const [recBusy, setRecBusy] = useState(false);
 
   useEffect(() => {
-    fetchLawyers()
-      .then((data) => setAll(Array.isArray(data) ? data : []))
-      .catch(() => setError("Couldn't load lawyers. Is the backend running?"))
-      .finally(() => setLoading(false));
+    fetchLawyerFilters().then(setFilters).catch(() => {});
   }, []);
 
-  const specializations = useMemo(() => Array.from(new Set(all.map((l) => l.specialty))).sort(), [all]);
-  const locations = useMemo(() => Array.from(new Set(all.map((l) => l.location))).sort(), [all]);
+  // Filtering happens on the server (the directory has ~1,000 lawyers); the
+  // search box is debounced so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      fetchLawyersPage({ page: 1, q: search.trim() || undefined, specialty: spec || undefined, location: loc || undefined })
+        .then((res) => { setAll(res.items); setTotal(res.total); setPage(1); })
+        .catch(() => setError("Couldn't load lawyers. Is the backend running?"))
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [search, spec, loc]);
 
-  const base = recommended ?? all;
-  const filtered = base.filter((l) => {
-    const s = search.toLowerCase();
-    const matchesSearch = !s || l.name.toLowerCase().includes(s) || l.specialty.toLowerCase().includes(s);
-    const matchesSpec = !spec || l.specialty === spec;
-    const matchesLoc = !loc || l.location === loc;
-    return matchesSearch && matchesSpec && matchesLoc;
-  });
+  const loadMore = () => {
+    setLoadingMore(true);
+    fetchLawyersPage({ page: page + 1, q: search.trim() || undefined, specialty: spec || undefined, location: loc || undefined })
+      .then((res) => { setAll((prev) => [...prev, ...res.items]); setPage(page + 1); })
+      .catch(() => setError("Couldn't load more lawyers."))
+      .finally(() => setLoadingMore(false));
+  };
+
+  const specializations = filters.specialties;
+  const locations = filters.states;
+  const filtered = recommended ?? all;
 
   const runRecommend = async () => {
     setRecBusy(true);
     try {
       const results = await recommendLawyers({ problemDescription: recText, specialty: recSpec || undefined });
       setRecommended(results);
+      setError(null);
       setRecOpen(false);
     } catch {
       setError("Recommendation failed.");
@@ -81,7 +97,7 @@ export function FindLawyers({ onSelectLawyer, onBook }: Props) {
           </div>
           <div className="filter-select">
             <select value={loc} onChange={(e) => setLoc(e.target.value)}>
-              <option value="">Location</option>
+              <option value="">State</option>
               {locations.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           </div>
@@ -120,6 +136,14 @@ export function FindLawyers({ onSelectLawyer, onBook }: Props) {
             {filtered.map((l) => (
               <LawyerCard key={l.id} lawyer={l} onView={onSelectLawyer} onBook={onBook} />
             ))}
+          </div>
+        )}
+
+        {!recommended && !loading && all.length < total && (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+            <button className="btn btn-outline" disabled={loadingMore} onClick={loadMore}>
+              {loadingMore ? "Loading…" : `Show more (${total - all.length} remaining)`}
+            </button>
           </div>
         )}
       </div>
