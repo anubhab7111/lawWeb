@@ -266,6 +266,47 @@ export async function analyzeDocumentText(
 }
 
 /**
+ * Run the statutory-compliance validation pipeline on pasted document text
+ */
+export async function validateDocumentText(
+    documentText: string,
+    sessionId?: string
+): Promise<ChatResponse> {
+    const response = await apiFetch(`${API_BASE_URL}/chat/validate-document`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ document_text: documentText, session_id: sessionId }),
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to validate document'));
+    }
+    return response.json();
+}
+
+/**
+ * Upload a document for statutory-compliance validation
+ */
+export async function uploadDocumentForValidation(file: File, sessionId?: string): Promise<ChatResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (sessionId) formData.append('session_id', sessionId);
+    const response = await apiFetch(`${API_BASE_URL}/chat/validate-document/upload`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders() },
+        body: formData,
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to validate document'));
+    }
+    return response.json();
+}
+
+/**
  * Get crime reporting guidance
  */
 export async function getCrimeReportGuidance(
