@@ -56,10 +56,10 @@ async def run_send_hearing_reminders() -> None:
 
         for _label, delta, notif_type in _REMINDER_WINDOWS:
             target = now + delta
-            # Hearings falling within a 15-minute tick window of the target
-            # offset — matches the job's own 15-minute interval so no hearing
-            # is skipped between two consecutive runs.
-            window_start = target - timedelta(minutes=15)
+            # Hearings within 30 minutes of the target offset: twice the job's
+            # 15-minute interval, so one missed tick doesn't skip a reminder
+            # (per-event dedup below prevents repeats).
+            window_start = target - timedelta(minutes=30)
             window_end = target
 
             upcoming = session.exec(
