@@ -53,7 +53,7 @@ class StatutoryValidationResult:
     present_elements: List[Dict[str, Any]] = field(default_factory=list)
     non_compliance: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    compliance_score: float = 0.0
+    compliance_score: Optional[float] = None  # None: no checklist for this type
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -65,8 +65,13 @@ class StatutoryValidationResult:
             "present_elements": self.present_elements,
             "non_compliance": self.non_compliance,
             "warnings": self.warnings,
-            "compliance_score": round(self.compliance_score, 2),
+            "compliance_score": None if self.compliance_score is None else round(self.compliance_score, 2),
         }
+
+
+def format_score(score: Optional[float]) -> str:
+    """Compliance score for display; None means no checklist exists for the type."""
+    return "not assessed" if score is None else f"{score:.0%}"
 
 
 # ============================================================================
@@ -81,7 +86,7 @@ AFFIDAVIT_CHECKLIST: List[Dict[str, Any]] = [
         "severity": "mandatory",
         "patterns": [
             r"(?:i|deponent)\b.*\b(?:son|daughter|wife|s/o|d/o|w/o)\s*(?:of|:)",
-            r"(?:name|deponent)\s*[:\-]?\s*\w+",
+            r"(?:name\s*of\s*(?:the\s*)?deponent|deponent\s*[:\-])",
             r"(?:aged?\s*(?:about\s*)?\d+|age\s*[:\-]?\s*\d+)",
             r"(?:resident|residing|address)\s*(?:of|at|[:\-])",
         ],
@@ -891,6 +896,180 @@ WILL_CHECKLIST: List[Dict[str, Any]] = [
     },
 ]
 
+
+PARTNERSHIP_DEED_CHECKLIST: List[Dict[str, Any]] = [
+    {
+        "element": "Firm Name and Business",
+        "description": "Name of the firm and the nature of its business",
+        "statute": "Indian Partnership Act, 1932 Section 4",
+        "severity": "mandatory",
+        "patterns": [r"firm\s*name", r"name\s*of\s*the\s*firm", r"(?:carry|carrying)\s*on\s*(?:the\s*)?business", r"nature\s*of\s*(?:the\s*)?business"],
+    },
+    {
+        "element": "Partners' Details",
+        "description": "Names, addresses and capacities of all partners",
+        "statute": "Indian Partnership Act, 1932 Section 4; Section 58",
+        "severity": "mandatory",
+        "patterns": [r"partners?\b.*\b(?:residing|resident|address)", r"first\s*partner", r"second\s*partner"],
+    },
+    {
+        "element": "Capital Contribution",
+        "description": "Capital contributed by each partner",
+        "statute": "Indian Partnership Act, 1932 Section 13",
+        "severity": "mandatory",
+        "patterns": [r"capital\s*contribution", r"contribut(?:e|es|ed|ion)\s*(?:the\s*)?capital", r"capital\s*of\s*(?:rs\.?|inr|₹)"],
+    },
+    {
+        "element": "Profit and Loss Sharing",
+        "description": "Ratio in which profits and losses are shared",
+        "statute": "Indian Partnership Act, 1932 Sections 13(b), 13(e)",
+        "severity": "mandatory",
+        "patterns": [r"profit[\s-]*(?:and|&)?[\s-]*loss", r"profit[\s-]?sharing", r"share\s*(?:the\s*)?profits?"],
+    },
+    {
+        "element": "Duration / Dissolution",
+        "description": "Whether the firm is at will or for a fixed term, and how it dissolves",
+        "statute": "Indian Partnership Act, 1932 Sections 7, 39-44",
+        "severity": "recommended",
+        "patterns": [r"partnership\s*at\s*will", r"dissol(?:ve|ved|ution)", r"duration\s*of\s*(?:the\s*)?partnership"],
+    },
+    {
+        "element": "Execution and Stamp Duty",
+        "description": "Signed by all partners on appropriately stamped paper (registration of the firm is optional but advisable)",
+        "statute": "Indian Stamp Act, 1899 / State Stamp Acts; Indian Partnership Act, 1932 Section 58",
+        "severity": "recommended",
+        "patterns": [r"stamp\s*paper", r"e[\s-]?stamp", r"witness(?:es)?", r"in\s*witness\s*whereof"],
+    },
+]
+
+BAIL_APPLICATION_CHECKLIST: List[Dict[str, Any]] = [
+    {
+        "element": "Court and Case Details",
+        "description": "Court, case/FIR number, police station and sections charged",
+        "statute": "Section 437/439 CrPC; Sections 480/483 BNSS",
+        "severity": "mandatory",
+        "patterns": [r"fir\s*(?:no|number)", r"crime\s*no", r"police\s*station", r"case\s*no"],
+    },
+    {
+        "element": "Statutory Provision Invoked",
+        "description": "The provision under which bail is sought (regular, anticipatory or default bail)",
+        "statute": "Sections 437, 438, 439 CrPC / Sections 480, 482, 483 BNSS",
+        "severity": "mandatory",
+        "patterns": [r"section\s*(?:437|438|439|167)\b", r"section\s*(?:480|482|483|187)\b", r"anticipatory\s*bail", r"regular\s*bail", r"default\s*bail"],
+    },
+    {
+        "element": "Grounds for Bail",
+        "description": "Specific grounds (false implication, no flight risk, cooperation with investigation, parity, custody period)",
+        "statute": "Sections 437(1), 439 CrPC; Gurbaksh Singh Sibbia v. State of Punjab (1980)",
+        "severity": "mandatory",
+        "patterns": [r"grounds?\s*(?:for|of)\s*bail", r"falsely\s*implicated", r"no\s*(?:risk|chance)\s*of\s*(?:absconding|fleeing|tampering)", r"cooperate\s*with\s*the\s*investigation"],
+    },
+    {
+        "element": "Custody Status",
+        "description": "Date of arrest / period in custody, or apprehension of arrest for anticipatory bail",
+        "statute": "Section 437 CrPC; Section 482 BNSS",
+        "severity": "mandatory",
+        "patterns": [r"(?:arrested|in\s*custody)\s*(?:on|since)", r"apprehen(?:d|sion)\s*of\s*arrest", r"judicial\s*custody", r"police\s*custody"],
+    },
+    {
+        "element": "Undertaking / Conditions",
+        "description": "Willingness to furnish surety and abide by conditions",
+        "statute": "Section 437(3) CrPC; Section 480 BNSS",
+        "severity": "recommended",
+        "patterns": [r"surety", r"bail\s*bond", r"undertak(?:e|ing)", r"abide\s*by\s*(?:any|the)\s*conditions?"],
+    },
+    {
+        "element": "Prior Applications",
+        "description": "Whether any earlier bail application was filed or rejected",
+        "statute": "Supreme Court practice directions",
+        "severity": "recommended",
+        "patterns": [r"(?:no\s*)?(?:earlier|previous|prior)\s*(?:bail\s*)?application", r"first\s*bail\s*application"],
+    },
+]
+
+COMPLAINT_CHECKLIST: List[Dict[str, Any]] = [
+    {
+        "element": "Magistrate and Parties",
+        "description": "Court addressed and full names/addresses of complainant and accused",
+        "statute": "Section 200 CrPC; Section 223 BNSS",
+        "severity": "mandatory",
+        "patterns": [r"(?:before|to)\s*the\s*(?:hon\'?ble\s*)?(?:chief\s*)?(?:judicial\s*)?magistrate", r"complainant", r"accused"],
+    },
+    {
+        "element": "Facts and Offence Alleged",
+        "description": "Chronological facts with the offence(s) and sections alleged",
+        "statute": "Section 200 CrPC; Section 223 BNSS",
+        "severity": "mandatory",
+        "patterns": [r"facts?\s*of\s*the\s*case", r"offen[cs]es?\s*(?:under|punishable)", r"section\s*\d+\s*(?:ipc|bns|of)"],
+    },
+    {
+        "element": "Jurisdiction",
+        "description": "Territorial jurisdiction of the court",
+        "statute": "Sections 177-184 CrPC; Sections 197-203 BNSS",
+        "severity": "mandatory",
+        "patterns": [r"jurisdiction", r"cause\s*of\s*action\s*(?:arose|arisen)"],
+    },
+    {
+        "element": "Prayer",
+        "description": "Relief sought (cognizance, summoning the accused, or investigation under Section 156(3))",
+        "statute": "Sections 156(3), 190, 200 CrPC; Sections 175(3), 210, 223 BNSS",
+        "severity": "mandatory",
+        "patterns": [r"prayer", r"it\s*is\s*(?:therefore\s*)?prayed", r"take\s*cognizance", r"summon\s*the\s*accused"],
+    },
+    {
+        "element": "Verification / Affidavit",
+        "description": "Verification of the complaint and supporting affidavit where seeking Section 156(3) directions",
+        "statute": "Priyanka Srivastava v. State of U.P. (2015) 6 SCC 287",
+        "severity": "recommended",
+        "patterns": [r"verif(?:ied|ication)", r"affidavit"],
+    },
+]
+
+CHARGESHEET_CHECKLIST: List[Dict[str, Any]] = [
+    {
+        "element": "Case Particulars",
+        "description": "Police station, FIR number and date, sections of law",
+        "statute": "Section 173(2) CrPC; Section 193(3) BNSS",
+        "severity": "mandatory",
+        "patterns": [r"fir\s*(?:no|number)", r"police\s*station", r"sections?\s*of\s*law"],
+    },
+    {
+        "element": "Accused Details",
+        "description": "Names of the accused, their status (arrested/bailed/absconding) and offences charged",
+        "statute": "Section 173(2)(a) CrPC",
+        "severity": "mandatory",
+        "patterns": [r"accused", r"name\s*of\s*(?:the\s*)?accused"],
+    },
+    {
+        "element": "Witness List",
+        "description": "Names of the persons acquainted with the facts (prosecution witnesses)",
+        "statute": "Section 173(2)(b) CrPC; Section 193(3)(b) BNSS",
+        "severity": "mandatory",
+        "patterns": [r"list\s*of\s*witnesses", r"witnesses", r"cited\s*witnesses"],
+    },
+    {
+        "element": "Evidence and Documents",
+        "description": "Documents and material objects relied upon",
+        "statute": "Section 173(5) CrPC; Section 193(6) BNSS",
+        "severity": "mandatory",
+        "patterns": [r"(?:list\s*of\s*)?documents", r"material\s*(?:objects|exhibits)", r"seized", r"forensic|fsl"],
+    },
+    {
+        "element": "Investigating Officer Signature",
+        "description": "Report signed by the investigating officer / officer in charge",
+        "statute": "Section 173(2) CrPC",
+        "severity": "recommended",
+        "patterns": [r"investigating\s*officer", r"officer\s*in\s*charge", r"forwarded\s*(?:by|to)"],
+    },
+    {
+        "element": "Sanction (where required)",
+        "description": "Sanction for prosecution where the law requires it (e.g. public servants)",
+        "statute": "Section 197 CrPC; Section 218 BNSS",
+        "severity": "best_practice",
+        "patterns": [r"sanction\s*for\s*prosecution", r"sanction\s*order"],
+    },
+]
+
 # ============================================================================
 # Checklist Registry
 # ============================================================================
@@ -905,6 +1084,10 @@ CHECKLIST_REGISTRY: Dict[str, List[Dict[str, Any]]] = {
     "Notice (CrPC/CPC)": NOTICE_CHECKLIST,
     "Court Order / Judgment": COURT_ORDER_CHECKLIST,
     "Will / Testament": WILL_CHECKLIST,
+    "Partnership Deed": PARTNERSHIP_DEED_CHECKLIST,
+    "Bail Application": BAIL_APPLICATION_CHECKLIST,
+    "Complaint (CrPC)": COMPLAINT_CHECKLIST,
+    "Chargesheet": CHARGESHEET_CHECKLIST,
 }
 
 
@@ -943,7 +1126,7 @@ class StatutoryValidator:
                     f"No statutory checklist available for document type: {document_type}. "
                     f"Supported types: {', '.join(self.checklists.keys())}"
                 ],
-                compliance_score=0.0,
+                compliance_score=None,
             )
 
         text = document_text.lower()
@@ -997,7 +1180,7 @@ class StatutoryValidator:
 
         total_checks = len(checklist)
         passed = len(present_elements)
-        failed = len(missing_elements)
+        failed = total_checks - passed
 
         # Compliance score: mandatory items weighted heavily
         if mandatory_total > 0:
