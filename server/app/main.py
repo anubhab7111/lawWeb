@@ -135,7 +135,21 @@ async def root():
 @app.get("/api/config")
 async def public_config():
     """Non-secret settings the client needs to render prices honestly."""
-    return {"currency": get_settings().currency}
+    import json
+
+    from app.services.fcm_client import push_configured
+
+    settings = get_settings()
+    firebase = None
+    if push_configured() and settings.firebase_web_config_json and settings.firebase_vapid_key:
+        try:
+            firebase = {
+                "config": json.loads(settings.firebase_web_config_json),
+                "vapidKey": settings.firebase_vapid_key,
+            }
+        except ValueError:
+            firebase = None
+    return {"currency": settings.currency, "firebase": firebase}
 
 
 @app.get("/health")

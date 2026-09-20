@@ -16,6 +16,7 @@ import { MyCases } from "./components/MyCases";
 import { CauseListSearch } from "./components/CauseListSearch";
 import { Vault } from "./components/Vault";
 import { LegalCalendar } from "./components/LegalCalendar";
+import { NotificationSettings } from "./components/NotificationSettings";
 import { IconCheck } from "./components/icons";
 import { fetchAppConfig, fetchUserProfile, setUnauthorizedHandler } from "./api";
 import { setCurrency, type Lawyer, type UserProfile } from "./lib/ui";
@@ -23,12 +24,12 @@ import { setCurrency, type Lawyer, type UserProfile } from "./lib/ui";
 export type View =
   | "home" | "chat" | "lawyers" | "profile" | "payment"
   | "bookings" | "documents" | "signin" | "signup"
-  | "bare-acts" | "similar-cases" | "my-cases" | "cause-list" | "vault" | "calendar";
+  | "bare-acts" | "similar-cases" | "my-cases" | "cause-list" | "vault" | "calendar" | "notifications";
 
 const ALL_VIEWS: View[] = [
   "home", "chat", "lawyers", "profile", "payment",
   "bookings", "documents", "signin", "signup",
-  "bare-acts", "similar-cases", "my-cases", "cause-list", "vault", "calendar",
+  "bare-acts", "similar-cases", "my-cases", "cause-list", "vault", "calendar", "notifications",
 ];
 
 // Views that render around an in-memory object (the selected lawyer) rather
@@ -45,7 +46,7 @@ function hashToView(hash: string): View | null {
 // browsable by guests; only booking requires auth. It was previously listed
 // here but unreachable via navigate() anyway (handleSelectLawyer sets the
 // view directly), so the entry was inert rather than intentional.
-const AUTH_REQUIRED: View[] = ["bookings", "payment", "my-cases", "vault", "calendar"];
+const AUTH_REQUIRED: View[] = ["bookings", "payment", "my-cases", "vault", "calendar", "notifications"];
 
 export default function App() {
   const [view, setView] = useState<View>(() => hashToView(window.location.hash) ?? "home");
@@ -226,6 +227,8 @@ export default function App() {
       {effectiveView === "vault" && <Vault user={user} />}
 
       {effectiveView === "calendar" && <LegalCalendar user={user} />}
+
+      {effectiveView === "notifications" && <NotificationSettings />}
 
       {effectiveView === "signin" && (
         <SignIn onSuccess={handleLoginSuccess} onNavigateToSignUp={() => setView("signup")} />

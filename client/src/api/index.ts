@@ -499,7 +499,13 @@ export async function fetchLawyersByIds(ids: string[]) {
     return response.json();
 }
 
-export async function fetchAppConfig(): Promise<{ currency: string }> {
+export interface AppConfig {
+    currency: string;
+    firebase: { config: Record<string, unknown>; vapidKey: string } | null;
+    calendarProviders?: string[];
+}
+
+export async function fetchAppConfig(): Promise<AppConfig> {
     const response = await apiFetch(`${API_BASE_URL}/config`);
     if (!response.ok) {
         throw new Error('Failed to fetch config');
@@ -874,6 +880,24 @@ export interface AppNotification {
 
 export async function fetchNotifications(): Promise<AppNotification[]> {
     return requestJson('/notifications');
+}
+
+export interface NotificationPrefs {
+    emailEnabled: boolean;
+    pushEnabled: boolean;
+    hasFcmToken: boolean;
+}
+
+export async function fetchNotificationPrefs(): Promise<NotificationPrefs> {
+    return requestJson('/notifications/preferences');
+}
+
+export async function updateNotificationPrefs(payload: { emailEnabled: boolean; pushEnabled: boolean; fcmToken?: string }): Promise<NotificationPrefs> {
+    return requestJson('/notifications/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
 }
 
 export async function markNotificationRead(notificationId: string) {
