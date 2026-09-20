@@ -44,7 +44,7 @@ async def run_poll_cause_lists_and_sync_cases() -> None:
                         user_id=case.user_id,
                         type_="new_order",
                         title=f"New order in {case.title or case.cnr}",
-                        body=event.title,
+                        body=event.title or "A new order was added to your case.",
                         related_case_id=case.id,
                         channels=["in_app", "email"],
                     )

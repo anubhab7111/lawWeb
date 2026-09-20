@@ -132,6 +132,12 @@ async def root():
     return {"status": "healthy", "version": "1.0.0"}
 
 
+@app.get("/api/config")
+async def public_config():
+    """Non-secret settings the client needs to render prices honestly."""
+    return {"currency": get_settings().currency}
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""

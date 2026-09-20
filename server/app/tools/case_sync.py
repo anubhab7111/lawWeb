@@ -15,6 +15,13 @@ from app.tools.case_data_provider import CaseDataProviderError, get_case_data_pr
 from app.tools.case_summarizer import summarize_case_event
 
 
+def _event_key(event_type, title, event_date, source_id):
+    if source_id:
+        return ("id", source_id)
+    minute = event_date.replace(second=0, microsecond=0) if event_date else None
+    return (event_type, title, minute)
+
+
 async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]:
     """Fetches history from the provider, inserts any new events, generates
     an AI summary for new orders, and returns the newly-inserted events (so
@@ -32,13 +39,18 @@ async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]
     existing = session.exec(
         select(CaseEvent).where(CaseEvent.saved_case_id == case.id)
     ).all()
-    existing_keys = {(e.event_type, e.title, e.event_date) for e in existing}
+    existing_keys = {_event_key(e.event_type, e.title, e.event_date, (e.raw_payload or {}).get("source_id")) for e in existing}
 
+    legacy_keys = {
+        ("tt", e.event_type, e.title) for e in existing if not (e.raw_payload or {}).get("source_id")
+    }
     new_events: List[CaseEvent] = []
     for record in history:
-        key = (record.event_type, record.title, record.event_date)
-        if key in existing_keys:
+        key = _event_key(record.event_type, record.title, record.event_date, record.source_id)
+        legacy_key = ("tt", record.event_type, record.title)
+        if key in existing_keys or legacy_key in legacy_keys:
             continue
+        existing_keys.add(key)
         event = CaseEvent(
             saved_case_id=case.id,
             event_type=record.event_type,
@@ -46,7 +58,7 @@ async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]
             title=record.title,
             detail=record.detail,
             source_url=record.source_url,
-            raw_payload=record.raw,
+            raw_payload={**record.raw, **({"source_id": record.source_id} if record.source_id else {})},
         )
         session.add(event)
         session.flush()

@@ -12,6 +12,7 @@ from typing import List, Optional
 
 from sqlmodel import Session, select
 
+from app.config import get_settings
 from app.db.models import Notification, NotificationPreference
 from app.services.email_client import send_email
 from app.services.fcm_client import send_push
@@ -26,7 +27,6 @@ def _channel_enabled(prefs: Optional[NotificationPreference], channel: str, type
     return {
         "email": prefs.email_enabled,
         "push": prefs.push_enabled,
-        "sms": prefs.sms_enabled,
         "in_app": True,
     }.get(channel, False)
 
@@ -51,6 +51,7 @@ def send_notification(
     user = session.get(User, user_id)
     if user is None:
         return []
+    settings = get_settings()
 
     prefs = session.exec(
         select(NotificationPreference).where(NotificationPreference.user_id == user_id)
@@ -61,6 +62,11 @@ def send_notification(
 
     for channel in channels:
         if not _channel_enabled(prefs, channel, type_):
+            continue
+        if channel == "email" and not settings.smtp_host:
+            print(f"[Notify] SMTP not configured — skipping email '{title}' for {user.email}")
+            continue
+        if channel == "push" and not (prefs and prefs.fcm_token and settings.fcm_service_account_json):
             continue
 
         notification = Notification(

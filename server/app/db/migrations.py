@@ -24,23 +24,20 @@ def ensure_lawyer_embedding_column(engine: Engine) -> None:
         )
 
 
-def ensure_users_role_column(engine: Engine) -> None:
-    """"client" | "lawyer" | "admin" — lets lawyer-scoped features (Vault
-    sharing, notifications) distinguish account types without a new table."""
+def ensure_lawyer_account_columns_dropped(engine: Engine) -> None:
+    """Lawyer logins were never built; drop the unused role / claim columns."""
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'client';"
-        )
+        conn.exec_driver_sql("ALTER TABLE lawyers DROP COLUMN IF EXISTS user_id;")
+        conn.exec_driver_sql("ALTER TABLE users DROP COLUMN IF EXISTS role;")
 
 
-def ensure_lawyers_user_id_column(engine: Engine) -> None:
-    """Nullable FK so a directory listing can optionally be claimed by a
-    real login. Depends on ensure_users_role_column having created `users`
-    already (it always exists by this point, added defensively anyway)."""
+def ensure_us_seed_lawyers_removed(engine: Engine) -> None:
+    """The five original US demo lawyers (ids '1'..'5') are replaced by the
+    Indian directory; keep any that already have bookings."""
     with engine.begin() as conn:
         conn.exec_driver_sql(
-            "ALTER TABLE lawyers ADD COLUMN IF NOT EXISTS user_id TEXT "
-            "REFERENCES users(id) ON DELETE SET NULL;"
+            "DELETE FROM lawyers WHERE id IN ('1','2','3','4','5') "
+            "AND id NOT IN (SELECT lawyer_id FROM bookings);"
         )
 
 
@@ -135,9 +132,7 @@ def ensure_notification_tables(engine: Engine) -> None:
                 user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
                 email_enabled BOOLEAN NOT NULL DEFAULT true,
                 push_enabled BOOLEAN NOT NULL DEFAULT false,
-                sms_enabled BOOLEAN NOT NULL DEFAULT false,
                 fcm_token TEXT,
-                phone_number TEXT,
                 type_overrides JSONB NOT NULL DEFAULT '{}'
             );
             """
@@ -164,6 +159,33 @@ def ensure_notification_tables(engine: Engine) -> None:
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS notifications_user_id_created_at_idx "
             "ON notifications(user_id, created_at);"
+        )
+
+
+def ensure_sms_columns_dropped(engine: Engine) -> None:
+    """SMS notifications were removed; drop their preference columns."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE notification_preferences DROP COLUMN IF EXISTS sms_enabled;"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE notification_preferences DROP COLUMN IF EXISTS phone_number;"
+        )
+
+
+def ensure_duplicate_case_events_removed(engine: Engine) -> None:
+    """The mock provider used to re-insert its events on every sync; keep the
+    oldest row of each (case, type, title) group. Dependent summaries and
+    calendar rows follow via ON DELETE CASCADE / SET NULL."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            DELETE FROM case_events a USING case_events b
+            WHERE a.saved_case_id = b.saved_case_id
+              AND a.event_type = b.event_type
+              AND a.title IS NOT DISTINCT FROM b.title
+              AND (a.created_at, a.id) > (b.created_at, b.id);
+            """
         )
 
 
@@ -344,12 +366,14 @@ def run_migrations(engine: Engine) -> None:
     """Called unconditionally from init_db() after schema.sql (or on every
     run against an existing DB). Order matters: parent tables/columns first."""
     ensure_lawyer_embedding_column(engine)
-    ensure_users_role_column(engine)
-    ensure_lawyers_user_id_column(engine)
+    ensure_lawyer_account_columns_dropped(engine)
+    ensure_us_seed_lawyers_removed(engine)
     ensure_similar_case_searches_table(engine)
     ensure_case_tables(engine)
     ensure_notification_tables(engine)
     ensure_notifications_related_case_event_column(engine)
+    ensure_sms_columns_dropped(engine)
+    ensure_duplicate_case_events_removed(engine)
     ensure_cause_list_cache_table(engine)
     ensure_vault_tables(engine)
     ensure_calendar_events_table(engine)

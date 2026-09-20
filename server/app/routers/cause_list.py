@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from app.db.engine import get_engine
 from app.db.models import CauseListCache
-from app.tools.case_data_provider import get_case_data_provider
+from app.tools.case_data_provider import CaseDataProviderError, get_case_data_provider
 
 router = APIRouter(prefix="/api/cause-list", tags=["cause-list"])
 
@@ -53,7 +53,10 @@ async def search(
 
         if not is_fresh:
             provider = get_case_data_provider()
-            entries = await provider.fetch_cause_list(court, parsed_date)
+            try:
+                entries = await provider.fetch_cause_list(court, parsed_date)
+            except CaseDataProviderError as e:
+                return JSONResponse(status_code=502, content={"message": str(e)})
             entries_json = [
                 {
                     "court": e.court,

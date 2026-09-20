@@ -13,6 +13,7 @@ setting CASE_DATA_PROVIDER + CASE_DATA_API_KEY + CASE_DATA_API_BASE_URL.
 
 from __future__ import annotations
 
+import hashlib
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -41,6 +42,8 @@ class CaseEventRecord:
     detail: str = ""
     source_url: str = ""
     raw: dict = field(default_factory=dict)
+    # Stable provider-side id; without it, sync falls back to (type, title, minute).
+    source_id: str = ""
 
 
 @dataclass
@@ -109,7 +112,8 @@ class MockCaseDataProvider(CaseDataProvider):
     async def fetch_case_by_number(
         self, court: str, case_number: str, year: int
     ) -> CaseRecord:
-        fake_cnr = f"MOCK{abs(hash((court, case_number, year))) % 10**12:012d}"
+        digest = hashlib.sha1(f"{court}|{case_number}|{year}".encode()).hexdigest()
+        fake_cnr = f"MOCK{int(digest, 16) % 10**12:012d}"
         return await self.fetch_case_by_cnr(fake_cnr)
 
     async def fetch_case_history(self, cnr: str) -> List[CaseEventRecord]:
@@ -120,17 +124,20 @@ class MockCaseDataProvider(CaseDataProvider):
                 event_type="filing",
                 event_date=now - timedelta(days=180),
                 title="Case filed",
+                source_id=f"{cnr}:filing",
             ),
             CaseEventRecord(
                 event_type="order",
                 event_date=now - timedelta(days=rng.randint(5, 30)),
                 title="Interim order passed",
                 detail="Notice issued to respondent; next hearing scheduled.",
+                source_id=f"{cnr}:order",
             ),
             CaseEventRecord(
                 event_type="hearing",
                 event_date=now + timedelta(days=rng.randint(1, 20)),
                 title="Next hearing",
+                source_id=f"{cnr}:hearing",
             ),
         ]
         return events
@@ -172,6 +179,5 @@ def get_case_data_provider() -> CaseDataProvider:
     #           api_key=settings.case_data_api_key,
     #           base_url=settings.case_data_api_base_url,
     #       )
-    raise CaseDataProviderError(
-        f"Unknown CASE_DATA_PROVIDER '{settings.case_data_provider}' — falling back to mock"
-    )
+    print(f"[CaseData] Unknown CASE_DATA_PROVIDER '{settings.case_data_provider}' — falling back to mock")
+    return MockCaseDataProvider()

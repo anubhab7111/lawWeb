@@ -5,7 +5,7 @@ and the chatbot's find_lawyer intent, so there is one recommendation
 implementation instead of two divergent ones.
 
 Reuses the embedding model already loaded for the RAG pipeline
-(BAAI/bge-large-en-v1.5 via base_legal_rag._get_shared_embeddings) rather than
+(the shared BGE-M3 model via base_legal_rag._get_shared_embeddings) rather than
 loading a second copy.
 
 There is no lawyer create/update endpoint in this repo today, so embeddings
@@ -20,28 +20,10 @@ from typing import List, Optional, Tuple
 
 from sqlmodel import Session, select
 
+from app.config import get_settings
 from app.db.models import Lawyer
 from app.tools.base_legal_rag import _get_shared_embeddings
 
-# Static specialization list surfaced by GET /api/chat/specializations.
-# Relocated from the retired LawyerFinder.SPECIALIZATIONS.
-LEGAL_SPECIALIZATIONS: List[str] = [
-    "Criminal Defense",
-    "Family Law",
-    "Personal Injury",
-    "Immigration",
-    "Corporate Law",
-    "Real Estate",
-    "Intellectual Property",
-    "Employment Law",
-    "Tax Law",
-    "Estate Planning",
-    "Civil Rights",
-    "Environmental Law",
-    "Bankruptcy",
-    "Medical Malpractice",
-    "Contract Law",
-]
 
 # Weighted-score components. Semantic similarity dominates when a
 # problem_description is given; when it isn't, these are renormalized to
@@ -58,6 +40,13 @@ SUCCESS_RATE_WEIGHT = 0.2
 # as a pure scaling change — no query code above this needs to change.
 CANDIDATE_POOL_SIZE = 20
 RESULT_LIMIT = 5
+
+
+def list_specializations(session: Session) -> List[str]:
+    """Distinct practice areas actually present in the lawyer directory."""
+    return list(
+        session.exec(select(Lawyer.specialty).distinct().order_by(Lawyer.specialty)).all()
+    )
 
 
 def _build_embedding_text(specialty: str, bio: str) -> str:
@@ -169,6 +158,14 @@ async def recommend_lawyers(
     return [lawyer for _, lawyer in scored[:limit]]
 
 
+_SYMBOLS = {"USD": "$", "INR": "₹", "EUR": "€", "GBP": "£"}
+
+
+def _currency_symbol() -> str:
+    code = get_settings().currency.upper()
+    return _SYMBOLS.get(code, code + " ")
+
+
 def format_lawyer_results(lawyers: List[Lawyer]) -> str:
     """Format lawyer results as a markdown block for the chatbot's reply."""
     if not lawyers:
@@ -185,7 +182,7 @@ def format_lawyer_results(lawyers: List[Lawyer]) -> str:
 - **Experience:** {lawyer.experience} years
 - **Rating:** {'⭐' * int(round(lawyer.rating))} ({lawyer.rating}/5.0)
 - **Success Rate:** {lawyer.success_rate}%
-- **Hourly Rate:** ${lawyer.hourly_rate}/hr
+- **Hourly Rate:** {_currency_symbol()}{lawyer.hourly_rate:,}/hr
 - **Availability:** {lawyer.availability}
 - **Bio:** {lawyer.bio}
 """

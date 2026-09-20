@@ -31,11 +31,6 @@ class User(SQLModel, table=True):
     name: str
     email: str = Field(unique=True)
     password: str
-    # "client" | "lawyer" | "admin". Not in to_dict() for now — the client
-    # doesn't read it yet. get_current_user() (app/deps/auth.py) already
-    # loads the full User row, so lawyer-scoped features (Vault sharing,
-    # notifications) can check `.role` there without a second query.
-    role: str = Field(default="client")
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -58,11 +53,6 @@ class Lawyer(SQLModel, table=True):
     education: str
     languages: List[str] = Field(sa_column=Column(ARRAY(Text)))
     availability: str
-    # Nullable link to a real login, so a directory listing can optionally be
-    # claimed by a lawyer who signs up (needed for Vault sharing / "your
-    # lawyer uploaded a document" notifications). Directory entries with no
-    # claimed account keep user_id NULL.
-    user_id: Optional[str] = Field(default=None, foreign_key="users.id")
     # Embedding of "{specialty}. {bio}" via BAAI/bge-large-en-v1.5 (1024-dim),
     # used for semantic matching in recommend_lawyers(). Internal only — never
     # serialized in to_dict().
@@ -276,9 +266,7 @@ class NotificationPreference(SQLModel, table=True):
     user_id: str = Field(foreign_key="users.id", unique=True)
     email_enabled: bool = Field(default=True)
     push_enabled: bool = Field(default=False)
-    sms_enabled: bool = Field(default=False)
     fcm_token: Optional[str] = None
-    phone_number: Optional[str] = None
     # Per-notification-type overrides, e.g. {"new_order": {"email": false}} —
     # avoids a second table while still allowing "email me for hearings but
     # not for document uploads" once producers multiply in Phase 4.
@@ -290,9 +278,7 @@ class NotificationPreference(SQLModel, table=True):
             "userId": self.user_id,
             "emailEnabled": self.email_enabled,
             "pushEnabled": self.push_enabled,
-            "smsEnabled": self.sms_enabled,
             "hasFcmToken": bool(self.fcm_token),
-            "phoneNumber": self.phone_number,
             "typeOverrides": self.type_overrides,
         }
 
@@ -310,7 +296,7 @@ class Notification(SQLModel, table=True):
     # case with multiple hearings gets a reminder for each — see
     # app/jobs/_case_sync.py.
     related_case_event_id: Optional[str] = Field(default=None, foreign_key="case_events.id")
-    channel: str  # "email" | "push" | "sms" | "in_app"
+    channel: str  # "email" | "push" | "in_app"
     status: str = Field(default="pending")  # "pending" | "sent" | "failed"
     scheduled_for: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True))

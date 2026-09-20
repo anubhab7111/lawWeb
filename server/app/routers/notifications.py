@@ -22,9 +22,7 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 class PreferencesRequest(BaseModel):
     emailEnabled: bool = True
     pushEnabled: bool = False
-    smsEnabled: bool = False
     fcmToken: str | None = None
-    phoneNumber: str | None = None
 
 
 @router.get("")
@@ -35,7 +33,7 @@ def list_notifications(
 ):
     notifications = session.exec(
         select(Notification)
-        .where(Notification.user_id == current_user.id)
+        .where(Notification.user_id == current_user.id, Notification.channel == "in_app")
         .order_by(Notification.created_at.desc())
         .limit(max(1, min(limit, 200)))
     ).all()
@@ -87,11 +85,8 @@ def update_preferences(
 
     prefs.email_enabled = body.emailEnabled
     prefs.push_enabled = body.pushEnabled
-    prefs.sms_enabled = body.smsEnabled
     if body.fcmToken is not None:
-        prefs.fcm_token = body.fcmToken
-    if body.phoneNumber is not None:
-        prefs.phone_number = body.phoneNumber
+        prefs.fcm_token = body.fcmToken or None
 
     session.add(prefs)
     session.commit()
