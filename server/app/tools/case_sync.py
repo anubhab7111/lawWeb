@@ -8,6 +8,7 @@ doesn't need to import FastAPI router internals.
 from datetime import datetime, timezone
 from typing import List
 
+from fastapi.concurrency import run_in_threadpool
 from sqlmodel import Session, select
 
 from app.db.models import CalendarEvent, CaseAiSummary, CaseEvent, SavedCase
@@ -36,19 +37,37 @@ async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]
         print(f"[CaseSync] sync failed for case {case.id}: {e}")
         return []
 
+    # The session is plain blocking SQLAlchemy, so every DB step runs in the
+    # thread pool (one step at a time); only the LLM summary is awaited here.
+    new_events, order_jobs = await run_in_threadpool(_insert_new_events, session, case, history)
+
+    for event_id, record in order_jobs:
+        summary_text = await summarize_case_event(
+            case.title or case.cnr, record.title, record.detail
+        )
+        if summary_text:
+            await run_in_threadpool(_add_summary, session, case.id, event_id, summary_text)
+
+    await run_in_threadpool(_finish_sync, session, case, new_events)
+    return new_events
+
+
+def _insert_new_events(session: Session, case: SavedCase, history):
     existing = session.exec(
         select(CaseEvent).where(CaseEvent.saved_case_id == case.id)
     ).all()
-    existing_keys = {_event_key(e.event_type, e.title, e.event_date, (e.raw_payload or {}).get("source_id")) for e in existing}
-
+    existing_keys = {
+        _event_key(e.event_type, e.title, e.event_date, (e.raw_payload or {}).get("source_id"))
+        for e in existing
+    }
     legacy_keys = {
         ("tt", e.event_type, e.title) for e in existing if not (e.raw_payload or {}).get("source_id")
     }
     new_events: List[CaseEvent] = []
+    order_jobs = []
     for record in history:
         key = _event_key(record.event_type, record.title, record.event_date, record.source_id)
-        legacy_key = ("tt", record.event_type, record.title)
-        if key in existing_keys or legacy_key in legacy_keys:
+        if key in existing_keys or ("tt", record.event_type, record.title) in legacy_keys:
             continue
         existing_keys.add(key)
         event = CaseEvent(
@@ -64,11 +83,8 @@ async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]
         session.flush()
         new_events.append(event)
 
-        # Personal Legal Calendar (Phase 4.1): a new hearing case_event
-        # auto-populates the calendar, same as a confirmed booking does in
-        # app/routers/bookings.py. Keyed by related_case_event_id (unique)
-        # so a future update-in-place on the source event could re-sync
-        # this row instead of creating a duplicate.
+        # A new hearing auto-populates the Personal Legal Calendar, keyed by
+        # related_case_event_id (unique) so re-syncs can't duplicate it.
         if record.event_type == "hearing" and event.event_date:
             session.add(
                 CalendarEvent(
@@ -80,21 +96,21 @@ async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]
                     related_case_event_id=event.id,
                 )
             )
-
         if record.event_type == "order":
-            summary_text = await summarize_case_event(
-                case.title or case.cnr, record.title, record.detail
-            )
-            if summary_text:
-                session.add(
-                    CaseAiSummary(
-                        saved_case_id=case.id,
-                        summary_text=summary_text,
-                        source_event_id=event.id,
-                    )
-                )
+            order_jobs.append((event.id, record))
+    return new_events, order_jobs
 
+
+def _add_summary(session: Session, case_id: str, event_id: str, text: str) -> None:
+    session.add(CaseAiSummary(saved_case_id=case_id, summary_text=text, source_event_id=event_id))
+    session.flush()
+
+
+def _finish_sync(session: Session, case: SavedCase, events: List[CaseEvent]) -> None:
     case.last_synced_at = datetime.now(timezone.utc)
     session.add(case)
     session.commit()
-    return new_events
+    # Load what callers read next (event fields) while still off the event loop.
+    session.refresh(case)
+    for event in events:
+        session.refresh(event)
