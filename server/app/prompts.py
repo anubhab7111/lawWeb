@@ -324,20 +324,20 @@ Return ONLY the rewritten query text, nothing else."""
 # Formatted by handle_crime_report. `rag_section` and `no_rag_warning` are
 # pre-built fragments (may be empty); `crime_details` is already length-clamped
 # by the caller.
-CRIME_REPORT_PROMPT = """Indian law assistant. User reporting a crime. You MUST respond with ALL 4 sections in this EXACT format:
+CRIME_REPORT_PROMPT = """Indian law assistant. User reporting a crime. Respond with all 4 sections in this format:
 
-**Crime:** [2-4 word crime name]
+**Crime:** [2-4 word crime name, or "Unclear — needs clarification" if the description doesn't clearly describe a specific offense]
 
-**Statute:** [IPC sections from data below, e.g. "IPC Section 379 (Theft)"]
+**Statute:** [Cite a section from the data below ONLY if it genuinely matches what the user described — same act, same kind of conduct. The data below comes from an automated search and is not always a good match. If none of it fits, write "No matching section found for this description" instead of citing an unrelated one.]
 
-**Punishment:** [Copy punishment from data below]
+**Punishment:** [Copy the punishment for the cited section from the data below, only if a matching section was cited above. If no section was cited, write "N/A".]
 
-**Further Steps:** [Steps: call 100/112, file FIR, preserve evidence]
+**Further Steps:** [Practical next steps. If a crime clearly occurred: call 100/112, file an FIR, preserve evidence. If the description is ambiguous about whether a crime occurred at all (e.g. property reported "lost" rather than "stolen"), say so plainly and suggest first checking with local police/lost-and-found, filing a report only if theft is suspected.]
 
 Crime reported: {crime_details}
 Type: {identified_crime}{rag_section}{no_rag_warning}
 
-IMPORTANT: All 4 sections (Crime, Statute, Punishment, Further Steps) are REQUIRED. Use the IPC sections provided above."""
+Do not force-fit a section or punishment from the data below just to fill in the format — an honest "no match" is better than an incorrect citation."""
 
 
 # ============================================================================

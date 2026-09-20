@@ -127,6 +127,12 @@ class Settings(BaseSettings):
     # after topping up rather than editing this default.
     openrouter_daily_limit: int = 50
 
+    # HuggingFace access token (IL-TUR benchmark dataset is gated — see
+    # app/metrics/iltur_loader.py). Accept the license at
+    # https://huggingface.co/datasets/Exploration-Lab/IL-TUR and generate a
+    # token at https://huggingface.co/settings/tokens.
+    huggingface_token: str = ""
+
     # Performance settings
     max_document_size_mb: int = 10
     cache_ttl_seconds: int = 3600
