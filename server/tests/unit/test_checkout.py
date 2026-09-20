@@ -1,3 +1,4 @@
+import random
 import uuid
 from datetime import date, timedelta
 from types import SimpleNamespace
@@ -76,7 +77,7 @@ def test_idempotent_and_conflict(client, user_and_lawyer, monkeypatch):
     uid, lid, rate = user_and_lawyer
     gw = FakeGateway()
     monkeypatch.setattr(bookings, "get_gateway", lambda: gw)
-    when = date.today() + timedelta(days=3)
+    when = date.today() + timedelta(days=random.randint(10, 5000))
     key = str(uuid.uuid4())
 
     first = _post(client, uid, lid, rate, key, when)
