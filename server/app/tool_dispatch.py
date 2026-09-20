@@ -11,6 +11,7 @@ fixed everywhere at once.
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from app.text_match import any_word
 from app.tools.base_legal_rag import compress_chunks_for_context
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 
@@ -145,12 +146,12 @@ _IK_CONTEXT_TYPE_KEYWORDS = (
 def infer_indian_kanoon_context_type(text: str) -> str:
     """Heuristic: pick the Indian Kanoon search context that best matches the query."""
     text_lower = text.lower()
-    if "ipc" in text_lower or "penal code" in text_lower:
+    if any_word(text_lower, ("ipc", "penal code")):
         return "ipc"
-    if "crpc" in text_lower or "criminal procedure" in text_lower:
+    if any_word(text_lower, ("crpc", "criminal procedure")):
         return "crpc"
     for context_type, keywords in _IK_CONTEXT_TYPE_KEYWORDS:
-        if any(kw in text_lower for kw in keywords):
+        if any_word(text_lower, keywords):
             return context_type
     return "general"
 

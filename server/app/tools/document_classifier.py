@@ -80,7 +80,7 @@ DOCUMENT_PATTERNS: Dict[str, Dict[str, Any]] = {
         "primary_indicators": [
             r"first\s*information\s*report",
             r"\bfir\b",
-            r"f\.?i\.?r\.?",
+            r"\bf\.i\.r\b",
             r"information\s*received\s*at\s*p\.?s\.?",
             r"police\s*station\b.*\bcrime\s*no",
         ],

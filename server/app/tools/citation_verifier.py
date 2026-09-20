@@ -25,9 +25,9 @@ from app.tools.legal_query_parser import ACT_HINTS
 # "Section 420 of the IPC", "Section 438, CrPC", "Sections 73 and 74 of the
 # Indian Contract Act", "u/s 302 IPC", "Article 21 of the Constitution"
 _CITE_RE = re.compile(
-    r"(?:\bsections?\s+(\d{1,4}[A-Z]{0,2})(?:\(\d+[a-z]?\))?\b"
+    r"(?:\b(?:sections?|secs?\.?)\s+(\d{1,4}[A-Z]{0,2})(?:\(\d+[a-z]?\))?\b"
     r"|\bu/s\s*(\d{1,4}[A-Z]{0,2})\b"
-    r"|\barticles?\s+(\d{1,3}[A-Z]?)\b)",
+    r"|\barticles?\s+(\d{1,3}[A-Z]{0,2})\b)",
     re.IGNORECASE,
 )
 
@@ -69,13 +69,33 @@ class VerificationReport:
         return len(self.verified) / len(self.checks) if self.checks else 1.0
 
 
+_ABBREVIATIONS = {"sec", "secs", "no", "rs", "cr", "art", "arts", "s", "ss", "v", "vs", "u/s", "p", "c", "pc"}
+
+
+def _is_sentence_end(text: str, i: int) -> bool:
+    """True if the '.' at text[i] ends a sentence (not an abbreviation dot)."""
+    j = i - 1
+    while j >= 0 and (text[j].isalpha() or text[j] == "/"):
+        j -= 1
+    word = text[j + 1 : i].lower()
+    if word in _ABBREVIATIONS:
+        return False
+    return i + 1 >= len(text) or text[i + 1].isspace()
+
+
 def _sentence_bounds(text: str, start: int, end: int) -> Tuple[int, int]:
     """Bounds of the sentence containing [start, end), so act-hint search
     doesn't bleed into a neighbouring citation's own act name."""
-    left = text.rfind(".", 0, start)
-    left = left + 1 if left != -1 else 0
-    right = text.find(".", end)
-    right = right if right != -1 else len(text)
+    left = 0
+    for i in range(start - 1, -1, -1):
+        if text[i] == "." and _is_sentence_end(text, i):
+            left = i + 1
+            break
+    right = len(text)
+    for i in range(end, len(text)):
+        if text[i] == "." and _is_sentence_end(text, i):
+            right = i
+            break
     return left, right
 
 
@@ -93,9 +113,10 @@ def _act_hint_near(text: str, start: int, end: int, is_article: bool) -> str:
     best_hint = ""
     best_dist = None
     for alias, hint in _ACT_ALIASES:
-        idx = window.find(alias)
-        if idx == -1:
+        m_alias = re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", window)
+        if m_alias is None:
             continue
+        idx = m_alias.start()
         dist = abs(idx - offset)
         if best_dist is None or dist < best_dist:
             best_dist = dist

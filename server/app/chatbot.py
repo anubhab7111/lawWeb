@@ -46,6 +46,7 @@ from app.prompts import (
     STATUTE_CONTEXT_BLOCK,
 )
 from app.routing_keywords import CRIME_TYPE_KEYWORDS
+from app.text_match import contains_word, count_words
 from app.state import (
     ChatState,
     DocumentValidationInfo,
@@ -413,8 +414,7 @@ async def invoke_llm_safely(
 
 def _count_keyword_matches(text: str, keywords: frozenset) -> int:
     """Count how many keywords match in the text."""
-    text_lower = text.lower()
-    return sum(1 for kw in keywords if kw in text_lower)
+    return count_words(text, keywords)
 
 
 def _extract_legal_entities(text: str) -> List[str]:
@@ -451,7 +451,7 @@ def _extract_legal_entities(text: str) -> List[str]:
         "negotiable instruments act",
     ]
     for act in act_keywords:
-        if act in text_lower:
+        if contains_word(text_lower, act):
             entities.append(act.title())
 
     return list(set(entities))

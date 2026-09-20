@@ -6,6 +6,7 @@ Provides access to Indian legal codes, case law, and statutes through the Indian
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import asyncio
+import re
 import aiohttp
 
 
@@ -154,7 +155,7 @@ class IndianKanoonClient:
 
                 # Determine document type
                 doc_type = "case"
-                if "act" in title.lower() or "section" in title.lower():
+                if re.search(r"\b(act|section)\b", title.lower()):
                     doc_type = "statute"
                 elif "article" in title.lower():
                     doc_type = "article"
