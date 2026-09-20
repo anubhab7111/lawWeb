@@ -10,3 +10,5 @@ app/metrics/.judge_cache.json
 app/metrics/.judge_usage.json
 
 app/data/vault/
+
+app/data/faiss_index/*
