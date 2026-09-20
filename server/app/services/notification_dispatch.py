@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 from app.config import get_settings
 from app.db.models import Notification, NotificationPreference
 from app.services.email_client import send_email
-from app.services.fcm_client import send_push
+from app.services.fcm_client import PushTokenInvalid, push_configured, send_push
 
 
 def _channel_enabled(prefs: Optional[NotificationPreference], channel: str, type_: str) -> bool:
@@ -57,7 +57,9 @@ def send_notification(
         select(NotificationPreference).where(NotificationPreference.user_id == user_id)
     ).first()
 
-    channels = channels or ["in_app", "email"]
+    channels = list(channels or ["in_app", "email"])
+    if "push" not in channels and prefs and prefs.push_enabled:
+        channels.append("push")
     created: List[Notification] = []
 
     for channel in channels:
@@ -66,7 +68,7 @@ def send_notification(
         if channel == "email" and not settings.smtp_host:
             print(f"[Notify] SMTP not configured — skipping email '{title}' for {user.email}")
             continue
-        if channel == "push" and not (prefs and prefs.fcm_token and settings.fcm_service_account_json):
+        if channel == "push" and not (prefs and prefs.fcm_token and push_configured()):
             continue
 
         notification = Notification(
@@ -88,7 +90,12 @@ def send_notification(
         elif channel == "email":
             sent = send_email(user.email, title, body)
         elif channel == "push" and prefs and prefs.fcm_token:
-            sent = send_push(prefs.fcm_token, title, body)
+            try:
+                sent = send_push(prefs.fcm_token, title, body)
+            except PushTokenInvalid:
+                prefs.fcm_token = None
+                session.add(prefs)
+                sent = False
 
         notification.status = "sent" if sent else "failed"
         if sent:

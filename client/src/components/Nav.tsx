@@ -84,6 +84,7 @@ export function Nav({ view, user, marketing, onNavigate, onLogout }: NavProps) {
                 <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("vault"); }}>Document Vault</button>
                 <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("calendar"); }}>Calendar</button>
                 <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("documents"); }}>Analyze a Document</button>
+                <button className="menu-row" onClick={() => { setMenuOpen(false); onNavigate("notifications"); }}>Notification settings</button>
                 <div className="divider" style={{ margin: "6px 0" }} />
                 <button className="menu-row danger" onClick={() => { setMenuOpen(false); onLogout(); }}>Sign out</button>
               </div>

@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_address: str = "no-reply@lawweb.local"
     fcm_service_account_json: str = ""
+    # Public web-app config for browser push (Firebase console -> project settings),
+    # as a JSON object string, plus the Web Push (VAPID) key pair's public key.
+    firebase_web_config_json: str = ""
+    firebase_vapid_key: str = ""
 
     # Legal Document Vault object storage (Cloudflare R2, S3-compatible).
     # If unset, vault falls back to local disk under app/data/vault/ so the
