@@ -45,6 +45,7 @@ CREATE TABLE "bookings" (
     "status" "BookingStatus" NOT NULL DEFAULT 'pending',
     "appointment_date" TEXT,
     "appointment_time" TEXT,
+    "idempotency_key" TEXT,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "bookings_pkey" PRIMARY KEY ("id")
@@ -52,6 +53,9 @@ CREATE TABLE "bookings" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "bookings_idempotency_key_key" ON "bookings"("idempotency_key") WHERE "idempotency_key" IS NOT NULL;
 
 -- CreateIndex
 CREATE INDEX "bookings_user_id_status_idx" ON "bookings"("user_id", "status");

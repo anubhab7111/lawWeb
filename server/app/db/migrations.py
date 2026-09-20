@@ -41,6 +41,15 @@ def ensure_us_seed_lawyers_removed(engine: Engine) -> None:
         )
 
 
+def ensure_booking_idempotency_key(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS idempotency_key TEXT;")
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS bookings_idempotency_key_key "
+            "ON bookings(idempotency_key) WHERE idempotency_key IS NOT NULL;"
+        )
+
+
 def ensure_similar_case_searches_table(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.exec_driver_sql(
@@ -368,6 +377,7 @@ def run_migrations(engine: Engine) -> None:
     ensure_lawyer_embedding_column(engine)
     ensure_lawyer_account_columns_dropped(engine)
     ensure_us_seed_lawyers_removed(engine)
+    ensure_booking_idempotency_key(engine)
     ensure_similar_case_searches_table(engine)
     ensure_case_tables(engine)
     ensure_notification_tables(engine)

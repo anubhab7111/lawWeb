@@ -5,14 +5,17 @@ Credentials come strictly from settings (.env) — no hardcoded fallbacks.
 """
 
 import math
+import uuid
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Optional
 
 import braintree
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.config import get_settings
@@ -42,6 +45,8 @@ class CheckoutRequest(BaseModel):
     paymentMethodNonce: Optional[str] = None
     lawyerId: Optional[str] = None
     userId: Optional[str] = None
+    appointmentDate: Optional[str] = None  # YYYY-MM-DD
+    appointmentTime: Optional[str] = None  # HH:MM, half-hour slots
 
 
 @router.get("/client_token")
@@ -58,9 +63,35 @@ def client_token():
         )
 
 
+_SLOT_TIMES = {f"{h:02d}:{m:02d}" for h in range(9, 18) for m in (0, 30)} | {"18:00"}
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _error(status_code: int, message: str) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"status": "error", "message": message})
+
+
+def _parse_slot(
+    date_str: Optional[str], time_str: Optional[str]
+) -> tuple[Optional[date], Optional[str], Optional[str]]:
+    """Returns (date, time, error message)."""
+    if not date_str or not time_str:
+        return None, None, "Choose an appointment date and time"
+    try:
+        day = date.fromisoformat(date_str)
+    except ValueError:
+        return None, None, "Invalid appointment date"
+    if day < datetime.now(_IST).date():
+        return None, None, "Appointment date must not be in the past"
+    if time_str not in _SLOT_TIMES:
+        return None, None, "Appointment time must be a half-hour slot between 09:00 and 18:00"
+    return day, time_str, None
+
+
 @router.post("/checkout")
 def checkout(
     body: CheckoutRequest,
+    idempotency_key: Optional[str] = Header(default=None),
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -69,27 +100,32 @@ def checkout(
     The booking is always attributed to the authenticated caller — body.userId
     is ignored — so a caller can't create/charge bookings on someone else's
     behalf. The amount is recomputed server-side (see below) rather than trusted.
+    A repeated Idempotency-Key returns the original result without charging again.
     """
+    if idempotency_key:
+        prior = session.exec(
+            select(Booking).where(
+                Booking.idempotency_key == idempotency_key, Booking.user_id == current_user.id
+            )
+        ).first()
+        if prior is not None:
+            if prior.status == BookingStatus.confirmed:
+                return {"status": "success", "transactionId": prior.transaction_id}
+            return _error(409, "This payment is already being processed")
+
     # ── Validate BEFORE charging so a bad request never captures money ──
     if not body.amount or not body.paymentMethodNonce or not body.lawyerId:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Missing required checkout fields"},
-        )
+        return _error(400, "Missing required checkout fields")
     try:
         amount = Decimal(str(body.amount))
     except (InvalidOperation, TypeError):
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Invalid amount"},
-        )
-    # Catch the most common cause of a post-charge FK failure before charging.
+        return _error(400, "Invalid amount")
+    day, slot, slot_error = _parse_slot(body.appointmentDate, body.appointmentTime)
+    if slot_error:
+        return _error(400, slot_error)
     lawyer = session.get(Lawyer, body.lawyerId)
     if lawyer is None:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Lawyer not found"},
-        )
+        return _error(400, "Lawyer not found")
 
     # The client charges hourly_rate + a 5% platform fee (client Payment.tsx).
     # Recompute the total here and reject any mismatch so the client can't
@@ -98,10 +134,46 @@ def checkout(
     fee = math.floor(lawyer.hourly_rate * 0.05 + 0.5)
     expected_total = Decimal(lawyer.hourly_rate + fee)
     if amount != expected_total:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Amount does not match the lawyer's rate"},
+        return _error(400, "Amount does not match the lawyer's rate")
+
+    # Reserve the slot with a pending row first: it blocks a concurrent booking
+    # of the same slot and survives a crash between charge and confirmation.
+    taken = session.exec(
+        select(Booking.id).where(
+            Booking.lawyer_id == lawyer.id,
+            Booking.appointment_date == day.isoformat(),
+            Booking.appointment_time == slot,
+            Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
         )
+    ).first()
+    if taken is not None:
+        return _error(409, "That time slot is already booked — please choose another")
+
+    booking = Booking(
+        user_id=current_user.id,
+        lawyer_id=lawyer.id,
+        amount=amount,
+        status=BookingStatus.pending,
+        transaction_id=f"pending-{uuid.uuid4()}",
+        appointment_date=day.isoformat(),
+        appointment_time=slot,
+        idempotency_key=idempotency_key,
+    )
+    session.add(booking)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        return _error(409, "This payment is already being processed")
+    booking_id = booking.id
+
+    def release(status: BookingStatus) -> None:
+        session.rollback()
+        row = session.get(Booking, booking_id)
+        if row is not None:
+            row.status = status
+            session.add(row)
+            session.commit()
 
     # ── Charge (own error scope: a failure here means no money captured) ──
     try:
@@ -114,6 +186,7 @@ def checkout(
         )
     except Exception as e:
         print(f"Checkout charge error: {e}")
+        release(BookingStatus.failed)
         return JSONResponse(
             status_code=500,
             content={"message": "Internal Server Error during checkout"},
@@ -121,63 +194,55 @@ def checkout(
 
     if not result.is_success:
         print(f"❌ Braintree Transaction Failed: {result.message}")
+        release(BookingStatus.failed)
         return JSONResponse(
             status_code=400, content={"status": "error", "message": result.message}
         )
 
-    # ── Charge succeeded: record the booking in a SEPARATE error scope ──
+    # ── Charge succeeded: confirm the booking in a SEPARATE error scope ──
     # A DB failure here must NOT be reported as a failed payment (the card was
-    # already charged), or the user will retry and be double-charged. Persist
-    # what we can, flag for reconciliation, and still report success.
+    # already charged), or the user will retry and be double-charged. The
+    # pending row remains for manual reconciliation.
     transaction_id = result.transaction.id
     try:
-        booking = Booking(
-            user_id=current_user.id,
-            lawyer_id=body.lawyerId,
-            amount=amount,
-            status=BookingStatus.confirmed,
-            transaction_id=transaction_id,
-        )
+        booking = session.get(Booking, booking_id)
+        booking.transaction_id = transaction_id
+        booking.status = BookingStatus.confirmed
         session.add(booking)
         session.commit()
         print(f"✅ Success: Payment settled for User {current_user.id}")
 
-        # Personal Legal Calendar: auto-add a "lawyer meeting" event for this
-        # booking. Best-effort and isolated from the payment/booking result
-        # above — a calendar-write failure must never turn a successful
-        # payment into an error response. appointment_date/appointment_time
-        # aren't collected by this endpoint yet, so this is a no-op until a
-        # scheduling step is added to checkout.
-        if booking.appointment_date and booking.appointment_time:
-            try:
-                from datetime import datetime
-
-                start_at = datetime.fromisoformat(
-                    f"{booking.appointment_date}T{booking.appointment_time}"
+        # Personal Legal Calendar: best-effort, isolated from the payment
+        # result — a calendar-write failure must never turn a successful
+        # payment into an error response.
+        try:
+            start_at = datetime.fromisoformat(
+                f"{booking.appointment_date}T{booking.appointment_time}"
+            ).replace(tzinfo=_IST)
+            session.add(
+                CalendarEvent(
+                    user_id=booking.user_id,
+                    title=f"Consultation with {lawyer.name}",
+                    event_type="lawyer_meeting",
+                    start_at=start_at,
+                    end_at=start_at + timedelta(hours=1),
+                    related_booking_id=booking.id,
                 )
-                session.add(
-                    CalendarEvent(
-                        user_id=booking.user_id,
-                        title=f"Consultation with lawyer {booking.lawyer_id}",
-                        event_type="lawyer_meeting",
-                        start_at=start_at,
-                        related_booking_id=booking.id,
-                    )
-                )
-                session.commit()
-            except Exception as e:
-                session.rollback()
-                print(f"[Calendar] failed to auto-create event for booking {booking.id}: {e}")
+            )
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"[Calendar] failed to auto-create event for booking {booking_id}: {e}")
 
         return {"status": "success", "transactionId": transaction_id}
     except Exception as e:
         session.rollback()
-        # RECONCILIATION: money captured but booking not saved. Log loudly so
-        # this can be reconciled manually against Braintree settlements.
+        # RECONCILIATION: money captured but booking not confirmed. Log loudly
+        # so this can be reconciled manually against Braintree settlements.
         print(
             f"⚠️ RECONCILIATION NEEDED: charged transaction {transaction_id} "
-            f"for user {current_user.id} / lawyer {body.lawyerId} but booking write "
-            f"failed: {e}"
+            f"for user {current_user.id} / lawyer {body.lawyerId} (booking {booking_id}) "
+            f"but confirmation failed: {e}"
         )
         return {
             "status": "success",
