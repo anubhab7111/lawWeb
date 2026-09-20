@@ -69,7 +69,7 @@ from app.tools.lawyer_recommender import (
     recommend_lawyers as recommend_lawyers_core,
 )
 from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
-from app.tools.statutory_validator import get_statutory_validator
+from app.tools.statutory_validator import format_score, get_statutory_validator
 
 
 LLM_NUM_CTX = 8192  # Ollama defaults to 2048, which silently clips grounded prompts
@@ -1287,7 +1287,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
         print(
             f"[Layer 2] Statutory validation: {validation.passed}/{validation.total_checks} passed, "
-            f"compliance score: {validation.compliance_score:.0%}"
+            f"compliance score: {format_score(validation.compliance_score)}"
         )
 
         # ================================================================
@@ -1361,7 +1361,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
         print(
             f"[Layer 3] Analysis complete. Defects: {result['defect_count']}, "
-            f"Compliance: {result['compliance_score']:.0%}"
+            f"Compliance: {format_score(result['compliance_score'])}"
         )
 
         # Build validation info for state
@@ -1415,7 +1415,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
                 f"**Type:** {classification.document_type}",
                 f"**Confidence:** {classification.confidence:.0%}",
                 "",
-                f"## 📊 Statutory Compliance: {validation.compliance_score:.0%}",
+                f"## 📊 Statutory Compliance: {format_score(validation.compliance_score)}",
             ]
 
             if validation.missing_elements:

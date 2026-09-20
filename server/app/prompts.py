@@ -125,6 +125,8 @@ DOCUMENT_VALIDATION_UPLOAD_PROMPT = """I can perform a comprehensive statutory c
 • Will / Testament
 • Partnership Deed
 • Bail Application
+• Complaint before a Magistrate
+• Chargesheet / Police Report
 
 **Please upload your document** (PDF, DOCX, TXT, or image) and I'll provide a detailed statutory compliance report.
 
@@ -195,7 +197,7 @@ YOUR PRIOR REASONING (from THINK step):
 ---
 
 AUTOMATED REGEX FINDINGS (from rule-based Layer 2):
-  Compliance Score: {compliance_score:.0%}
+  Compliance Score: {compliance_score}
   Passed: {passed}/{total_checks}
   
   Elements FOUND by regex:
@@ -289,7 +291,7 @@ Produce the final defect analysis by:
 4. For any FALSE NEGATIVE corrections, note that the automated check missed this element but it is present.
 
 5. Provide:
-   - **ADJUSTED COMPLIANCE ASSESSMENT:** Your revised compliance view (the regex-based score was {compliance_score:.0%} — do you agree, or should it be adjusted based on your observations?)
+   - **ADJUSTED COMPLIANCE ASSESSMENT:** Your revised compliance view (the regex-based score was {compliance_score} — do you agree, or should it be adjusted based on your observations?)
    - **OVERALL ASSESSMENT:** 2-3 sentences on the document's statutory compliance status
    - **RECOMMENDED NEXT STEPS:** Prioritised numbered list of actions
 

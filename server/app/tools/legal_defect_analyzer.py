@@ -21,7 +21,7 @@ import asyncio
 from typing import Dict, Any
 
 from app.tools.document_classifier import DocumentClassification
-from app.tools.statutory_validator import StatutoryValidationResult
+from app.tools.statutory_validator import StatutoryValidationResult, format_score
 from app.tools.indian_law_rag import IndianLawContext
 from app.prompts import REACT_THINK_PROMPT, REACT_OBSERVE_PROMPT, REACT_ANALYZE_PROMPT
 
@@ -221,7 +221,7 @@ class LegalDefectAnalyzer:
         prompt = REACT_OBSERVE_PROMPT.format(
             document_type=classification.document_type,
             think_output=think_output,
-            compliance_score=validation.compliance_score,
+            compliance_score=format_score(validation.compliance_score),
             passed=validation.passed,
             total_checks=validation.total_checks,
             present_elements=present_str,
@@ -292,7 +292,7 @@ class LegalDefectAnalyzer:
             precedents=precedents_str,
             state_notes=state_notes_str,
             api_refs=api_refs_str,
-            compliance_score=validation.compliance_score,
+            compliance_score=format_score(validation.compliance_score),
         )
 
         try:
@@ -337,7 +337,7 @@ class LegalDefectAnalyzer:
         """Generate a basic OBSERVE output without LLM."""
         parts = [
             "**OBSERVATIONS — Based on Automated Checklist:**\n",
-            f"Compliance Score: {validation.compliance_score:.0%}\n",
+            f"Compliance Score: {format_score(validation.compliance_score)}\n",
         ]
 
         if validation.present_elements:
@@ -433,15 +433,16 @@ class LegalDefectAnalyzer:
         parts.append("")
 
         # Compliance Overview
+        score = validation.compliance_score
         emoji = (
-            "✅"
-            if validation.compliance_score >= 0.8
-            else "⚠️" if validation.compliance_score >= 0.5 else "❌"
+            "➖"
+            if score is None
+            else "✅" if score >= 0.8 else "⚠️" if score >= 0.5 else "❌"
         )
         parts.append("## 📊 Statutory Compliance Overview")
         parts.append(
             f"**Automated Compliance Score:** {emoji} "
-            f"{validation.compliance_score:.0%}"
+            f"{format_score(score)}"
         )
         parts.append(f"**Checks Performed:** {validation.total_checks}")
         parts.append(

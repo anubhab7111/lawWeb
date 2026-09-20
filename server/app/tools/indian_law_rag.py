@@ -249,6 +249,50 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         ],
         "key_precedents": [],
     },
+    "Partnership Deed": {
+        "acts": ["Indian Partnership Act, 1932", "Indian Stamp Act, 1899", "Indian Registration Act, 1908"],
+        "key_sections": [
+            "Section 4 Partnership Act — Definition of partnership",
+            "Section 13 Partnership Act — Mutual rights and liabilities of partners",
+            "Section 58 Partnership Act — Registration of firm (optional)",
+            "Sections 39-44 Partnership Act — Dissolution of a firm",
+        ],
+        "search_queries": ["partnership deed mandatory clauses Indian Partnership Act"],
+        "key_precedents": [],
+    },
+    "Bail Application": {
+        "acts": ["Code of Criminal Procedure, 1973 (CrPC)", "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)"],
+        "key_sections": [
+            "Section 437 CrPC / Section 480 BNSS — Bail in non-bailable cases by a Magistrate",
+            "Section 438 CrPC / Section 482 BNSS — Anticipatory bail",
+            "Section 439 CrPC / Section 483 BNSS — Special powers of High Court and Sessions Court",
+            "Section 167(2) CrPC / Section 187 BNSS — Default bail",
+        ],
+        "search_queries": ["bail application grounds Section 439 CrPC"],
+        "key_precedents": [
+            "Gurbaksh Singh Sibbia v. State of Punjab (1980) — Anticipatory bail principles",
+            "Sanjay Chandra v. CBI (2012) — Bail is the rule, jail the exception",
+        ],
+    },
+    "Complaint (CrPC)": {
+        "acts": ["Code of Criminal Procedure, 1973 (CrPC)", "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)"],
+        "key_sections": [
+            "Section 200 CrPC / Section 223 BNSS — Examination of complainant",
+            "Section 156(3) CrPC / Section 175(3) BNSS — Magistrate's order to investigate",
+            "Section 190 CrPC / Section 210 BNSS — Cognizance of offences",
+        ],
+        "search_queries": ["private complaint before magistrate Section 200 CrPC requirements"],
+        "key_precedents": ["Priyanka Srivastava v. State of U.P. (2015) — Affidavit with Section 156(3) applications"],
+    },
+    "Chargesheet": {
+        "acts": ["Code of Criminal Procedure, 1973 (CrPC)", "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)"],
+        "key_sections": [
+            "Section 173 CrPC / Section 193 BNSS — Report of police officer on completion of investigation",
+            "Section 197 CrPC / Section 218 BNSS — Prosecution of public servants",
+        ],
+        "search_queries": ["final report Section 173 CrPC contents"],
+        "key_precedents": [],
+    },
     "Will / Testament": {
         "acts": [
             "Indian Succession Act, 1925",
