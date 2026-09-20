@@ -22,6 +22,26 @@ router = APIRouter(prefix="/api/cause-list", tags=["cause-list"])
 _CACHE_TTL_SECONDS = 3600  # cause lists are published once/day but hit repeatedly
 
 
+COURTS = [
+    "Supreme Court of India",
+    "Delhi High Court",
+    "Bombay High Court",
+    "Madras High Court",
+    "Calcutta High Court",
+    "Karnataka High Court",
+    "Allahabad High Court",
+    "Gujarat High Court",
+    "Punjab and Haryana High Court",
+    "Kerala High Court",
+    "District Court, Pune",
+]
+
+
+@router.get("/courts")
+async def list_courts():
+    return {"courts": COURTS}
+
+
 @router.get("/search")
 async def search(
     court: str = Query(...),
@@ -30,6 +50,8 @@ async def search(
     judge: Optional[str] = None,
     case_number: Optional[str] = Query(default=None, alias="caseNumber"),
 ):
+    if court not in COURTS:
+        return JSONResponse(status_code=400, content={"message": "Unknown court"})
     try:
         parsed_date = date.fromisoformat(list_date)
     except ValueError:
@@ -103,5 +125,6 @@ async def search(
             "court": court,
             "date": list_date,
             "publishedAt": cached.fetched_at.isoformat() if cached.fetched_at else None,
+            "published": len(cached.entries) > 0,
             "results": results,
         }

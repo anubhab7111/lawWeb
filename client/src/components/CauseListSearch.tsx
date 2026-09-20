@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { searchCauseList } from "../api";
+import { useEffect, useState } from "react";
+import { fetchCourts, searchCauseList } from "../api";
 
 interface Entry {
   court: string;
@@ -13,6 +13,7 @@ interface Entry {
 function tomorrow(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 10);
 }
 
@@ -21,6 +22,12 @@ export function CauseListSearch() {
   const [date, setDate] = useState(tomorrow());
   const [advocate, setAdvocate] = useState("");
   const [judge, setJudge] = useState("");
+  const [caseNumber, setCaseNumber] = useState("");
+  const [courts, setCourts] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetchCourts().then((list) => { setCourts(list); if (list.length && !list.includes(court)) setCourt(list[0]); }).catch(() => {});
+  }, []);
   const [results, setResults] = useState<Entry[] | null>(null);
   const [published, setPublished] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -30,9 +37,9 @@ export function CauseListSearch() {
     setLoading(true);
     setError(null);
     try {
-      const data = await searchCauseList({ court, date, advocate, judge });
+      const data = await searchCauseList({ court, date, advocate, judge, caseNumber });
       setResults(Array.isArray(data.results) ? data.results : []);
-      setPublished(Boolean(data.publishedAt));
+      setPublished(Boolean(data.published));
     } catch {
       setError("Couldn't fetch the cause list right now.");
       setResults(null);
@@ -49,10 +56,13 @@ export function CauseListSearch() {
 
         <div className="card" style={{ padding: 20, marginBottom: 24 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <input className="input" placeholder="Court" value={court} onChange={(e) => setCourt(e.target.value)} />
+            <select className="input" value={court} onChange={(e) => setCourt(e.target.value)}>
+              {(courts.length ? courts : [court]).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
             <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <input className="input" placeholder="Advocate (optional)" value={advocate} onChange={(e) => setAdvocate(e.target.value)} />
             <input className="input" placeholder="Judge (optional)" value={judge} onChange={(e) => setJudge(e.target.value)} />
+            <input className="input" placeholder="Case number (optional)" value={caseNumber} onChange={(e) => setCaseNumber(e.target.value)} />
           </div>
           <button className="btn btn-primary" onClick={run} disabled={loading}>{loading ? "Searching…" : "Search cause list"}</button>
         </div>

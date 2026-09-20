@@ -658,6 +658,16 @@ async function requestJson(path: string, options: RequestInit = {}) {
 // Bare Act Explorer
 // ============================================================================
 
+export async function fetchBareActNames(): Promise<string[]> {
+    const data = await requestJson('/bare-acts/acts');
+    return data.acts ?? [];
+}
+
+export async function fetchCourts(): Promise<string[]> {
+    const data = await requestJson('/cause-list/courts');
+    return data.courts ?? [];
+}
+
 export async function searchBareAct(query: string, actHint?: string) {
     const params = new URLSearchParams({ q: query });
     if (actHint) params.set('act', actHint);
@@ -755,6 +765,8 @@ export interface VaultDocument {
     relatedCaseId: string | null;
     indexingStatus: string;
     createdAt: string | null;
+    isOwner: boolean;
+    matchedSnippet?: string;
 }
 
 export async function uploadVaultDocument(file: File, title: string, documentType: string, relatedCaseId?: string) {
@@ -776,6 +788,39 @@ export async function searchVaultDocuments(query: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
     });
+}
+
+export async function shareVaultDocument(documentId: string, email: string, permission: 'view' | 'edit') {
+    return requestJson(`/vault/documents/${documentId}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, permission }),
+    });
+}
+
+export async function reindexVaultDocument(documentId: string): Promise<VaultDocument> {
+    return requestJson(`/vault/documents/${documentId}/reindex`, { method: 'POST' });
+}
+
+/** Fetch a document's file (with auth for the local-disk store) and hand it to the browser as a download. */
+export async function downloadVaultDocument(doc: Pick<VaultDocument, 'id' | 'title'>) {
+    const detail = await requestJson(`/vault/documents/${doc.id}`);
+    const url: string = detail.downloadUrl;
+    if (!url.startsWith('/')) {
+        window.open(url, '_blank', 'noopener');
+        return;
+    }
+    const origin = API_BASE_URL.replace(/\/api\/?$/, '');
+    const response = await apiFetch(`${origin}${url}`, { headers: { ...getAuthHeaders() } });
+    if (!response.ok) {
+        throw new Error('Download failed');
+    }
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = doc.title;
+    link.click();
+    URL.revokeObjectURL(blobUrl);
 }
 
 export async function deleteVaultDocument(documentId: string) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { addCaseNote, fetchCaseDetail, fetchSavedCases, saveCase, syncCase, type SavedCase } from "../api";
+import { addCaseNote, deleteCase, fetchCaseDetail, fetchSavedCases, saveCase, syncCase, type SavedCase } from "../api";
 import type { UserProfile } from "../lib/ui";
 
 interface Props {
@@ -16,6 +16,10 @@ export function MyCases({ user }: Props) {
   const [cases, setCases] = useState<SavedCase[]>([]);
   const [selected, setSelected] = useState<CaseDetail | null>(null);
   const [cnr, setCnr] = useState("");
+  const [byNumber, setByNumber] = useState(false);
+  const [court, setCourt] = useState("");
+  const [caseNumber, setCaseNumber] = useState("");
+  const [year, setYear] = useState("");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +29,22 @@ export function MyCases({ user }: Props) {
   };
 
   useEffect(() => { if (user) load(); }, [user]);
+
+  const attempt = async (action: () => Promise<unknown>, fallback: string) => {
+    setError(null);
+    try {
+      await action();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : fallback);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Stop tracking this case? Its notes and timeline will be deleted.")) return;
+    await attempt(() => deleteCase(id), "Couldn't delete that case.");
+    setSelected(null);
+    load();
+  };
 
   const openCase = (id: string) => {
     fetchCaseDetail(id)
@@ -43,11 +63,17 @@ export function MyCases({ user }: Props) {
   };
 
   const handleSave = async () => {
-    if (!cnr.trim()) return;
+    const payload = byNumber
+      ? { court: court.trim(), caseNumber: caseNumber.trim(), year: Number(year) }
+      : { cnr: cnr.trim() };
+    if (byNumber ? !payload.court || !payload.caseNumber || !payload.year : !cnr.trim()) return;
     setError(null);
     try {
-      await saveCase({ cnr: cnr.trim() });
+      await saveCase(payload);
       setCnr("");
+      setCourt("");
+      setCaseNumber("");
+      setYear("");
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save that case.");
@@ -64,15 +90,28 @@ export function MyCases({ user }: Props) {
         <h1 className="page-title">My Cases</h1>
         <p className="page-sub">Save cases by CNR and track hearings, orders, and AI summaries in one place.</p>
 
-        <div className="card" style={{ padding: 20, marginBottom: 24, display: "flex", gap: 10 }}>
-          <input
-            className="input"
-            style={{ flex: 1 }}
-            placeholder="Enter CNR number (e.g. DLHC010012342024)"
-            value={cnr}
-            onChange={(e) => setCnr(e.target.value)}
-          />
-          <button className="btn btn-primary" onClick={handleSave}>Save case</button>
+        <div className="card" style={{ padding: 20, marginBottom: 24 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {byNumber ? (
+              <>
+                <input className="input" style={{ flex: 2, minWidth: 160 }} placeholder="Court (e.g. Delhi High Court)" value={court} onChange={(e) => setCourt(e.target.value)} />
+                <input className="input" style={{ flex: 1, minWidth: 120 }} placeholder="Case number" value={caseNumber} onChange={(e) => setCaseNumber(e.target.value)} />
+                <input className="input" style={{ width: 90 }} placeholder="Year" inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} />
+              </>
+            ) : (
+              <input
+                className="input"
+                style={{ flex: 1 }}
+                placeholder="Enter CNR number (e.g. DLHC010012342024)"
+                value={cnr}
+                onChange={(e) => setCnr(e.target.value)}
+              />
+            )}
+            <button className="btn btn-primary" onClick={handleSave}>Save case</button>
+          </div>
+          <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, paddingLeft: 0 }} onClick={() => setByNumber((v) => !v)}>
+            {byNumber ? "Use a CNR instead" : "Don't have a CNR? Add by court and case number"}
+          </button>
         </div>
 
         {error && <div className="error-banner" style={{ marginBottom: 18 }}>{error}</div>}
@@ -83,9 +122,10 @@ export function MyCases({ user }: Props) {
             <div className="card" style={{ padding: "18px 20px", marginBottom: 18 }}>
               <div className={selected.title ? "cite" : undefined} style={{ font: "700 16px var(--font-head)" }}>{selected.title || selected.cnr}</div>
               <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)" }}>{selected.court} · {selected.status}</div>
-              <button className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => syncCase(selected.id).then(() => openCase(selected.id))}>
+              <button className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => attempt(() => syncCase(selected.id), "Couldn't re-sync this case.").then(() => openCase(selected.id))}>
                 Re-sync now
               </button>
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, marginLeft: 8 }} onClick={() => handleDelete(selected.id)}>Stop tracking</button>
             </div>
 
             {selected.aiSummaries.length > 0 && (
@@ -104,6 +144,11 @@ export function MyCases({ user }: Props) {
                 <div key={e.id} className="card" style={{ padding: "14px 16px" }}>
                   <div style={{ font: "600 12px var(--font-body)", textTransform: "capitalize", color: "var(--accent)" }}>{e.eventType}</div>
                   <div style={{ font: "600 13.5px var(--font-body)" }}>{e.title}</div>
+                  {e.eventDate && (
+                    <div style={{ font: "500 12px var(--font-body)", color: "var(--muted-2)" }}>
+                      {new Date(e.eventDate).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                    </div>
+                  )}
                   {e.detail && <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)", marginTop: 4 }}>{e.detail}</div>}
                 </div>
               ))}
@@ -114,7 +159,7 @@ export function MyCases({ user }: Props) {
               <input className="input" style={{ flex: 1 }} placeholder="Add a note…" value={note} onChange={(e) => setNote(e.target.value)} />
               <button
                 className="btn btn-outline"
-                onClick={async () => { if (!note.trim()) return; await addCaseNote(selected.id, note); setNote(""); openCase(selected.id); }}
+                onClick={async () => { if (!note.trim()) return; await attempt(() => addCaseNote(selected.id, note), "Couldn't save that note."); setNote(""); openCase(selected.id); }}
               >
                 Add
               </button>

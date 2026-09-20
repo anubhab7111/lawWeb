@@ -6,6 +6,7 @@ existing unified statute + case-law RAG stack (app/tools/bare_act_explorer.py).
 from fastapi import APIRouter, Query
 
 from app.tools.bare_act_explorer import explore_bare_act
+from app.tools.unified_legal_rag import get_unified_rag_system
 
 router = APIRouter(prefix="/api/bare-acts", tags=["bare-acts"])
 
@@ -37,6 +38,20 @@ def _serialize(result) -> dict:
         ],
         "explanation": result.explanation,
     }
+
+
+@router.get("/acts")
+async def list_acts():
+    """Act names in the index, for disambiguating a bare section number."""
+    rag = get_unified_rag_system()
+    if not await rag.initialize():
+        return {"acts": []}
+    names = {
+        c.act_name
+        for c in rag._chunks.values()
+        if not c.section_number.startswith("part ") and c.domain not in rag.PROSE_DIRS
+    }
+    return {"acts": sorted(names)}
 
 
 @router.get("/search")
