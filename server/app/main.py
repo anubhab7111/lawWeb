@@ -149,7 +149,13 @@ async def public_config():
             }
         except ValueError:
             firebase = None
-    return {"currency": settings.currency, "firebase": firebase}
+    from app.services.calendar_oauth import configured_providers
+
+    return {
+        "currency": settings.currency,
+        "firebase": firebase,
+        "calendarProviders": configured_providers(),
+    }
 
 
 @app.get("/health")

@@ -32,6 +32,7 @@ def get_scheduler() -> AsyncIOScheduler:
 def register_jobs(scheduler: AsyncIOScheduler) -> None:
     """Each feature module registers its own jobs here. Kept as a single
     import point so app.main doesn't need to know what jobs exist."""
-    from app.jobs import hearing_reminders
+    from app.jobs import calendar_sync, hearing_reminders
 
     hearing_reminders.register(scheduler)
+    calendar_sync.register(scheduler)

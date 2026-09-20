@@ -38,7 +38,7 @@ const ALL_VIEWS: View[] = [
 const NEEDS_SELECTED_LAWYER: View[] = ["profile", "payment"];
 
 function hashToView(hash: string): View | null {
-  const v = hash.replace(/^#\/?/, "");
+  const v = hash.replace(/^#\/?/, "").split("?")[0];
   return (ALL_VIEWS as string[]).includes(v) ? (v as View) : null;
 }
 

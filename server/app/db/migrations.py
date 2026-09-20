@@ -343,6 +343,23 @@ def ensure_calendar_events_table(engine: Engine) -> None:
         )
 
 
+def ensure_calendar_connections_table(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS calendar_connections (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                provider TEXT NOT NULL,
+                refresh_token_enc TEXT NOT NULL,
+                last_synced_at TIMESTAMPTZ(6),
+                created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (user_id, provider)
+            );
+            """
+        )
+
+
 def ensure_calendar_events_related_case_event_column(engine: Engine) -> None:
     """Lets sync_case_events() upsert a hearing's calendar_events row instead
     of creating a duplicate on every re-sync (added after calendar_events
@@ -388,5 +405,6 @@ def run_migrations(engine: Engine) -> None:
     ensure_vault_tables(engine)
     ensure_calendar_events_table(engine)
     ensure_calendar_events_related_case_event_column(engine)
+    ensure_calendar_connections_table(engine)
     ensure_chat_tables(engine)
     ensure_chat_messages_language_columns(engine)
