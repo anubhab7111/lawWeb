@@ -4,6 +4,7 @@ server/src/routes/auth.ts. Response and error shapes are preserved exactly:
 the client reads `message` from error bodies, not FastAPI's default `detail`.
 """
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -17,6 +18,7 @@ from sqlmodel import Session, select
 
 from app.db.engine import get_session
 from app.db.models import User
+from app.deps.auth import get_current_user
 from app.security import jwt_secret as _jwt_secret
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -30,6 +32,8 @@ def _error(status_code: int, message: str) -> JSONResponse:
 # 72 bytes — both hashpw and checkpw. Checked explicitly so an over-length
 # password is a normal 400, not an unhandled 500.
 _BCRYPT_MAX_BYTES = 72
+_MIN_PASSWORD_CHARS = 8
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _make_token(user_id: str) -> str:
@@ -59,6 +63,10 @@ class LoginRequest(BaseModel):
 def register(body: RegisterRequest, session: Session = Depends(get_session)):
     if not body.name or not body.email or not body.password:
         return _error(400, "All fields are required")
+    if not _EMAIL_RE.match(body.email.strip()):
+        return _error(400, "Enter a valid email address")
+    if len(body.password) < _MIN_PASSWORD_CHARS:
+        return _error(400, f"Password must be at least {_MIN_PASSWORD_CHARS} characters")
     if len(body.password.encode()) > _BCRYPT_MAX_BYTES:
         return _error(400, "Password must be 72 bytes or fewer")
 
@@ -97,6 +105,19 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
         return _error(400, "Invalid credentials")
 
     return {"token": _make_token(user.id), "user": _user_json(user)}
+
+
+@router.get("/lookup")
+def lookup_user(
+    email: str,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Resolve an exact email to {id, name} so a document can be shared with them."""
+    user = session.exec(select(User).where(User.email == email.strip())).first()
+    if user is None or user.id == current_user.id:
+        return _error(404, "No user found with that email")
+    return {"id": user.id, "name": user.name}
 
 
 @router.get("/me")
