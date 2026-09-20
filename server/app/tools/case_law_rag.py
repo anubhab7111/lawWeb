@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pickle
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -119,6 +120,26 @@ def _issue_overlap_score(query_issues: List[str], case_issues: List[str]) -> flo
     return sum(best_scores) / len(best_scores) if best_scores else 0.0
 
 
+_ACRONYM_RE = re.compile(r"[A-Z]{2,8}")
+_ACT_NOISE = frozenset({"act", "code", "the", "of", "and"})
+
+
+def normalize_act(name: str) -> str:
+    """Canonical act key: drops years, trailing acronyms ("… Code IBC") and
+    generic words so "Bharatiya Nyaya Sanhita BNS" == "Bharatiya Nyaya Sanhita"
+    and "Indian Contract Act" == "Indian Contract"."""
+    words = re.sub(r"[,()\d]", " ", name).split()
+    plain = [w for w in words if not _ACRONYM_RE.fullmatch(w)]
+    if any(w.lower() not in _ACT_NOISE for w in plain):
+        words = plain
+    kept = [w.lower() for w in words if w.lower() not in _ACT_NOISE]
+    return " ".join(kept)
+
+
+def _acts_match(a: str, b: str) -> bool:
+    return a == b or f" {a} " in f" {b} " or f" {b} " in f" {a} "
+
+
 def _statute_overlap_score(
     case_statutes: List[List[str]], boost_keys: Set[Tuple[str, str]]
 ) -> float:
@@ -127,8 +148,13 @@ def _statute_overlap_score(
     ones should score as well as one citing only those 2."""
     if not case_statutes or not boost_keys:
         return 0.0
-    case_keys = {(a.lower(), s.lower()) for a, s in case_statutes}
-    return len(case_keys & boost_keys) / len(boost_keys)
+    case_keys = [(normalize_act(a), s.lower()) for a, s in case_statutes]
+    hit = sum(
+        1
+        for act, sec in boost_keys
+        if any(sec == cs and _acts_match(act, ca) for ca, cs in case_keys)
+    )
+    return hit / len(boost_keys)
 
 
 def _doctrine_overlap_score(case_doctrines: List[str], query_doctrines: List[str]) -> float:
@@ -488,7 +514,7 @@ class CaseLawRAGSystem:
 
         boost_keys: Set[Tuple[str, str]] = set()
         if boost_statutes:
-            boost_keys = {(a.lower(), s.lower()) for a, s in boost_statutes}
+            boost_keys = {(normalize_act(a), s.lower()) for a, s in boost_statutes}
         query_issues = query_issues or []
         query_doctrines = query_doctrines or []
 

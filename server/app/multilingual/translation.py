@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from typing import Any, Optional
 
 from cachetools import TTLCache
@@ -67,6 +68,36 @@ def _install_transformers_compat_shim() -> None:
             _tu.PreTrainedTokenizerBase = _ptb  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass
+
+
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?।])\s+")
+_MAX_SEGMENT_CHARS = 400
+
+
+def split_for_translation(line: str, limit: int = _MAX_SEGMENT_CHARS) -> list[str]:
+    """Split one line into pieces the translator can take whole, on sentence
+    ends first and on word boundaries for a sentence that is itself too long."""
+    if len(line) <= limit:
+        return [line]
+    pieces: list[str] = []
+    current = ""
+    for sentence in _SENTENCE_END_RE.split(line):
+        while len(sentence) > limit:
+            cut = sentence.rfind(" ", 0, limit)
+            cut = cut if cut > 0 else limit
+            if current:
+                pieces.append(current)
+                current = ""
+            pieces.append(sentence[:cut])
+            sentence = sentence[cut:].lstrip()
+        if current and len(current) + 1 + len(sentence) > limit:
+            pieces.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip()
+    if current:
+        pieces.append(current)
+    return pieces
 
 
 def _cache_key(text: str, src: str, tgt: str) -> str:
@@ -201,7 +232,23 @@ class IndicTrans2Service:
         direction = self._indic_en if tgt_tag == ENGLISH_TAG else self._en_indic
         assert direction is not None
 
-        masked, mapping = entity_guard.mask(text)
+        # The model handles a bounded sequence, so translate line by line (and
+        # sentence by sentence inside long lines) in one batch; blank lines and
+        # markdown line structure are kept as-is.
+        lines = text.split("\n")
+        segments: list[tuple[int, str]] = []
+        for i, line in enumerate(lines):
+            if line.strip():
+                segments.extend((i, part) for part in split_for_translation(line))
+        if not segments:
+            return text
+
+        masked_parts: list[str] = []
+        mappings: list[dict[str, str]] = []
+        for _, part in segments:
+            masked, mapping = entity_guard.mask(part)
+            masked_parts.append(masked)
+            mappings.append(mapping)
 
         # IndicProcessor normalizes and prepends the two flores language tags:
         # "<src_tag> <tgt_tag> <normalized text>". CTranslate2 expects a list of
@@ -209,21 +256,28 @@ class IndicTrans2Service:
         # the SentencePiece model), so keep them intact and SPM-encode only the
         # sentence body.
         preprocessed = self._processor.preprocess_batch(
-            [masked], src_lang=src_tag, tgt_lang=tgt_tag
-        )[0]
-        parts = preprocessed.split(" ")
-        tags, body = parts[:2], " ".join(parts[2:])
-        tokens = tags + direction.sp_src.encode(body, out_type=str)
+            masked_parts, src_lang=src_tag, tgt_lang=tgt_tag
+        )
+        batch = []
+        for item in preprocessed:
+            parts = item.split(" ")
+            batch.append(parts[:2] + direction.sp_src.encode(" ".join(parts[2:]), out_type=str))
 
         results = direction.translator.translate_batch(
-            [tokens],
+            batch,
             beam_size=5,
-            max_input_length=256,
+            max_input_length=512,
             max_decoding_length=_MAX_NEW_TOKENS,
         )
-        decoded = direction.sp_tgt.decode(results[0].hypotheses[0])
-        out = self._processor.postprocess_batch([decoded], lang=tgt_tag)[0]
-        return entity_guard.unmask(out, mapping)
+        decoded = [direction.sp_tgt.decode(r.hypotheses[0]) for r in results]
+        outputs = self._processor.postprocess_batch(decoded, lang=tgt_tag)
+
+        rebuilt: dict[int, list[str]] = {}
+        for (line_no, _), out, mapping in zip(segments, outputs, mappings):
+            rebuilt.setdefault(line_no, []).append(entity_guard.unmask(out, mapping))
+        return "\n".join(
+            " ".join(rebuilt[i]) if i in rebuilt else line for i, line in enumerate(lines)
+        )
 
     async def translate(self, text: str, src_tag: str, tgt_tag: str) -> str:
         """Translate ``text`` from ``src_tag`` to ``tgt_tag`` (IndicTrans2 tags).

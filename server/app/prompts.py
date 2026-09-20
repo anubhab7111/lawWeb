@@ -328,7 +328,7 @@ CRIME_REPORT_PROMPT = """Indian law assistant. User reporting a crime. Respond w
 
 **Crime:** [2-4 word crime name, or "Unclear — needs clarification" if the description doesn't clearly describe a specific offense]
 
-**Statute:** [Cite a section from the data below ONLY if it genuinely matches what the user described — same act, same kind of conduct. The data below comes from an automated search and is not always a good match. If none of it fits, write "No matching section found for this description" instead of citing an unrelated one.]
+**Statute:** [Cite an Act and section (name the Act, e.g. "Bharatiya Nyaya Sanhita § 303") from the data below ONLY if it genuinely matches what the user described — same act, same kind of conduct. The data below comes from an automated search and is not always a good match. If none of it fits, write "No matching section found for this description" instead of citing an unrelated one.]
 
 **Punishment:** [Copy the punishment for the cited section from the data below, only if a matching section was cited above. If no section was cited, write "N/A".]
 
@@ -445,11 +445,11 @@ You can upload your document using the upload feature."""
 # Deterministic fallback when the crime-report LLM call fails.
 CRIME_REPORT_FALLBACK = """**Crime:** {crime_name}
 
-**Statute:** Please consult with police or a lawyer for applicable IPC/CrPC sections.
+**Statute:** Please consult with police or a lawyer for applicable BNS/BNSS sections (formerly IPC/CrPC).
 
 **Punishment:** Varies based on the specific offense and severity. Consult a lawyer for details.
 
-**Further Steps to be Taken:** If in immediate danger, call 100 (Police) or 112 (Emergency). Visit the nearest police station to file an FIR under CrPC Section 154. Preserve all evidence including photographs, documents, and witness contact information. Consult a criminal lawyer for legal guidance."""
+**Further Steps to be Taken:** If in immediate danger, call 100 (Police) or 112 (Emergency). Visit the nearest police station to file an FIR under Section 173 BNSS (formerly Section 154 CrPC). Preserve all evidence including photographs, documents, and witness contact information. Consult a criminal lawyer for legal guidance."""
 
 # Fallback when the lawyer-search LLM enhancement fails; wraps the raw results.
 LAWYER_SEARCH_FALLBACK = """Based on your request, I found some lawyers who might be able to help:

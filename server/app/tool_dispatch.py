@@ -11,6 +11,7 @@ fixed everywhere at once.
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from app.config import get_settings
 from app.text_match import any_word
 from app.tools.base_legal_rag import compress_chunks_for_context
 from app.tools.indian_kanoon import get_indian_kanoon_tool
@@ -161,13 +162,18 @@ async def invoke_indian_kanoon(
 ) -> ToolInvocationResult:
     """Fetch case law / precedents from Indian Kanoon."""
     try:
+        if not get_settings().indian_kanoon_api_key:
+            return ToolInvocationResult(
+                name="indian_kanoon", succeeded=False, context_text=""
+            )
         ik_tool = get_indian_kanoon_tool()
         await ik_tool.initialize()
         result = await ik_tool.answer_legal_query(query, context_type)
-        formatted = result.get("formatted_results", "")
+        found = bool(result.get("results"))
+        formatted = result.get("formatted_results", "") if found else ""
         return ToolInvocationResult(
             name="indian_kanoon",
-            succeeded=bool(formatted),
+            succeeded=found,
             context_text=formatted,
             raw=result,
         )
@@ -340,7 +346,7 @@ async def invoke_crime_sections(
             )
 
         section_lines = [
-            f"• IPC Section {match.section} ({match.title})\n  Punishment: {match.punishment}"
+            f"• {match.act_name} § {match.section} ({match.title})\n  Punishment: {match.punishment}"
             for match in rag_result.ipc_sections
         ]
         sections_text = "\n".join(section_lines)

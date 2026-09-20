@@ -636,11 +636,13 @@ def get_indian_law_rag(
     """
     global _indian_law_rag
     if _indian_law_rag is None:
-        _indian_law_rag = IndianLawRAGTool(
-            indian_kanoon_tool=indian_kanoon_tool,
-            crime_rag=crime_rag,
-            criminal_rag=criminal_rag,
-            civil_rag=civil_rag,
-            constitutional_rag=constitutional_rag,
-        )
-    return _indian_law_rag
+        _indian_law_rag = IndianLawRAGTool()
+    # Later calls may supply components the first one lacked (e.g. an
+    # Indian Kanoon tool that failed to initialize at startup).
+    tool = _indian_law_rag
+    tool.indian_kanoon = indian_kanoon_tool or tool.indian_kanoon
+    tool.criminal_rag = criminal_rag or crime_rag or tool.criminal_rag
+    tool.crime_rag = tool.criminal_rag
+    tool.civil_rag = civil_rag or tool.civil_rag
+    tool.constitutional_rag = constitutional_rag or tool.constitutional_rag
+    return tool
