@@ -35,7 +35,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalChunk
+from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalChunk, file_fingerprint
 from app.tools.civil_rag import CivilRAGSystem
 from app.tools.constitutional_rag import ConstitutionalRAGSystem
 from app.tools.criminal_rag import CriminalRAGSystem
@@ -250,14 +250,14 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             for n, part in enumerate(_split_long_text(text), 1)
         ]
 
-    def _current_pdf_fingerprint(self) -> Dict[str, int]:
+    def _current_pdf_fingerprint(self) -> Dict[str, str]:
         fingerprint = super()._current_pdf_fingerprint()
         for domain in self.PROSE_DIRS:
             prose_dir = self.data_dir / domain
             if prose_dir.exists():
                 for pdf in prose_dir.rglob("*.pdf"):
                     fingerprint[f"{domain}/{pdf.relative_to(prose_dir)}"] = (
-                        pdf.stat().st_size
+                        file_fingerprint(pdf)
                     )
         return fingerprint
 

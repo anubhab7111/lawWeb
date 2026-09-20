@@ -59,6 +59,7 @@ from app.metrics.ground_truth import (
 )
 from app.metrics.llm_judge import JudgeScore, LLMJudge
 from app.metrics.retrieval_metrics import (
+    act_aware_sections,
     compute_hit_rate,
     compute_mrr_single,
 )
@@ -255,7 +256,7 @@ class MetricsEvaluator:
 
     async def _get_rag_context(
         self, query: str, gt_entry: GroundTruthEntry
-    ) -> Tuple[List[str], str]:
+    ) -> Tuple[List[str], str, List[Tuple[str, str]]]:
         """
         Re-run retrieval for *query* using the SAME production path the
         chatbot uses: ``retrieve_statutes`` (doctrine pins + hybrid fill +
@@ -266,9 +267,10 @@ class MetricsEvaluator:
 
         Returns
         -------
-        (ranked_section_numbers, concatenated_context_text)
+        (ranked_section_numbers, concatenated_context_text, ranked (act, section) pairs)
         """
         sections: List[str] = []
+        pairs: List[Tuple[str, str]] = []
         ctx_parts: List[str] = []
 
         domain = gt_entry.get("domain", "unknown")
@@ -293,6 +295,7 @@ class MetricsEvaluator:
                 if sec and sec not in seen:
                     seen.add(sec)
                     sections.append(sec)
+                    pairs.append((c.act_name, sec))
                 ctx_parts.append(
                     f"{c.act_name} {c.section_number} -- {c.title}\n"
                     f"{c.text[:400]}"
@@ -332,7 +335,7 @@ class MetricsEvaluator:
         except Exception as exc:
             logger.warning("Indian Kanoon retrieval failed during evaluation: %s", exc)
 
-        return sections, "\n\n".join(ctx_parts)
+        return sections, "\n\n".join(ctx_parts), pairs
 
     # -------------------------------------------------------------------------
     # Single-query evaluation
@@ -356,16 +359,17 @@ class MetricsEvaluator:
             error, answer = answer, ""
 
         # ---- Pass 2: RAG retrieval -------------------------------------------
-        retrieved_sections, retrieved_context = await self._get_rag_context(
+        retrieved_sections, retrieved_context, retrieved_pairs = await self._get_rag_context(
             query, gt_entry
         )
 
         # ---- Retrieval metrics (pure, no LLM) --------------------------------
         relevant_secs = relevant_sections_for(gt_entry)
-        hr1 = compute_hit_rate(retrieved_sections, relevant_secs, k=1)
-        hr3 = compute_hit_rate(retrieved_sections, relevant_secs, k=3)
-        hr5 = compute_hit_rate(retrieved_sections, relevant_secs, k=5)
-        rr = compute_mrr_single(retrieved_sections, relevant_secs)
+        scored_sections = act_aware_sections(retrieved_pairs, gt_entry.get("expected_acts", []))
+        hr1 = compute_hit_rate(scored_sections, relevant_secs, k=1)
+        hr3 = compute_hit_rate(scored_sections, relevant_secs, k=3)
+        hr5 = compute_hit_rate(scored_sections, relevant_secs, k=5)
+        rr = compute_mrr_single(scored_sections, relevant_secs)
 
         # ---- Engineering metrics (pure, no LLM) ------------------------------
         token_record = build_token_record(

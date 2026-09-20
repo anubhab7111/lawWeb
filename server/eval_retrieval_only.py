@@ -26,7 +26,7 @@ from app.metrics.ground_truth import (
     GROUND_TRUTH,
     relevant_sections_for,
 )
-from app.metrics.retrieval_metrics import compute_hit_rate, compute_mrr_single
+from app.metrics.retrieval_metrics import act_aware_sections, compute_hit_rate, compute_mrr_single
 from app.tools.legal_retrieval import retrieve_statutes
 from app.tools.unified_legal_rag import get_unified_rag_system
 
@@ -53,12 +53,13 @@ async def main() -> None:
     for entry in entries:
         result, _parsed = await retrieve_statutes(entry["query"], k=args.k)
         seen: set = set()
-        sections = []
+        pairs = []
         for c in result.chunks:
             sec = c.section_number.replace("Article", "").strip()
             if sec and sec not in seen:
                 seen.add(sec)
-                sections.append(sec)
+                pairs.append((c.act_name, sec))
+        sections = act_aware_sections(pairs, entry.get("expected_acts", []))
         relevant = relevant_sections_for(entry)
         relevant = [s.replace("Article", "").strip() for s in relevant]
         rows.append(

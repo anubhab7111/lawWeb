@@ -31,6 +31,10 @@ _CITE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "Sections 73 and 74", "Articles 14, 19 and 21" — the numbers after the first.
+_NUMBER_RE = re.compile(r"\d{1,4}[A-Za-z]{0,2}")
+_CITE_LIST_RE = re.compile(r"(?:\s*(?:,|and|&)\s*\d{1,4}[A-Za-z]{0,2}(?:\(\d+[a-z]?\))?)+")
+
 # Sort longest-first so "code of criminal procedure" beats "crpc" etc.
 _ACT_ALIASES = sorted(ACT_HINTS.items(), key=lambda kv: -len(kv[0]))
 
@@ -150,13 +154,21 @@ def iter_citation_occurrences(answer: str) -> List[CitationOccurrence]:
     for m in _CITE_RE.finditer(answer):
         section = (m.group(1) or m.group(2) or m.group(3)).upper()
         is_article = m.group(3) is not None
-        act_hint = _act_hint_near(answer, m.start(), m.end(), is_article)
+        end = m.end()
+        extra: List[str] = []
+        list_match = _CITE_LIST_RE.match(answer, end)
+        if list_match:
+            extra = [n.upper() for n in _NUMBER_RE.findall(list_match.group(0))]
+            end = list_match.end()
+        act_hint = _act_hint_near(answer, m.start(), end, is_article)
         raw = answer[m.start() : m.end()]
-        if act_hint:
-            raw = f"{raw} ({act_hint})"
-        occurrences.append(
-            CitationOccurrence(m.start(), m.end(), raw, section, act_hint, is_article)
-        )
+        for number in [section] + extra:
+            label = raw if number == section else f"{raw.split()[0]} {number}"
+            if act_hint:
+                label = f"{label} ({act_hint})"
+            occurrences.append(
+                CitationOccurrence(m.start(), end, label, number, act_hint, is_article)
+            )
     return occurrences
 
 
