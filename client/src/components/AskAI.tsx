@@ -5,6 +5,7 @@ import {
   stopChatStream,
   uploadDocumentForAnalysis,
   clearChatSession,
+  fetchLawyerById,
   listChatSessions,
   getChatSessionHistory,
   type StreamEvent,
@@ -13,7 +14,7 @@ import {
 import { RichText } from "./RichText";
 import { IconSearch, IconPlus, IconPaperclip, IconClose, IconScale, IconCalendar } from "./icons";
 import type { ReactNode } from "react";
-import { initials, avatarTint, type UserProfile } from "../lib/ui";
+import { initials, avatarTint, type Lawyer, type UserProfile } from "../lib/ui";
 
 // crypto.randomUUID is only defined in secure contexts (https:// or
 // localhost) — a demo reached over a bare http://<lan-ip> origin (a phone,
@@ -59,12 +60,21 @@ interface AskAIProps {
   user: UserProfile | null;
   initialQuestion: string | null;
   onConsumeInitial: () => void;
-  onBookLawyer: () => void;
-  onViewLawyer: () => void;
+  onBookLawyer: (l: Lawyer) => void;
+  onViewLawyer: (l: Lawyer) => void;
   onNavigate: (v: View) => void;
 }
 
-export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: AskAIProps) {
+export function AskAI({ user, initialQuestion, onConsumeInitial, onBookLawyer, onViewLawyer, onNavigate }: AskAIProps) {
+  const openLawyer = async (id: string | undefined, action: (l: Lawyer) => void) => {
+    if (!id) { onNavigate("lawyers"); return; }
+    try {
+      action(await fetchLawyerById(id));
+    } catch {
+      onNavigate("lawyers");
+    }
+  };
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | undefined>();
@@ -380,7 +390,10 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onNavigate }: A
                                   <div style={{ font: "700 14.5px var(--font-head)" }}>{name}</div>
                                   <div style={{ font: "500 12.5px var(--font-body)", color: "var(--muted-2)" }}>{l.specialization || l.specialty || "Legal"}{l.location ? ` · ${l.location}` : ""}</div>
                                 </div>
-                                <button className="btn btn-primary btn-sm" onClick={() => onNavigate("lawyers")}>Find lawyers</button>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <button className="btn btn-outline btn-sm" onClick={() => openLawyer(l.id, onViewLawyer)}>Profile</button>
+                                  <button className="btn btn-primary btn-sm" onClick={() => openLawyer(l.id, onBookLawyer)}>Book</button>
+                                </div>
                               </div>
                             );
                           })}

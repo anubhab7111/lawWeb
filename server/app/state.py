@@ -15,6 +15,7 @@ class Message(TypedDict):
 class LawyerInfo(TypedDict):
     """Information about a lawyer."""
 
+    id: str
     name: str
     specialization: str
     location: str

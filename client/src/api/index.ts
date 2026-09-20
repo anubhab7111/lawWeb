@@ -69,6 +69,7 @@ export interface ChatResponse {
     session_id: string;
     intent?: string;
     document_info?: Record<string, any>;
+    document_validation?: Record<string, any>;
     crime_report?: Record<string, any>;
     lawyers_found?: Array<Record<string, any>>;
 }
