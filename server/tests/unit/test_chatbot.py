@@ -37,6 +37,7 @@ class FakeLLM:
         self.hang = hang
         self.calls = 0
         self.cancelled = False
+        self.prompts = []
 
     def _next(self):
         self.calls += 1
@@ -58,6 +59,7 @@ class FakeLLM:
         return SimpleNamespace(content=f"thinking</think>{self._next()}")
 
     async def astream(self, messages):
+        self.prompts.append(messages[0].content)
         if self.fail:
             self.calls += 1
             raise self.fail
@@ -135,8 +137,9 @@ def env(monkeypatch):
 class Rig:
     """One chatbot wired to fakes; records what the workflow asked of them."""
 
-    def __init__(self, monkeypatch, llm, classification, statutes, reports=None):
+    def __init__(self, monkeypatch, llm, classification, statutes, reports=None, retry_llm=None):
         self.llm = llm
+        self.retry_llm = retry_llm or llm
         self.statute_calls = []
         self._statutes = list(statutes)
         self._reports = list(reports or [])
@@ -161,6 +164,7 @@ class Rig:
 
         monkeypatch.setattr(cb, "classify_intent_embedding", classify)
         monkeypatch.setattr(cb, "get_llm", lambda: llm)
+        monkeypatch.setattr(cb, "get_retry_llm", lambda: self.retry_llm)
         monkeypatch.setattr(cb, "_verify_response_citations", verify)
         monkeypatch.setattr(cb, "_invoke_fast_text", fast_text)
         monkeypatch.setitem(cb.RAG_TOOL_REGISTRY, "statute_context", statute_tool)
@@ -405,19 +409,92 @@ def test_unadjudicated_low_score_does_not_regenerate(monkeypatch):
     assert events[-1]["trace"]["grounding"]["adjudicated"] is False
 
 
-def test_incomplete_generation_note_is_not_verified(monkeypatch):
-    # thinking never closes -> canned note; nothing to fact-check
-    class NeverClosesLLM(FakeLLM):
-        async def astream(self, messages):
-            yield SimpleNamespace(content="still thinking " * 2000)
+class NeverClosesLLM(FakeLLM):
+    """Thinks forever: never emits </think>, like the real give-up."""
 
-    rig = Rig(monkeypatch, NeverClosesLLM(), _classification("general_query"),
-              [_statute()], [_report(1.0)])
+    async def astream(self, messages):
+        self.calls += 1
+        self.prompts.append(messages[0].content)
+        yield SimpleNamespace(content="still thinking " * 2000)
+
+
+RecordingLLM = FakeLLM
+
+
+def _tokens(events):
+    return [e["content"] for e in events if e["type"] == "token"]
+
+
+def test_giveup_with_failing_retry_shows_the_note_once_and_is_not_verified(monkeypatch):
+    first, second = NeverClosesLLM(), NeverClosesLLM()
+    rig = Rig(monkeypatch, first, _classification("general_query"),
+              [_statute()], [_report(1.0)], retry_llm=second)
     events = run(rig.stream())
     done = events[-1]
+    assert first.calls == 1 and second.calls == 1
     assert done["response"].startswith("I wasn't able to finish")
+    assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1  # not twice
     assert rig.verify_calls == 0
     assert done["trace"]["grounding"] == {"verified": False, "reason": "generation_failed"}
+    assert done["trace"]["generation"] == {"attempts": 2, "giveup_retry": True, "failed": True}
+
+
+def test_giveup_retry_recovers_without_the_user_ever_seeing_the_note(monkeypatch):
+    first = NeverClosesLLM()
+    retry = RecordingLLM(["Concise grounded answer."])
+    rig = Rig(monkeypatch, first, _classification("general_query"),
+              [_statute()], [_report(1.0)], retry_llm=retry)
+    events = run(rig.stream())
+    done = events[-1]
+    assert done["response"].strip() == "Concise grounded answer."
+    assert cb._INCOMPLETE_GENERATION_NOTE not in "".join(_tokens(events))
+    assert any(e["type"] == "status" and e["stage"] == "retrying" for e in events)
+    assert rig.verify_calls == 1  # the recovered answer is verified like any other
+    assert done["trace"]["generation"] == {"attempts": 2, "giveup_retry": True, "failed": False}
+
+
+def test_giveup_retry_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("LLM_GIVEUP_RETRY_ENABLED", "false")
+    get_settings.cache_clear()
+    first, second = NeverClosesLLM(), RecordingLLM(["never used"])
+    rig = Rig(monkeypatch, first, _classification("general_query"),
+              [_statute()], [_report(1.0)], retry_llm=second)
+    events = run(rig.stream())
+    assert first.calls == 1 and second.prompts == []
+    assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1
+
+
+def test_giveup_retry_is_skipped_when_too_much_time_has_passed(monkeypatch):
+    monkeypatch.setenv("LLM_GIVEUP_RETRY_MAX_ELAPSED_SECONDS", "0")
+    get_settings.cache_clear()
+    first, second = NeverClosesLLM(), RecordingLLM(["never used"])
+    rig = Rig(monkeypatch, first, _classification("general_query"),
+              [_statute()], [_report(1.0)], retry_llm=second)
+    events = run(rig.stream())
+    assert second.prompts == []
+    # the note was withheld on the first attempt, so it must still reach the user
+    assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1
+    assert events[-1]["response"].startswith("I wasn't able to finish")
+
+
+def test_retry_prompt_genuinely_differs_from_the_first(monkeypatch):
+    long_statute = "\n\n".join(f"• **IPC § {i}** — Heading {i}\n" + "word " * 120 for i in range(1, 11))
+    state = {
+        "current_input": "Is anticipatory bail available for economic offences?",
+        "messages": [],
+        "rag_succeeded": True,
+        "tool_results": {
+            "statute_context": _statute(text=long_statute),
+            "indian_kanoon": ToolInvocationResult("indian_kanoon", True, "KANOON-EXCERPT " * 50),
+        },
+    }
+    normal, normal_ctx = cb._build_answer_prompt(state)
+    concise, concise_ctx = cb._build_answer_prompt(state, concise=True)
+    assert "KANOON-EXCERPT" in normal and "KANOON-EXCERPT" not in concise
+    assert len(concise_ctx) < len(normal_ctx)
+    assert "under 300 words" in concise and "under 300 words" not in normal
+    # truncation cut on a provision boundary, not mid-entry
+    assert concise_ctx.rstrip().endswith("word")
 
 
 def test_regeneration_is_capped_at_one(monkeypatch):

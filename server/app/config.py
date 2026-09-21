@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     grounding_retry_threshold: float = 0.5
     # No retry/regeneration starts once a request has used this much wall time.
     request_budget_seconds: int = 200
+    # When the model gives up (never closes its <think> block), retry once with
+    # a trimmed, concise prompt at a higher temperature — but only if the request
+    # is still younger than this. A give-up itself takes 2-3 minutes, so this is
+    # deliberately much larger than request_budget_seconds.
+    llm_giveup_retry_enabled: bool = True
+    llm_giveup_retry_max_elapsed_seconds: int = 330
+    llm_retry_temperature: float = 0.4
     # Ollama circuit breaker: after N consecutive failures/timeouts, fail fast
     # for the cooldown instead of making every request wait out the timeout.
     llm_breaker_failures: int = 3

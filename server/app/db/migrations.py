@@ -317,6 +317,17 @@ def ensure_chat_messages_language_columns(engine: Engine) -> None:
         )
 
 
+def ensure_chat_messages_trace_column(engine: Engine) -> None:
+    """Store the assistant's reasoning trace (routing, retrieval grade and
+    sections, grounding score) alongside the reply it produced. Nullable JSONB:
+    user rows and pre-existing rows simply have no trace. Depends on
+    ensure_chat_tables having created chat_messages."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS trace JSONB;"
+        )
+
+
 def ensure_calendar_events_table(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.exec_driver_sql(
@@ -408,3 +419,4 @@ def run_migrations(engine: Engine) -> None:
     ensure_calendar_connections_table(engine)
     ensure_chat_tables(engine)
     ensure_chat_messages_language_columns(engine)
+    ensure_chat_messages_trace_column(engine)

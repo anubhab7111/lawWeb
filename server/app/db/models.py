@@ -476,6 +476,10 @@ class ChatMessage(SQLModel, table=True):
     content: str
     language: str = Field(default="en")
     content_display: Optional[str] = Field(default=None)
+    # Audit trail of how the assistant produced this reply (routing decision,
+    # retrieval grade and sections, grounding score, retries). Set on assistant
+    # rows only; NULL for user rows and for turns that predate the column.
+    trace: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -486,6 +490,7 @@ class ChatMessage(SQLModel, table=True):
             "id": self.id,
             "sessionId": self.session_id,
             "role": self.role.value if self.role else None,
+            "trace": self.trace,
             # Prefer the user's original-language text for display; fall back to
             # the canonical English content for English turns / legacy rows.
             "content": self.content_display or self.content,
