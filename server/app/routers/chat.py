@@ -159,27 +159,22 @@ def _resolve_session_id_sync(session: Session, user: Optional[User], session_id:
     return session_id
 
 
-def _seed_from_db_if_needed_sync(
-    session: Session, chatbot, user: Optional[User], session_id: str
-) -> None:
-    """Load prior DB history into the in-memory cache for an authenticated
-    user whose session_id isn't already live in this process (e.g. after a
-    server restart). Assumes session_id has already been through
-    _resolve_session_id, so any DB row found here is guaranteed owned by
-    `user`."""
-    if user is None or chatbot.has_session(_memory_key(user, session_id)):
-        return
+def _load_db_history_sync(
+    session: Session, user: User, session_id: str
+) -> Optional[List[Dict[str, str]]]:
+    """The user's persisted transcript for session_id as chatbot messages, or
+    None if there is no such session or it belongs to someone else. Assumes
+    session_id has already been through _resolve_session_id, so a row found here
+    is guaranteed owned by `user`."""
     chat_session = session.get(ChatSession, session_id)
     if chat_session is None or chat_session.user_id != user.id:
-        return
+        return None
     rows = session.exec(
         select(ChatMessage)
         .where(ChatMessage.session_id == session_id)
         .order_by(ChatMessage.created_at)
     ).all()
-    chatbot.seed_session(
-        _memory_key(user, session_id), [{"role": r.role.value, "content": r.content} for r in rows]
-    )
+    return [{"role": r.role.value, "content": r.content} for r in rows]
 
 
 def _persist_turn_sync(
@@ -275,8 +270,21 @@ async def _resolve_session_id(*args, **kwargs):
     return await run_in_threadpool(_resolve_session_id_sync, *args, **kwargs)
 
 
-async def _seed_from_db_if_needed(*args, **kwargs):
-    return await run_in_threadpool(_seed_from_db_if_needed_sync, *args, **kwargs)
+async def _seed_from_db_if_needed(
+    session: Session, chatbot, user: Optional[User], session_id: str
+) -> None:
+    """Prime the conversation checkpoint from the DB transcript for an
+    authenticated user whose thread has none yet — a session that predates
+    checkpointing, or whose idle thread was cleaned up. chat_messages is the
+    durable record; the checkpoint is just the live window."""
+    if user is None:
+        return
+    key = _memory_key(user, session_id)
+    if await chatbot.has_session(key):
+        return
+    messages = await run_in_threadpool(_load_db_history_sync, session, user, session_id)
+    if messages:
+        await chatbot.seed_session(key, messages)
 
 
 async def _persist_turn(*args, **kwargs):
@@ -754,16 +762,21 @@ def list_sessions(
         raise _server_error("Error listing sessions", e)
 
 
+def _delete_chat_session_sync(session: Session, chat_session: ChatSession) -> None:
+    session.delete(chat_session)  # cascades to chat_messages
+    session.commit()
+
+
 @router.delete("/session/{session_id}")
-def clear_session(
+async def clear_session(
     session_id: str,
     user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session),
 ):
-    """Clear a chat session's history (in-memory always; DB rows too if the
-    session is owned by the requesting user)."""
+    """Clear a chat session's history (the conversation checkpoint always; DB
+    rows too if the session is owned by the requesting user)."""
     try:
-        chat_session = session.get(ChatSession, session_id)
+        chat_session = await run_in_threadpool(session.get, ChatSession, session_id)
         if chat_session is not None and (user is None or chat_session.user_id != user.id):
             # Tied to someone else's account (or the caller isn't
             # authenticated at all) — don't let an unrelated caller who
@@ -775,19 +788,33 @@ def clear_session(
             return {"message": f"Session {session_id} cleared"}
 
         chatbot = get_chatbot()
-        chatbot.clear_session(_memory_key(user, session_id))
+        await chatbot.clear_session(_memory_key(user, session_id))
 
         if chat_session is not None:
-            session.delete(chat_session)  # cascades to chat_messages
-            session.commit()
+            await run_in_threadpool(_delete_chat_session_sync, session, chat_session)
 
         return {"message": f"Session {session_id} cleared"}
     except Exception as e:
         raise _server_error("Error clearing session", e)
 
 
+def _load_history_rows_sync(session: Session, session_id: str, user: Optional[User]):
+    """(chat_session, rows). rows is None when there is no DB row at all."""
+    chat_session = session.get(ChatSession, session_id)
+    if chat_session is None:
+        return None, None
+    if user is None or chat_session.user_id != user.id:
+        return chat_session, []
+    rows = session.exec(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at)
+    ).all()
+    return chat_session, rows
+
+
 @router.get("/session/{session_id}/history")
-def get_session_history(
+async def get_session_history(
     session_id: str,
     user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session),
@@ -800,15 +827,12 @@ def get_session_history(
     already loaded that account's real transcript into the shared in-memory
     cache."""
     try:
-        chat_session = session.get(ChatSession, session_id)
+        chat_session, rows = await run_in_threadpool(
+            _load_history_rows_sync, session, session_id, user
+        )
         if chat_session is not None:
-            if user is None or chat_session.user_id != user.id:
+            if not rows and (user is None or chat_session.user_id != user.id):
                 return {"session_id": session_id, "messages": [], "count": 0}
-            rows = session.exec(
-                select(ChatMessage)
-                .where(ChatMessage.session_id == session_id)
-                .order_by(ChatMessage.created_at)
-            ).all()
             # Render the user's original-language text (content_display) when
             # present; English turns / legacy rows fall back to content.
             messages = [
@@ -823,7 +847,7 @@ def get_session_history(
             return {"session_id": session_id, "messages": messages, "count": len(messages)}
 
         chatbot = get_chatbot()
-        history = chatbot.get_session_history(_memory_key(user, session_id))
+        history = await chatbot.get_session_history(_memory_key(user, session_id))
         return {"session_id": session_id, "messages": history, "count": len(history)}
     except Exception as e:
         raise _server_error("Error getting history", e)

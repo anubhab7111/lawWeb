@@ -49,7 +49,11 @@ class Settings(BaseSettings):
     # ISO code of the currency Braintree actually charges (sandbox: USD).
     currency: str = "USD"
 
-    # Chat session lifecycle
+    # Chat memory lives in Postgres checkpoints (app.checkpointing); a thread idle
+    # this long is deleted by a scheduled job. Authenticated users lose nothing:
+    # the next message re-seeds it from chat_messages.
+    chat_thread_retention_days: int = 7
+    # Only bound the in-process fallback used when Postgres is unavailable.
     session_ttl_seconds: int = 7200
     max_sessions: int = 500
 

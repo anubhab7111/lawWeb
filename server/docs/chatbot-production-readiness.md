@@ -33,7 +33,7 @@ correction, marked in B10). This section records what was done about it.
 | B7 | **Fixed** | `classify_intent` reroutes a document turn with no document to `general_query`, so the reported intent matches the flow that ran. | `test_document_intent_without_document_reroutes_to_general_query` |
 | B8 | **Fixed** | Every routing signal is now consumed: `is_ambiguous`/`secondary_intents` drive clarification, `selected_tools` drives what handlers run, and the rest go into the returned `trace`. | clarification tests, `test_select_tools_policy` |
 | B9 | **Fixed structurally** | `invoke_llm_safely` defaults to `stream=False`; only the four answer-generating calls pass `stream=True`. | `test_non_streaming_is_the_default_and_never_touches_the_queue` |
-| B10 | **Fixed** | Chunk-boundary truncation; canned error text is no longer verified; `max_sessions` enforced on new sessions (with an off-by-one caught by a test); `clear_session` cancels in-flight work; `lawyer_query` clamped; document fences now neutralise `</document>` and the validation path is fenced. | `test_truncate_block_...`, `test_new_sessions_respect_max_sessions`, `test_clear_session_...`, `test_sanitize_...` |
+| B10 | **Fixed** | Chunk-boundary truncation; canned error text is no longer verified; `max_sessions` enforced on new sessions (with an off-by-one caught by a test); `clear_session` cancels in-flight work; `lawyer_query` clamped; document fences now neutralise `</document>` and the validation path is fenced. | `test_truncate_block_...`, `test_in_memory_fallback_respects_max_sessions`, `test_clear_session_...`, `test_sanitize_...` |
 
 ### Agentic improvements
 
@@ -45,8 +45,8 @@ correction, marked in B10). This section records what was done about it.
 | A4 grounding retry | **Done, but currently dormant on this model** | One targeted regeneration, only on an *adjudicated* report (see live findings: the correction LLM does not return JSON on qwen3:4b, so in practice it does not fire yet). |
 | A5 decomposition | **Done, deterministic** | Splits on question marks / enumerations; the full query is always searched too, so it can only add recall. No LLM call: a 4B model spends seconds on even a trivial split. |
 | A6 real tool selection | **Done (option 1)** | `select_tools()` decides what handlers run. `bare_act_lookup` is still not wired to any handler. |
-| A7 LangGraph checkpointer | **Not done** | Needs `langgraph-checkpoint-postgres` (a new dependency) and a decision on migrating live sessions; see open questions. Note the graph state now holds `ToolInvocationResult` objects, which a checkpointer would need serialised. |
-| A8 reasoning trace | **Partly done** | The trace (routing, plan, retrieval grade and sections, grounding score) is returned in the `done` event and `chat()` result and logged. It is **not persisted** to the database; that needs a schema change. |
+| A7 LangGraph checkpointer | **Done** (follow-up, see below) | Conversation memory now lives in Postgres checkpoints. |
+| A8 reasoning trace | **Done** (follow-up, see below) | Returned in the `done` event and `chat()` result, logged, and persisted in `chat_messages.trace`. |
 
 ### Production-readiness gaps
 
@@ -54,8 +54,8 @@ Ollama circuit breaker (fail fast for 30s after 3 consecutive failures, single
 half-open probe); structured logging with a per-request id for `chatbot.py` and
 `tool_dispatch.py` (other tool modules still `print()`); per-caller rate limit
 (20/min, `CHAT_RATE_LIMIT_PER_MINUTE`) and a global concurrency cap
-(`CHAT_MAX_CONCURRENT`, 503 when busy); 39 new unit tests (`test_chatbot.py`,
-`test_chat_api.py`; 72 in the unit suite) that run the real compiled graph against a fake LLM.
+(`CHAT_MAX_CONCURRENT`, 503 when busy); unit tests in `test_chatbot.py`, `test_chat_api.py`,
+`test_chat_trace.py` and `test_chat_memory.py` (see the follow-up below for the current count) that run the real compiled graph against a fake LLM.
 
 ### What the live run showed (real Ollama qwen3:4b, real retrieval, real router)
 
@@ -85,15 +85,84 @@ the very first query in a fresh process, ~4.5 minutes of it case-law embedding).
   disconnect path against a real Ollama stream (covered by the unit test only),
   and the client UI (no browser available; type-checked and bundled only).
 
-### Open questions for the owner
+### Follow-up: checkpointer, persisted trace and give-up retry (owner approved all three)
 
-1. **A7 checkpointer:** adopt `langgraph-checkpoint-postgres`? It adds a
-   dependency and changes where session state lives.
-2. **A8 persistence:** add a nullable `trace` JSONB column to `chat_messages`
-   (additive migration) so the audit trail survives?
-3. **Give-up rate:** the thinking-never-closes failure is now the most likely
-   way a user gets no answer. Worth a bounded automatic retry (costs another
-   ~2 minutes) or a smaller `num_predict` / different model?
+**Give-up retry (open question 3).** When the model never closes `<think>`,
+`gq_generate` retries once before the user sees "please try again". A bare
+re-run is only latency, so the retry differs: statute and case-law blocks only
+(~1,400 tokens instead of the full budget), an explicit "answer directly, under
+300 words" instruction, and temperature 0.4 instead of 0.1. Qwen3's `/no_think`
+soft switch was tried first and does **not** work on this Ollama build (no
+closing `</think>` at all in 1,500 tokens). The give-up note is withheld from
+the stream on the first attempt, so a successful retry is seamless. It has its
+own time budget (`LLM_GIVEUP_RETRY_MAX_ELAPSED_SECONDS`, 330s) because a give-up
+itself takes 2-3 minutes; `LLM_GIVEUP_RETRY_ENABLED=false` turns it off.
+Measured on the query that gave up live (real retrieval, qwen3:4b, **n=3 each,
+so directional**): the normal prompt gave up 1/3 and averaged **123s**; the
+concise prompt gave up 0/3 and averaged **21s** (answers ~1,400 chars vs
+3,900-5,400). The retry is therefore also ~6x cheaper than the pass it
+replaces, which suggests trying the concise prompt earlier for simple queries.
+Crime reports and lawyer search have no retry (small prompts; not observed to
+give up).
+
+**Persisted trace (open question 2).** Nullable `chat_messages.trace JSONB` on
+assistant rows only (`schema.sql`, an idempotent `ensure_chat_messages_trace_column`
+migration, the model, and the history endpoint). Migrations otherwise run only
+via `python -m app.db.init_db`, and the model now maps the column, so startup
+also runs the idempotent `ALTER ... IF NOT EXISTS`; without it an un-migrated
+database would fail every logged-in user's chat insert. Sets in the trace are
+converted before they reach JSONB.
+
+**Checkpointer (open question 1), one line: LangGraph checkpoints in Postgres are
+now the source of truth for the live 20-message conversation window;
+`chat_messages` stays the durable, user-visible transcript and re-seeds a thread
+that has no checkpoint.** Design decisions, and why:
+
+- *Only message history is checkpointed.* A one-node outer graph holds the
+  history; the workflow runs inside it, compiled with `checkpointer=False`. I
+  round-tripped the real graph state through LangGraph's serializer first:
+  `messages` are fine; a `ToolInvocationResult` survives only while its `raw` is
+  plain data (and already warns it "will be blocked in a future version"); it
+  **raises** once `raw` holds a real retriever or Indian Kanoon object; and
+  exceptions are silently flattened to strings. Uploaded documents (up to 10MB)
+  would also have been checkpointed every step. `checkpointer=False` matters: a
+  nested graph compiled with `None` *inherits* its parent's saver
+  (mutation-checked: the test fails without it).
+- *Per-turn inputs and the result travel in a contextvar,* not state, so none of
+  it is persisted.
+- *Isolation:* `thread_id` is the existing `_memory_key`
+  (`user:<id>:<session>` / `guest:<session>`), so guessing a session id still
+  cannot read another account's conversation (tested).
+- *Degrades, doesn't fail:* if Postgres is unreachable at startup the app logs
+  the error and falls back to an in-process saver with the old TTL / size cap
+  (guest chat never needed the database).
+- *Retention:* every run stamps `last_active` into the checkpoint metadata; a
+  6-hourly scheduled job deletes threads idle over `CHAT_THREAD_RETENTION_DAYS`
+  (7). Authenticated users lose nothing (re-seeded from `chat_messages`).
+- *Behaviour change:* a stopped turn saves the partial text the user saw as the
+  assistant turn (as before); a disconnect or an error records the question with
+  no reply, and an error message is no longer written into memory.
+- New dependencies `langgraph-checkpoint-postgres` and `psycopg-pool` (added to
+  `requirements.txt`); the checkpoint tables are created by the saver's own
+  idempotent `setup()` at startup, not by `schema.sql`. The chat memory API
+  (`has_session`, `seed_session`, `get_session_history`, `clear_session`) is now
+  async, and the history/clear endpoints with it.
+
+Tests: 94 in the unit suite (61 new across the work), including real-Postgres
+tests on the scratch database for durability across a simulated restart, idle
+reaping, `init_checkpointer`, and re-seeding from `chat_messages`.
+
+### Still open
+
+1. **Concise-first for simple queries?** The 6x speed difference above raises
+   the question of using the concise prompt as the default when retrieval is
+   strong; that trades answer depth for latency, so it's a product call.
+2. **The grounding correction LLM still doesn't return JSON on qwen3:4b**
+   (unchanged; regeneration stays dormant until it does).
+3. **Not exercised against real Ollama:** the checkpointer with a real generation
+   (the real app lifespan *was* booted against Postgres in a test, with the model
+   warmup stubbed, and a chat turn against a fake LLM used the real Postgres
+   saver), document/lawyer flows, and the browser UI.
 
 ---
 

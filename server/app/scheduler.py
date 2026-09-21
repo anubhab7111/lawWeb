@@ -10,8 +10,8 @@ replace_existing=True) in register_jobs(), a restart replaces existing job
 rows instead of accumulating duplicates.
 
 Operational invariant: this only works correctly with a single uvicorn
-worker (already required today for in-memory chat sessions — see
-app.chatbot). Running >1 worker would double-fire every scheduled job, since
+worker (chat memory no longer needs it — it lives in Postgres checkpoints, see
+app.checkpointing — but the embedding models still do). Running >1 worker would double-fire every scheduled job, since
 there is no distributed lock here.
 """
 
@@ -32,7 +32,8 @@ def get_scheduler() -> AsyncIOScheduler:
 def register_jobs(scheduler: AsyncIOScheduler) -> None:
     """Each feature module registers its own jobs here. Kept as a single
     import point so app.main doesn't need to know what jobs exist."""
-    from app.jobs import calendar_sync, hearing_reminders
+    from app.jobs import calendar_sync, chat_threads, hearing_reminders
 
     hearing_reminders.register(scheduler)
     calendar_sync.register(scheduler)
+    chat_threads.register(scheduler)

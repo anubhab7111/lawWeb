@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.checkpointing import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.deps.errors import MessageHTTPException
 from app.logging_config import configure_logging
@@ -92,6 +93,8 @@ async def lifespan(app: FastAPI):
     # add_job(..., replace_existing=True) inside register_jobs() still runs
     # every boot to pick up code changes to job schedules.
     _ensure_chat_schema()
+    # Before the chatbot is first built: it binds to this checkpointer.
+    await init_checkpointer()
     scheduler = get_scheduler()
     register_jobs(scheduler)
     scheduler.start()
@@ -101,6 +104,7 @@ async def lifespan(app: FastAPI):
     finally:
         warmup_task.cancel()
         scheduler.shutdown(wait=False)
+        await close_checkpointer()
 
 
 app = FastAPI(
