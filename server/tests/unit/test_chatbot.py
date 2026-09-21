@@ -46,6 +46,7 @@ class FakeLLM:
         return self.answers[0]
 
     async def ainvoke(self, messages):
+        self.prompts.append(messages[0].content)
         if self.fail:
             self.calls += 1
             raise self.fail
@@ -190,7 +191,7 @@ def test_disconnect_cancels_generation_and_frees_slot(monkeypatch):
         def __init__(self):
             self.cancelled = asyncio.Event()
 
-        async def ainvoke(self, state):
+        async def ainvoke(self, state, config=None):
             await cb.emit_text("partial ")
             try:
                 await asyncio.sleep(3600)
@@ -200,7 +201,7 @@ def test_disconnect_cancels_generation_and_frees_slot(monkeypatch):
 
     async def scenario():
         graph = HangingGraph()
-        rig.bot.graph = graph
+        rig.bot._turn_graph = graph  # hang the workflow; the memory layer stays real
         gen = rig.bot.stream_chat("hello there", "sess")
         first = await gen.__anext__()
         assert first == {"type": "token", "content": "partial "}
@@ -209,6 +210,10 @@ def test_disconnect_cancels_generation_and_frees_slot(monkeypatch):
         await asyncio.wait_for(graph.cancelled.wait(), timeout=2)
         assert rig.bot._active_stream_tasks == {}
         assert rig.bot._in_flight == 0
+        # the question was recorded; no reply was ever produced
+        assert await rig.bot.get_session_history("sess") == [
+            {"role": "user", "content": "hello there"}
+        ]
 
     run(scenario())
 
@@ -217,12 +222,12 @@ def test_stop_stream_still_cancels(monkeypatch):
     rig = Rig(monkeypatch, FakeLLM(), _classification("general_query"), [_statute()])
 
     class HangingGraph:
-        async def ainvoke(self, state):
+        async def ainvoke(self, state, config=None):
             await cb.emit_text("partial ")
             await asyncio.sleep(3600)
 
     async def scenario():
-        rig.bot.graph = HangingGraph()
+        rig.bot._turn_graph = HangingGraph()
         events = []
         gen = rig.bot.stream_chat("hello there", "sess")
         events.append(await gen.__anext__())
@@ -231,6 +236,11 @@ def test_stop_stream_still_cancels(monkeypatch):
             events.append(e)
         assert events[-1]["type"] == "stopped"
         assert events[-1]["response"] == "partial "
+        # the partial text the user saw is kept as the assistant turn
+        assert await rig.bot.get_session_history("sess") == [
+            {"role": "user", "content": "hello there"},
+            {"role": "assistant", "content": "partial "},
+        ]
 
     run(scenario())
 
@@ -628,25 +638,32 @@ def test_persist_turn_message_arguments_are_keyword_only():
 # --------------------------------------------------------------------------
 
 
-def test_new_sessions_respect_max_sessions(monkeypatch):
+def test_in_memory_fallback_respects_max_sessions(monkeypatch):
     monkeypatch.setenv("MAX_SESSIONS", "2")
     get_settings.cache_clear()
-    bot = cb.LegalChatbot()
-    for sid in ("a", "b", "c"):
-        bot._add_message(sid, {"role": "user", "content": "hi"})
-        time.sleep(0.001)
-    assert len(bot._sessions) == 2 and "c" in bot._sessions
+    bot = cb.LegalChatbot()  # default saver is the in-memory fallback
+
+    async def scenario():
+        for sid in ("a", "b", "c"):
+            await bot._append_assistant(sid, "hi")
+            await asyncio.sleep(0.001)
+        return [sid for sid in "abc" if await bot.has_session(sid)]
+
+    live = run(scenario())
+    assert len(live) == 2 and "c" in live
 
 
-def test_clear_session_cancels_in_flight_generation():
+def test_clear_session_cancels_in_flight_generation_and_forgets_history():
     bot = cb.LegalChatbot()
 
     async def scenario():
+        await bot._append_assistant("s", "remember me")
         task = asyncio.create_task(asyncio.sleep(3600))
         bot._active_stream_tasks["s"] = task
-        bot.clear_session("s")
+        await bot.clear_session("s")
         with pytest.raises(asyncio.CancelledError):
             await task
+        assert await bot.has_session("s") is False
 
     run(scenario())
 

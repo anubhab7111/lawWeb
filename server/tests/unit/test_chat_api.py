@@ -105,3 +105,25 @@ def test_stream_busy_becomes_an_error_event_with_a_useful_message(client_for):
                       ).post("/api/chat/stream", json={"message": "q"})
     got = _sse(resp)
     assert got == [{"type": "error", "content": "The assistant is busy right now."}]
+
+
+def test_app_lifespan_initialises_the_checkpointer_and_registers_the_cleanup_job(monkeypatch):
+    """Boot the real lifespan (warmup stubbed: it loads GPU models) against the
+    scratch database."""
+    from app import checkpointing, main
+    from app.scheduler import get_scheduler
+
+    async def no_warmup():
+        return None
+
+    monkeypatch.setattr(main, "_warmup", no_warmup)
+    monkeypatch.setattr(checkpointing, "_saver", None)
+    monkeypatch.setattr(checkpointing, "_pool", None)
+    get_settings.cache_clear()
+
+    with TestClient(main.app) as client:
+        assert checkpointing.uses_postgres() is True
+        assert get_scheduler().get_job("cleanup_stale_chat_threads") is not None
+        assert client.get("/api/chat/health").status_code == 200
+    assert checkpointing.uses_postgres() is False  # pool closed on shutdown
+    get_settings.cache_clear()

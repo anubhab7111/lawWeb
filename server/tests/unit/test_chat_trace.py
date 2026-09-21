@@ -94,7 +94,7 @@ def test_history_endpoint_returns_the_trace():
         chat_router._persist_turn_sync(
             s, user, sid, user_message="q", assistant_message="a", trace=TRACE
         )
-        out = chat_router.get_session_history(sid, user=user, session=s)
+        out = asyncio.run(chat_router.get_session_history(sid, user=user, session=s))
     by_role = {m["role"]: m for m in out["messages"]}
     assert by_role["user"]["trace"] is None
     assert by_role["assistant"]["trace"]["grounding"]["verified"] is True

@@ -9,8 +9,11 @@ import time
 import contextvars
 import re
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import (
+    Annotated,
     Any,
     AsyncGenerator,
     Awaitable,
@@ -19,12 +22,16 @@ from typing import (
     List,
     Literal,
     Optional,
+    TypedDict,
 )
 
 from langchain_core.messages import HumanMessage
 from langchain_ollama import ChatOllama
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, StateGraph
 
+from app.checkpointing import get_checkpointer
 from app.config import get_settings
 from app.prompts import (
     CASE_LAW_CONTEXT_BLOCK,
@@ -2210,22 +2217,72 @@ def build_legal_chatbot_graph() -> StateGraph:
 # Chatbot Class
 # ============================================================================
 
-_MAX_SESSION_MESSAGES = 20  # live LangGraph context window per session
+_MAX_SESSION_MESSAGES = 20  # live conversation window per session
+
+
+def _append_capped(left: Optional[List[Message]], right: Optional[List[Message]]) -> List[Message]:
+    return ((left or []) + (right or []))[-_MAX_SESSION_MESSAGES:]
+
+
+class SessionState(TypedDict):
+    """The only state that is checkpointed: conversation history.
+
+    The per-turn graph's own state (tool results holding retriever objects and
+    sets, up-to-10MB uploaded document text, exceptions) never reaches the
+    checkpointer — LangGraph's serializer fails on the first arbitrary object in
+    a tool's `raw` payload and flattens exceptions to strings. Keeping history
+    in a small outer graph means only plain, JSON-safe messages are persisted."""
+
+    messages: Annotated[List[Message], _append_capped]
+
+
+@dataclass
+class _TurnContext:
+    """Per-turn inputs and output, passed through a contextvar rather than graph
+    state so none of it is checkpointed (see SessionState)."""
+
+    session_id: str
+    started_at: float
+    document_content: Optional[str] = None
+    document_type: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+
+
+_turn_var: contextvars.ContextVar[Optional[_TurnContext]] = contextvars.ContextVar(
+    "turn_context", default=None
+)
 
 
 class LegalChatbot:
     """
     Main chatbot class that wraps the LangGraph workflow.
     Provides a clean interface for the API layer.
+
+    Two graphs: `self._turn_graph` is the workflow (classify -> handlers, see
+    build_legal_chatbot_graph), compiled with checkpointer=False so its state is
+    never persisted — and so it cannot inherit the outer graph's checkpointer,
+    which a subgraph compiled with checkpointer=None would. `self.graph` is a
+    one-node outer graph whose only state is the message history; it is compiled
+    with the checkpointer, keyed by thread_id == the session's memory key.
     """
 
-    def __init__(self):
-        workflow = build_legal_chatbot_graph()
-        self.graph = workflow.compile()
-        self._sessions: Dict[str, List[Message]] = {}
-        self._session_last_access: Dict[str, float] = {}
+    def __init__(self, checkpointer: Optional[BaseCheckpointSaver] = None):
+        self._checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
+        self._turn_graph = build_legal_chatbot_graph().compile(checkpointer=False)
+
+        session = StateGraph(SessionState)
+        session.add_node("run_turn", self._run_turn)
+        session.set_entry_point("run_turn")
+        session.add_edge("run_turn", END)
+        self.graph = session.compile(checkpointer=self._checkpointer)
+
         self._active_stream_tasks: Dict[str, asyncio.Task] = {}
         self._in_flight = 0
+        # Only used to bound the in-process fallback saver; Postgres threads are
+        # reaped by app.jobs.chat_threads instead.
+        self._last_seen: Dict[str, float] = {}
+
+    # -- concurrency ----------------------------------------------------------
 
     def _acquire_slot(self) -> None:
         # One GPU serves every request; past this many concurrent chats the
@@ -2237,74 +2294,94 @@ class LegalChatbot:
     def _release_slot(self) -> None:
         self._in_flight = max(0, self._in_flight - 1)
 
-    def _evict_stale_sessions(self):
-        """Drop sessions idle beyond the TTL and cap the total session count."""
+    # -- session memory (checkpoint-backed) -----------------------------------
+
+    def _config(self, session_id: str, touch: bool = True) -> Dict[str, Any]:
+        """thread_id is the memory key, which already carries the account scope
+        (`user:<id>:<session>` / `guest:<session>`), so one account cannot read
+        another's conversation by guessing a session id. Only writes count as
+        activity (touch=True)."""
+        if touch:
+            self._touch(session_id)
+        return {
+            "configurable": {"thread_id": session_id},
+            # Stamped into every checkpoint; idle-thread cleanup reads it.
+            "metadata": {"last_active": datetime.now(timezone.utc).isoformat()},
+        }
+
+    def _touch(self, session_id: str) -> None:
+        if not isinstance(self._checkpointer, InMemorySaver):
+            return
         settings = get_settings()
         now = time.monotonic()
-        for sid in [
-            sid
-            for sid, last in self._session_last_access.items()
-            if now - last > settings.session_ttl_seconds
-        ]:
-            self._sessions.pop(sid, None)
-            self._session_last_access.pop(sid, None)
-
-        overflow = len(self._sessions) - settings.max_sessions
+        self._last_seen[session_id] = now
+        stale = [
+            sid for sid, seen in self._last_seen.items()
+            if now - seen > settings.session_ttl_seconds
+        ]
+        overflow = len(self._last_seen) - settings.max_sessions
         if overflow > 0:
-            oldest = sorted(
-                self._session_last_access, key=self._session_last_access.get
-            )[:overflow]
-            for sid in oldest:
-                self._sessions.pop(sid, None)
-                self._session_last_access.pop(sid, None)
+            stale += sorted(self._last_seen, key=self._last_seen.get)[:overflow]
+        for sid in set(stale) - {session_id}:
+            self._checkpointer.delete_thread(sid)
+            self._last_seen.pop(sid, None)
 
-    def _get_session_messages(self, session_id: str) -> List[Message]:
-        """Get or create session message history."""
-        self._evict_stale_sessions()
-        if session_id not in self._sessions:
-            self._sessions[session_id] = []
-        self._session_last_access[session_id] = time.monotonic()
-        return self._sessions[session_id]
+    async def get_session_history(self, session_id: str) -> List[Message]:
+        """The live (20-message-capped) conversation window for a session."""
+        snapshot = await self.graph.aget_state(self._config(session_id, touch=False))
+        return list((snapshot.values or {}).get("messages") or [])
 
-    def _add_message(self, session_id: str, message: Message):
-        """Add a message to session history."""
-        is_new = session_id not in self._sessions
-        if is_new:
-            self._sessions[session_id] = []
-        self._sessions[session_id].append(message)
-        self._session_last_access[session_id] = time.monotonic()
-        if is_new:
-            # A brand-new session must respect max_sessions like the read
-            # path; evicting after the add keeps the newest session safe
-            # (eviction drops the least recently used).
-            self._evict_stale_sessions()
+    async def has_session(self, session_id: str) -> bool:
+        """Whether this session already has a conversation checkpoint."""
+        return bool(await self.get_session_history(session_id))
 
-        if len(self._sessions[session_id]) > _MAX_SESSION_MESSAGES:
-            self._sessions[session_id] = self._sessions[session_id][
-                -_MAX_SESSION_MESSAGES:
-            ]
+    async def seed_session(self, session_id: str, messages: List[Message]) -> None:
+        """
+        Prime a thread from DB-loaded history, but only if it has none yet
+        (avoids clobbering an active conversation with a stale DB read). Called
+        by the chat router for an authenticated user whose thread has no
+        checkpoint (a session that predates checkpointing, or whose idle thread
+        was cleaned up) — chat_messages is the durable transcript.
+        """
+        if messages and not await self.has_session(session_id):
+            await self.graph.aupdate_state(
+                self._config(session_id),
+                {"messages": messages[-_MAX_SESSION_MESSAGES:]},
+                as_node="run_turn",
+            )
 
-    def _initial_state(
-        self,
-        session_id: str,
-        english_message: str,
-        document_content: Optional[str],
-        document_type: Optional[str],
-    ) -> ChatState:
-        """Snapshot history, record the user turn, and build the graph input.
-        Shared by chat() and stream_chat() so the two cannot drift."""
-        # Snapshot into a new list so a concurrent request for the same
-        # session_id (double-submit/retry) appending via _add_message() can't
-        # mutate the list this run is still reading.
-        messages = list(self._get_session_messages(session_id))
-        self._add_message(session_id, {"role": "user", "content": english_message})
-        return {
-            "messages": messages,
-            "current_input": english_message,
+    async def _append_assistant(self, session_id: str, content: str) -> None:
+        await self.graph.aupdate_state(
+            self._config(session_id),
+            {"messages": [{"role": "assistant", "content": content}]},
+            as_node="run_turn",
+        )
+
+    async def clear_session(self, session_id: str) -> None:
+        """Forget a session's history and stop any in-flight generation for it
+        (otherwise it would keep running and write into a session the user just
+        cleared)."""
+        self.stop_stream(session_id)
+        self._last_seen.pop(session_id, None)
+        await self._checkpointer.adelete_thread(session_id)
+
+    # -- the turn -------------------------------------------------------------
+
+    async def _run_turn(self, state: SessionState) -> Dict[str, Any]:
+        """The outer graph's only node: run the workflow for this turn. The last
+        message is the user turn that was just appended; everything before it is
+        history."""
+        ctx = _turn_var.get()
+        if ctx is None:
+            raise RuntimeError("chat turn started without a turn context")
+        *history, current = state["messages"]
+        turn_state: ChatState = {
+            "messages": history,
+            "current_input": current["content"],
             "conversation_context": None,
             "intent": None,
-            "document_content": document_content,
-            "document_type": document_type or "unknown",
+            "document_content": ctx.document_content,
+            "document_type": ctx.document_type or "unknown",
             "document_info": None,
             "document_validation": None,
             "crime_details": None,
@@ -2312,11 +2389,15 @@ class LegalChatbot:
             "lawyer_query": None,
             "lawyers_found": None,
             "response": None,
-            "session_id": session_id,
+            "session_id": ctx.session_id,
             "error": None,
-            "started_at": time.monotonic(),
+            "started_at": ctx.started_at,
             "trace": {},
         }
+        result = await self._turn_graph.ainvoke(turn_state)
+        ctx.result = result
+        response = result.get("response")
+        return {"messages": [{"role": "assistant", "content": response}]} if response else {}
 
     async def stream_chat(
         self,
@@ -2369,21 +2450,27 @@ class LegalChatbot:
             lang.is_reliable and lang.language != get_settings().default_language
         )
 
-        initial_state = self._initial_state(
-            session_id, english_message, document_content, document_type
+        ctx = _TurnContext(
+            session_id=session_id,
+            started_at=time.monotonic(),
+            document_content=document_content,
+            document_type=document_type,
         )
+        config = self._config(session_id)
+        user_input = {"messages": [{"role": "user", "content": english_message}]}
 
         queue: asyncio.Queue = asyncio.Queue()
         tokens_streamed = False
 
         async def run_graph():
             _stream_queue_var.set(queue)
+            _turn_var.set(ctx)
             try:
-                return await self.graph.ainvoke(initial_state)
+                await self.graph.ainvoke(user_input, config)
+                return ctx.result or {}
             except Exception as e:
                 logger.exception("Graph error during streaming")
                 return {
-                    **initial_state,
                     "response": "I apologize, but I encountered an error processing your request. Please try again.",
                     "error": str(e),
                 }
@@ -2435,9 +2522,7 @@ class LegalChatbot:
                 result = await task
             except asyncio.CancelledError:
                 # stop_stream() cancelled the graph mid-generation — the
-                # tokens already yielded above are everything the user saw,
-                # so save that partial text as the assistant turn instead of
-                # dropping it (keeps conversation context coherent).
+                # tokens already yielded above are everything the user saw.
                 stopped = True
                 result = {"intent": intent_seen, "response": accumulated}
         finally:
@@ -2460,13 +2545,11 @@ class LegalChatbot:
         english_text = result.get("response", "") or accumulated
         intent = result.get("intent") or intent_seen
 
-        # Add the English answer (or partial, if stopped) to session history so
-        # memory stays language-independent. The graph already appended its own
-        # assistant turn to the state it returned; session memory is separate.
-        if english_text and not superseded:
-            self._add_message(
-                session_id, {"role": "assistant", "content": english_text}
-            )
+        # A completed turn's reply was already checkpointed by the graph. A
+        # stopped one never got that far, so save the partial text the user saw
+        # as the assistant turn (keeps conversation context coherent).
+        if stopped and english_text and not superseded:
+            await self._append_assistant(session_id, english_text)
 
         # Client-facing text: translated for non-English, else the English
         # answer. For English replies that streamed token-by-token, the client
@@ -2567,20 +2650,22 @@ class LegalChatbot:
         # Conversation memory therefore stays canonical-English.
         english_message, lang = await preprocess_query(message)
 
-        initial_state = self._initial_state(
-            session_id, english_message, document_content, document_type
+        ctx = _TurnContext(
+            session_id=session_id,
+            started_at=time.monotonic(),
+            document_content=document_content,
+            document_type=document_type,
         )
+        _turn_var.set(ctx)
+        await self.graph.ainvoke(
+            {"messages": [{"role": "user", "content": english_message}]},
+            self._config(session_id),
+        )
+        result = ctx.result or {}
 
-        # Run the graph
-        result = await self.graph.ainvoke(initial_state)
-
-        # Add assistant response to history (English canonical — memory is
-        # language-independent). Only the client-facing copy is translated.
+        # The reply is already in the checkpoint (English canonical — memory is
+        # language-independent); only the client-facing copy is translated.
         english_response = result.get("response")
-        if english_response:
-            self._add_message(
-                session_id, {"role": "assistant", "content": english_response}
-            )
 
         # Translate the final answer back into the user's language (no-op for
         # English / when disabled). Falls back to English text on failure.
@@ -2607,46 +2692,15 @@ class LegalChatbot:
             "trace": result.get("trace"),
         }
 
-    def clear_session(self, session_id: str):
-        """Clear a session's message history and stop any in-flight generation
-        for it (otherwise it would keep running and write into a session the
-        user just cleared)."""
-        self.stop_stream(session_id)
-        self._sessions.pop(session_id, None)
-        self._session_last_access.pop(session_id, None)
-
-    def get_session_history(self, session_id: str) -> List[Message]:
-        """Get the message history for a session."""
-        return self._get_session_messages(session_id).copy()
-
-    def has_session(self, session_id: str) -> bool:
-        """Whether session_id is already live in the in-memory cache."""
-        self._evict_stale_sessions()
-        return session_id in self._sessions
-
-    def seed_session(self, session_id: str, messages: List[Message]) -> None:
-        """
-        Prime in-memory state from DB-loaded history, but only if this
-        session_id isn't already live (avoids clobbering an active
-        conversation with a stale DB read). Called by the chat router for an
-        authenticated user whose session_id isn't yet in this process (fresh
-        restart, or a session_id that predates this process's uptime).
-        """
-        self._evict_stale_sessions()
-        if session_id not in self._sessions:
-            # Matches _add_message's cap — DB may hold the full untruncated
-            # transcript, but the live LangGraph context window is unaffected.
-            self._sessions[session_id] = list(messages[-_MAX_SESSION_MESSAGES:])
-            self._session_last_access[session_id] = time.monotonic()
-
 
 # Singleton instance
 _chatbot: Optional[LegalChatbot] = None
 
 
 def get_chatbot() -> LegalChatbot:
-    """Get or create the chatbot instance."""
+    """Get or create the chatbot instance, bound to the app's checkpointer
+    (Postgres once app startup has initialised it; in-memory otherwise)."""
     global _chatbot
     if _chatbot is None:
-        _chatbot = LegalChatbot()
+        _chatbot = LegalChatbot(get_checkpointer())
     return _chatbot
