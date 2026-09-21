@@ -1650,6 +1650,11 @@ async def gq_generate(state: ChatState) -> ChatState:
 {prompt}"""
 
         answer = await invoke_llm_safely(llm, prompt, stream=True)
+        # The model spent its whole budget thinking and never produced an
+        # answer: the text is a canned "please retry" note, not something to
+        # fact-check (and a "verified, score 1.0" trace for it would mislead).
+        if answer == _INCOMPLETE_GENERATION_NOTE:
+            failed = True
     except Exception as e:
         logger.error("LLM error in general query: %s", e)
         answer = GENERAL_QUERY_ERROR
@@ -1694,9 +1699,14 @@ async def gq_verify(state: ChatState) -> ChatState:
     # Nothing to verify against: retrieval failed (the disclaimer already says
     # so) or generation itself failed (the text is a canned apology).
     if state.get("error") == "generation_failed" or not state.get("rag_succeeded"):
+        reason = (
+            "generation_failed"
+            if state.get("error") == "generation_failed"
+            else "no_retrieval"
+        )
         return {
             **finished,
-            "trace": _merge_trace(state, grounding={"verified": False}),
+            "trace": _merge_trace(state, grounding={"verified": False, "reason": reason}),
         }
 
     await emit_event(
@@ -1717,9 +1727,14 @@ async def gq_verify(state: ChatState) -> ChatState:
     )
 
     score = report.overall_score if report is not None else None
+    # Only an *adjudicated* report may trigger a regeneration. The deterministic
+    # word-overlap pass alone flags most fluent paraphrases (grounding_footer
+    # already refuses to show those to users for the same reason), and a
+    # regeneration costs another minute or more of GPU time.
     can_regenerate = (
         settings.grounding_retry_enabled
         and report is not None
+        and report.llm_succeeded
         and report.flagged
         and score is not None
         and score < settings.grounding_retry_threshold
@@ -1728,6 +1743,7 @@ async def gq_verify(state: ChatState) -> ChatState:
     )
     grounding_trace = {
         "verified": report is not None,
+        "adjudicated": bool(report is not None and report.llm_succeeded),
         "score": score,
         "flagged": len(report.flagged) if report is not None else 0,
         "regenerated": bool(state.get("regen_count")),
