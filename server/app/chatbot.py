@@ -536,6 +536,13 @@ async def invoke_llm_safely(
             )
             _llm_breaker.record_success()
             raw = response.content
+            # A schema-constrained model (format=...) decodes straight into the
+            # grammar and never emits a think block, so a missing </think> is
+            # the normal shape of its output — not a give-up. Treating it as one
+            # discarded every grounding-correction reply (valid JSON, ~3s) and
+            # left claim-level correction silently switched off.
+            if getattr(llm, "format", None):
+                return strip_reasoning_tags(raw)
             if "</think>" not in raw and not get_settings().llm_thinking:
                 return raw.strip()
             if "</think>" not in raw:
@@ -1681,6 +1688,27 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
     return prompt, retrieved_context
 
 
+def _prefers_concise(state: ChatState) -> bool:
+    """Whether to answer with the concise prompt on the first attempt.
+
+    Only for a simple question that retrieval covered well: graded "good", one
+    part, short, and not a multi-offense scenario. Everything else keeps the full
+    prompt, since it is depth on those that the concise answer would cost. The
+    reason to do it at all: the full prompt gives up (never closes its <think>
+    block) on a meaningful share of queries and takes 2+ minutes when it doesn't,
+    where the concise one measured ~6x faster (see docs/chatbot-production-readiness.md)."""
+    settings = get_settings()
+    if not settings.concise_first_enabled:
+        return False
+    user_input = state["current_input"]
+    return (
+        state.get("retrieval_grade") == "good"
+        and not state.get("sub_questions")
+        and len(user_input.split()) <= settings.concise_first_max_query_words
+        and _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS) < 2
+    )
+
+
 def _can_retry_giveup(state: ChatState) -> bool:
     settings = get_settings()
     return (
@@ -1717,9 +1745,11 @@ async def gq_generate(state: ChatState) -> ChatState:
     failed = False
     attempts = 1
     retried = False
+    concise = False
     try:
         retry_possible = get_settings().llm_giveup_retry_enabled
-        prompt, retrieved_context = _build_answer_prompt(state)
+        concise = _prefers_concise(state)
+        prompt, retrieved_context = _build_answer_prompt(state, concise=concise)
         answer = await invoke_llm_safely(
             get_llm(), prompt, stream=True, notify_incomplete=not retry_possible
         )
@@ -1754,7 +1784,13 @@ async def gq_generate(state: ChatState) -> ChatState:
         "regen_pending": False,
         "error": "generation_failed" if failed else state.get("error"),
         "trace": _merge_trace(
-            state, generation={"attempts": attempts, "giveup_retry": retried, "failed": failed}
+            state,
+            generation={
+                "variant": "concise" if (concise or retried) else "full",
+                "attempts": attempts,
+                "giveup_retry": retried,
+                "failed": failed,
+            },
         ),
     }
 

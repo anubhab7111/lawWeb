@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     grounding_retry_threshold: float = 0.5
     # No retry/regeneration starts once a request has used this much wall time.
     request_budget_seconds: int = 200
+    # Answer simple, well-retrieved questions with the concise prompt on the first
+    # attempt (see _prefers_concise). "Simple" = retrieval graded good, a single
+    # part, and no more than this many words; complex queries keep the full prompt.
+    concise_first_enabled: bool = True
+    concise_first_max_query_words: int = 30
     # When the model gives up (never closes its <think> block), retry once with
     # a trimmed, concise prompt at a higher temperature — but only if the request
     # is still younger than this. A give-up itself takes 2-3 minutes, so this is

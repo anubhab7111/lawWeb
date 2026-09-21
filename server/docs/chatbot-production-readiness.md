@@ -42,7 +42,7 @@ correction, marked in B10). This section records what was done about it.
 | A1 unify paths | **Done** | See B3. |
 | A2 clarification | **Done, narrowly scoped** | Fires only when an *action* intent (find a lawyer / report a crime) is among near-tied contenders, never with a document, on long messages, or twice in a row. In the live run the router was confident (margin 0.076 vs the 0.03 threshold) on the example I expected to be ambiguous, so expect this to fire rarely; `CLARIFY_ON_AMBIGUOUS=false` disables it. |
 | A3 retrieval grading | **Done** | Weak (<3 provisions or mean score < `retrieval_min_confidence`) or empty retrieval triggers one LLM-rewritten, unfiltered retry. The 0.45 threshold comes from a **7-query** sample (in-corpus 0.58-1.00, off-topic 0.34-0.40) and should be re-tuned against the eval set. |
-| A4 grounding retry | **Done, but currently dormant on this model** | One targeted regeneration, only on an *adjudicated* report (see live findings: the correction LLM does not return JSON on qwen3:4b, so in practice it does not fire yet). |
+| A4 grounding retry | **Done; live once the correction bug below was fixed** | One targeted regeneration, only on an *adjudicated* report. It was silently unreachable until the wrapper bug described in the last follow-up section was fixed (my earlier note here blamed the model; that was wrong). |
 | A5 decomposition | **Done, deterministic** | Splits on question marks / enumerations; the full query is always searched too, so it can only add recall. No LLM call: a 4B model spends seconds on even a trivial split. |
 | A6 real tool selection | **Done (option 1)** | `select_tools()` decides what handlers run. `bare_act_lookup` is still not wired to any handler. |
 | A7 LangGraph checkpointer | **Done** (follow-up, see below) | Conversation memory now lives in Postgres checkpoints. |
@@ -73,13 +73,13 @@ the very first query in a fresh process, ~4.5 minutes of it case-law embedding).
   failure mode as fixed for the 18-query eval; it is evidently not gone. This
   run also exposed a defect in *my* first implementation, since fixed: it ran
   verification on that canned note and reported `verified: true, score 1.0`.
-- **The grounding correction LLM does not work on this model.** Both
-  verification passes logged `LLM correction skipped: No JSON array found`
-  (the non-streaming call hit `ended without </think>`). That is pre-existing,
-  and it means claim-level correction is effectively off in practice. My first
-  implementation also regenerated on the deterministic score alone, costing
-  ~60s for a signal `grounding_footer` documents as too blunt to act on; it now
-  requires an adjudicated report.
+- **Claim-level correction was not working (diagnosed wrongly at first).** Both
+  verification passes logged `LLM correction skipped: No JSON array found`, and I
+  reported that the correction LLM "does not return JSON on qwen3:4b". That was
+  wrong: the model returns valid JSON in ~3s, and `invoke_llm_safely` discarded
+  it (see the last follow-up section). My first implementation also regenerated
+  on the deterministic score alone, costing ~60s for a signal `grounding_footer`
+  documents as too blunt to act on; it now requires an adjudicated report.
 - **Not exercised live:** document analysis/validation, lawyer search, the
   clarification path (the router never called anything ambiguous), the
   disconnect path against a real Ollama stream (covered by the unit test only),
@@ -152,14 +152,56 @@ Tests: 94 in the unit suite (61 new across the work), including real-Postgres
 tests on the scratch database for durability across a simulated restart, idle
 reaping, `init_checkpointer`, and re-seeding from `chat_messages`.
 
+### Follow-up 2: concise-first for simple queries, and the grounding-correction bug
+
+**Concise prompt by default for simple queries (owner approved).** The first
+attempt uses the concise prompt when retrieval is graded *good*, the question has
+one part (no decomposition), is at most 30 words, and is not a multi-offense
+scenario (`_prefers_concise`). Everything else keeps the full prompt, since depth
+is what the concise answer costs. `CONCISE_FIRST_ENABLED=false` reverts; a
+give-up on the concise pass still gets the one retry.
+
+Measured on three single-part in-corpus questions (real retrieval, qwen3:4b,
+answers scored by the real grounding gate; **n=3 questions, so directional**):
+
+| Question | Full prompt | Concise @0.1 | Concise @0.4 |
+|---|---|---|---|
+| Anticipatory bail, economic offences | 91s, 2,940 chars | 19s, 1,632 | 16s, 1,183 |
+| WhatsApp chats as evidence | 49s, 3,939 | 20s, 1,580 | 19s, 1,426 |
+| Oral agreement | 68s, 4,965 | 39s, 1,134 | 22s, 1,853 |
+
+Concise is 2-4x faster and its grounding scores are in the same noisy range
+(0.50-1.00; concise answers contain only 1-3 checkable claims, so a single
+flagged claim moves the score by 0.5). I kept temperature 0.1 for the first
+attempt (deterministic legal text; the difference at 0.4 is within noise) and
+left 0.4 as the give-up retry. Through the real graph with everything live, the
+two simple questions finished in **51s and 29s** with no give-up; before, a full
+pass took 90-130s and gave up roughly 1 time in 3.
+
+**Grounding correction: root cause, and a correction to this report.** I had
+written that the correction LLM "does not return JSON on qwen3:4b". Probing the
+raw output showed that was wrong. The model returns valid JSON in ~3s: grammar
+constrained decoding (`format=schema`) skips the think block entirely. But
+`invoke_llm_safely` treated "no `</think>`" as a give-up and returned the
+give-up note, so the parser never saw the JSON, `llm_succeeded` stayed `False`,
+and neither claim correction nor the regeneration trigger could ever fire. This
+was pre-existing (the non-streaming path had always required `</think>` when
+`llm_thinking` is on). Fix: a call whose model has `format` set is not held to
+the think-block rule (three regression tests, including that an unconstrained
+reply without `</think>` is still a give-up).
+
+Consequences, observed live: correction runs (~2-6s per check) and rewrites
+unsupported claims from the evidence; the regeneration loop is now real. On the
+multi-part question the adjudicated score was 0.27 (15/17 claims flagged, 8
+corrected), which triggered the regeneration, whose draft scored 0.53. Two
+caveats: the gate still flags a large share of claims on long answers (12/19
+after the redraft), so its strictness on long, paraphrased answers deserves a
+look; and the regeneration adds ~60s on the full-prompt path (it is not
+concise-eligible when the question is multi-part).
+
 ### Still open
 
-1. **Concise-first for simple queries?** The 6x speed difference above raises
-   the question of using the concise prompt as the default when retrieval is
-   strong; that trades answer depth for latency, so it's a product call.
-2. **The grounding correction LLM still doesn't return JSON on qwen3:4b**
-   (unchanged; regeneration stays dormant until it does).
-3. **Not exercised against real Ollama:** the checkpointer with a real generation
+1. **Not exercised against real Ollama:** the checkpointer with a real generation
    (the real app lifespan *was* booted against Postgres in a test, with the model
    warmup stubbed, and a chat turn against a fake LLM used the real Postgres
    saver), document/lawyer flows, and the browser UI.
