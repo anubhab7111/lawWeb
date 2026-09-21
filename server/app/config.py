@@ -61,8 +61,11 @@ class Settings(BaseSettings):
     clarify_on_ambiguous: bool = True
     # Retrieval grading: below this mean reranker score (or fewer than 3
     # provisions) the statute retrieval is treated as weak and retried once
-    # with a rewritten, unfiltered query before generating.
-    retrieval_min_confidence: float = 0.25
+    # with a rewritten, unfiltered query before generating. Set from a
+    # 7-query sample (2026-09-21): in-corpus legal questions scored 0.58-1.00,
+    # off-topic ones 0.34-0.40. Small sample — a false "weak" only costs one
+    # extra retrieval pass, so re-tune against the eval set before relying on it.
+    retrieval_min_confidence: float = 0.45
     # After generation, a grounding score below this triggers ONE regeneration
     # with retrieval targeted at the unsupported citations.
     grounding_retry_enabled: bool = True

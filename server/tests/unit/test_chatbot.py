@@ -94,9 +94,10 @@ def _statute(text="• **IPC § 420** — Cheating\nPunishment text.", chunks=5,
     )
 
 
-def _report(score, flagged=()):
+def _report(score, flagged=(), llm_succeeded=True):
     return SimpleNamespace(
         overall_score=score,
+        llm_succeeded=llm_succeeded,
         flagged=[
             SimpleNamespace(text=t, reason="not in context", citations=["Section 999 of the IPC"])
             for t in flagged
@@ -391,6 +392,32 @@ def test_low_grounding_score_regenerates_once_with_targeted_retrieval(monkeypatc
     assert rig.statute_calls[1][0] == "Section 999 of the IPC"
     assert events[-1]["response"].strip() == "Second draft supported."
     assert events[-1]["trace"]["grounding"]["regenerated"] is True
+
+
+def test_unadjudicated_low_score_does_not_regenerate(monkeypatch):
+    # The correction LLM failing (no JSON) leaves only the blunt deterministic
+    # score; that must not cost a second generation.
+    rig = Rig(monkeypatch, FakeLLM(["Draft."]), _classification("general_query"),
+              [_statute()], [_report(0.1, flagged=["x"], llm_succeeded=False)])
+    events = run(rig.stream())
+    assert rig.llm.calls == 1 and rig.verify_calls == 1
+    assert "reset" not in [e["type"] for e in events]
+    assert events[-1]["trace"]["grounding"]["adjudicated"] is False
+
+
+def test_incomplete_generation_note_is_not_verified(monkeypatch):
+    # thinking never closes -> canned note; nothing to fact-check
+    class NeverClosesLLM(FakeLLM):
+        async def astream(self, messages):
+            yield SimpleNamespace(content="still thinking " * 2000)
+
+    rig = Rig(monkeypatch, NeverClosesLLM(), _classification("general_query"),
+              [_statute()], [_report(1.0)])
+    events = run(rig.stream())
+    done = events[-1]
+    assert done["response"].startswith("I wasn't able to finish")
+    assert rig.verify_calls == 0
+    assert done["trace"]["grounding"] == {"verified": False, "reason": "generation_failed"}
 
 
 def test_regeneration_is_capped_at_one(monkeypatch):
