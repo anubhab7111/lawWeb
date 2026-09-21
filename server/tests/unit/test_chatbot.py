@@ -98,13 +98,15 @@ def _statute(text="• **IPC § 420** — Cheating\nPunishment text.", chunks=5,
 
 
 def _report(score, flagged=(), llm_succeeded=True):
+    items = [
+        SimpleNamespace(text=t, reason="not in context", citations=["Section 999 of the IPC"])
+        for t in flagged
+    ]
     return SimpleNamespace(
         overall_score=score,
         llm_succeeded=llm_succeeded,
-        flagged=[
-            SimpleNamespace(text=t, reason="not in context", citations=["Section 999 of the IPC"])
-            for t in flagged
-        ],
+        flagged=items,
+        confirmed_flagged=items,  # the fakes model claims both signals agree on
     )
 
 
@@ -834,11 +836,10 @@ def test_concise_first_can_be_disabled(monkeypatch):
 
 
 def test_multi_offense_scenario_keeps_the_full_prompt():
-    keywords = list(cb.CRIME_TYPE_KEYWORDS)[:2]
-    state = {"current_input": "He committed " + " and ".join(keywords) + " together",
+    state = {"current_input": "He committed theft and forgery together",
              "retrieval_grade": "good", "sub_questions": []}
     assert cb._prefers_concise(state) is False
-    state["current_input"] = "He committed " + keywords[0]
+    state["current_input"] = "He committed theft"
     assert cb._prefers_concise(state) is True
 
 
