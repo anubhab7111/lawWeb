@@ -16,11 +16,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.chatbot import get_chatbot
+from app.chatbot import ChatBusyError, get_chatbot
 from app.config import get_settings
 from app.db.engine import get_engine, get_session
 from app.db.models import ChatMessage, ChatSession, MessageRole, User
 from app.deps.auth import get_current_user, get_current_user_optional
+from app.deps.rate_limit import chat_rate_limit
 from app.deps.uploads import read_upload_within_limit
 from app.tools.crime_reporter import CRIME_TYPES
 from app.tools.document_extractor import get_document_extractor
@@ -40,6 +41,8 @@ def _memory_key(user: Optional[User], session_id: str) -> str:
 
 def _public_message(prefix: str, exc: Exception) -> str:
     """Internal exception text only reaches clients when DEBUG is on."""
+    if isinstance(exc, ChatBusyError):
+        return str(exc)
     traceback.print_exception(exc)
     if get_settings().debug:
         return f"{prefix}: {exc}"
@@ -47,7 +50,8 @@ def _public_message(prefix: str, exc: Exception) -> str:
 
 
 def _server_error(prefix: str, exc: Exception) -> HTTPException:
-    return HTTPException(status_code=500, detail=_public_message(prefix, exc))
+    status = 503 if isinstance(exc, ChatBusyError) else 500
+    return HTTPException(status_code=status, detail=_public_message(prefix, exc))
 
 
 # ============================================================================
@@ -181,6 +185,7 @@ def _persist_turn_sync(
     session: Session,
     user: Optional[User],
     session_id: str,
+    *,
     user_message: str,
     assistant_message: str,
     language: str = "en",
@@ -274,6 +279,31 @@ async def _persist_turn(*args, **kwargs):
     return await run_in_threadpool(_persist_turn_sync, *args, **kwargs)
 
 
+async def _persist_chat_result(
+    session: Session,
+    user: Optional[User],
+    session_id: str,
+    typed_message: str,
+    result: Dict[str, Any],
+) -> None:
+    """Persist one non-streaming chatbot turn. `content` must hold the canonical
+    English text (response_en/query_en), with the original-language text in the
+    *_display columns — passing the translated `response` positionally stored
+    display text as canonical English and corrupted reseeded history."""
+    language = result.get("language", "en")
+    is_translated = language != "en"
+    await _persist_turn(
+        session,
+        user,
+        session_id,
+        user_message=result.get("query_en") or typed_message,
+        assistant_message=result.get("response_en") or result.get("response", ""),
+        language=language,
+        user_message_display=typed_message if is_translated else None,
+        assistant_message_display=result.get("response") if is_translated else None,
+    )
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -285,7 +315,7 @@ async def health_check():
     return HealthResponse(status="healthy", version="1.0.0")
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
 async def chat(
     request: ChatRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -302,19 +332,7 @@ async def chat(
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
         result = await chatbot.chat(message=request.message, session_id=_memory_key(user, session_id))
-        language = result.get("language", "en")
-        is_translated = language != "en"
-        await _persist_turn(
-            session,
-            user,
-            session_id,
-            # Canonical English for memory; original-language text for display.
-            user_message=result.get("query_en") or request.message,
-            assistant_message=result.get("response_en") or result.get("response", ""),
-            language=language,
-            user_message_display=request.message if is_translated else None,
-            assistant_message_display=result.get("response") if is_translated else None,
-        )
+        await _persist_chat_result(session, user, session_id, request.message, result)
 
         return ChatResponse(
             response=result["response"],
@@ -329,7 +347,7 @@ async def chat(
         raise _server_error("Chat processing error", e)
 
 
-@router.post("/stream")
+@router.post("/stream", dependencies=[Depends(chat_rate_limit)])
 async def chat_stream(
     request: ChatRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -420,7 +438,7 @@ def stop_stream(
     return {"stopped": stopped}
 
 
-@router.post("/upload", response_model=ChatResponse)
+@router.post("/upload", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
 async def chat_with_document(
     file: UploadFile = File(
         ..., description="Document file (PDF, DOCX, TXT, JPG, PNG)"
@@ -468,7 +486,7 @@ async def chat_with_document(
             document_content=document_text,
             document_type=doc_type,  # Pass document type for pipeline
         )
-        await _persist_turn(session, user, session_id, message, result.get("response", ""))
+        await _persist_chat_result(session, user, session_id, message, result)
 
         return ChatResponse(
             response=result["response"],
@@ -488,7 +506,7 @@ async def chat_with_document(
         raise _server_error("Document processing error", e)
 
 
-@router.post("/analyze-document", response_model=ChatResponse)
+@router.post("/analyze-document", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
 async def analyze_document_text(
     request: DocumentAnalysisRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -510,7 +528,7 @@ async def analyze_document_text(
             session_id=_memory_key(user, session_id),
             document_content=request.document_text,
         )
-        await _persist_turn(session, user, session_id, analyze_message, result.get("response", ""))
+        await _persist_chat_result(session, user, session_id, analyze_message, result)
 
         return ChatResponse(
             response=result["response"],
@@ -525,7 +543,7 @@ async def analyze_document_text(
         raise _server_error("Analysis error", e)
 
 
-@router.post("/validate-document", response_model=ChatResponse)
+@router.post("/validate-document", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
 async def validate_document_text(
     request: DocumentValidationRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -553,7 +571,7 @@ async def validate_document_text(
             document_content=request.document_text,
             document_type="text",
         )
-        await _persist_turn(session, user, session_id, validate_message, result.get("response", ""))
+        await _persist_chat_result(session, user, session_id, validate_message, result)
 
         return ChatResponse(
             response=result["response"],
@@ -568,7 +586,7 @@ async def validate_document_text(
         raise _server_error("Validation error", e)
 
 
-@router.post("/validate-document/upload", response_model=ChatResponse)
+@router.post("/validate-document/upload", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
 async def validate_document_upload(
     file: UploadFile = File(
         ..., description="Document file (PDF, DOCX, TXT, JPG, PNG)"
@@ -620,7 +638,7 @@ async def validate_document_upload(
             document_content=document_text,
             document_type=doc_type,
         )
-        await _persist_turn(session, user, session_id, validation_message, result.get("response", ""))
+        await _persist_chat_result(session, user, session_id, validation_message, result)
 
         return ChatResponse(
             response=result["response"],
@@ -640,7 +658,7 @@ async def validate_document_upload(
         raise _server_error("Document validation error", e)
 
 
-@router.post("/crime-report", response_model=ChatResponse)
+@router.post("/crime-report", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
 async def get_crime_report_guidance(
     request: CrimeReportRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -661,7 +679,7 @@ async def get_crime_report_guidance(
             message=crime_message,
             session_id=_memory_key(user, session_id),
         )
-        await _persist_turn(session, user, session_id, crime_message, result.get("response", ""))
+        await _persist_chat_result(session, user, session_id, crime_message, result)
 
         return ChatResponse(
             response=result["response"],

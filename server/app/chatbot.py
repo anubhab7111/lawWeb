@@ -4,10 +4,11 @@ This module defines the chatbot workflow using LangGraph for state management an
 """
 
 import asyncio
+import logging
 import time
 import contextvars
 import re
-from asyncio.events import AbstractEventLoop
+import uuid
 from functools import lru_cache
 from typing import (
     Any,
@@ -27,6 +28,10 @@ from langgraph.graph import END, StateGraph
 from app.config import get_settings
 from app.prompts import (
     CASE_LAW_CONTEXT_BLOCK,
+    CLARIFY_GENERIC,
+    CLARIFY_LAW_OR_LAWYER,
+    CLARIFY_LAW_OR_REPORT,
+    CLARIFY_PREFIX,
     CRIME_REPORT_FALLBACK,
     CRIME_REPORT_PROMPT,
     DOC_RAG_UNAVAILABLE_DISCLAIMER,
@@ -43,7 +48,10 @@ from app.prompts import (
     LAWYER_SEARCH_PROMPT,
     NON_LEGAL_RESPONSE,
     QUERY_REWRITE_PROMPT,
+    REGENERATION_FEEDBACK_BLOCK,
     STATUTE_CONTEXT_BLOCK,
+    STATUTE_QUERY_REWRITE_PROMPT,
+    sanitize_untrusted_document,
 )
 from app.routing_keywords import CRIME_TYPE_KEYWORDS
 from app.text_match import contains_word, count_words
@@ -59,7 +67,13 @@ from app.intent_classifier import (
     classify_intent_embedding,
 )
 from app.multilingual import preprocess_query, postprocess_response
-from app.tool_dispatch import RAG_TOOL_REGISTRY, infer_indian_kanoon_context_type
+from app.logging_config import request_id_var
+from app.tool_dispatch import (
+    RAG_TOOL_REGISTRY,
+    ToolInvocationResult,
+    infer_indian_kanoon_context_type,
+    select_tools,
+)
 from app.tools.crime_reporter import detect_crime_type
 from app.tools.document_classifier import get_document_classifier
 from app.tools.indian_kanoon import get_indian_kanoon_tool
@@ -71,6 +85,8 @@ from app.tools.lawyer_recommender import (
 from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
 from app.tools.statutory_validator import format_score, get_statutory_validator
 
+
+logger = logging.getLogger(__name__)
 
 LLM_NUM_CTX = 8192  # Ollama defaults to 2048, which silently clips grounded prompts
 # 8192 is the largest window that still keeps qwen3:4b 100% on the 4GB GPU
@@ -122,6 +138,23 @@ def get_llm() -> ChatOllama:
     )
 
 
+def _truncate_block(block: str, max_chars: int) -> str:
+    """Cut a context block to max_chars at a provision boundary ("\n\n• "
+    entries) or, failing that, the last line/sentence end. Cutting mid-word
+    would hand the model a half-quoted section it may cite as if complete."""
+    if len(block) <= max_chars:
+        return block
+    head = block[:max_chars]
+    cut = head.rfind("\n\n• ")
+    if cut > 0:
+        return head[:cut]
+    for sep in ("\n", ". "):
+        cut = head.rfind(sep)
+        if cut > max_chars // 2:
+            return head[: cut + 1].rstrip()
+    return head.rsplit(" ", 1)[0]
+
+
 def _fit_context_blocks(context_parts: list, reserved_tokens: int) -> str:
     """
     Join retrieved-context blocks (already in priority order: statute → case
@@ -146,7 +179,7 @@ def _fit_context_blocks(context_parts: list, reserved_tokens: int) -> str:
         else:
             remaining = budget - used
             if remaining > 50:  # ~4 chars/token — keep a useful truncated head
-                kept.append(block[: remaining * 4])
+                kept.append(_truncate_block(block, remaining * 4))
             break
     return "\n\n".join(kept)
 
@@ -292,13 +325,82 @@ _INCOMPLETE_GENERATION_NOTE = (
 )
 
 
+class LLMUnavailableError(RuntimeError):
+    """Raised without calling Ollama while the circuit breaker is open."""
+
+
+class ChatBusyError(RuntimeError):
+    """Raised when settings.chat_max_concurrent chats are already in flight."""
+
+
+class _LLMCircuitBreaker:
+    """Fail fast when Ollama is down or wedged. Without it every request waits
+    out the full generation timeout (up to 180s) before failing; after a few
+    consecutive failures we reject immediately for a cooldown, then let one
+    probe request through (half-open) — a single failure there re-opens it."""
+
+    def __init__(self) -> None:
+        self.failures = 0
+        self.open_until = 0.0
+        self._half_open = False
+
+    def check(self) -> None:
+        now = time.monotonic()
+        if now < self.open_until:
+            raise LLMUnavailableError(
+                f"LLM circuit open for another {self.open_until - now:.0f}s"
+            )
+        if self.open_until:
+            self.open_until = 0.0
+            self._half_open = True
+
+    def record_success(self) -> None:
+        self.failures = 0
+        self._half_open = False
+
+    def record_failure(self) -> None:
+        settings = get_settings()
+        self.failures += 1
+        if self._half_open or self.failures >= settings.llm_breaker_failures:
+            self.open_until = time.monotonic() + settings.llm_breaker_cooldown_seconds
+            self.failures = 0
+            self._half_open = False
+            logger.error(
+                "LLM circuit opened for %ss after repeated failures",
+                settings.llm_breaker_cooldown_seconds,
+            )
+
+
+_llm_breaker = _LLMCircuitBreaker()
+
+
+async def emit_event(event_type: str, **payload: Any) -> None:
+    """Push a non-token event (status, reset, replace, ...) to the live SSE
+    stream. No-op outside a streaming request, so nodes can call it freely."""
+    queue = _stream_queue_var.get(None)
+    if queue is not None:
+        await queue.put({"type": event_type, **payload})
+
+
+async def emit_text(text: str) -> None:
+    """Stream literal text (e.g. a disclaimer) ahead of the generated answer."""
+    queue = _stream_queue_var.get(None)
+    if queue is not None and text:
+        await queue.put(text)
+
+
 async def invoke_llm_safely(
-    llm: ChatOllama, prompt: str, stream: bool = True
+    llm: ChatOllama, prompt: str, stream: bool = False
 ) -> str:
-    """Safely invoke LLM with proper error handling. Supports streaming via
-    context queue. Pass stream=False for internal/auxiliary calls (e.g. the
-    grounding fact-checker) whose raw output must never reach the user's
-    token stream even when called from within a streaming handler task.
+    """Safely invoke LLM with proper error handling.
+
+    stream=False is the default: streaming into the user's token queue is the
+    deliberate exception (final answer generation), never something a helper
+    can do by accident. The queue lives in a contextvar that asyncio tasks
+    inherit, so a streaming default would let any auxiliary call made from
+    inside a chat handler (query rewrite, grounding fact-check, a summariser)
+    dump its raw output into the user's answer. Pass stream=True only for the
+    call whose text is the answer.
 
     Every model here runs with reasoning=False (see get_llm()), so a
     thinking preamble arrives inline in the token stream ending with a
@@ -314,6 +416,7 @@ async def invoke_llm_safely(
     _INCOMPLETE_GENERATION_NOTE rather than the raw buffered thinking text —
     showing that verbatim would leak internal monologue/drafts to the user.
     """
+    _llm_breaker.check()
     queue = _stream_queue_var.get(None) if stream else None
 
     if queue is not None:
@@ -347,9 +450,9 @@ async def invoke_llm_safely(
                     # than falling through to the normal per-token path —
                     # otherwise the model's continued thinking output would
                     # keep arriving as if it were real content.
-                    print(
-                        f"[LLM] thinking exceeded {_THINKING_BUFFER_SAFETY_CAP} "
-                        "chars without closing — giving up"
+                    logger.warning(
+                        "thinking exceeded %s chars without closing — giving up",
+                        _THINKING_BUFFER_SAFETY_CAP,
                     )
                     visible_response = _INCOMPLETE_GENERATION_NOTE
                     await queue.put(_INCOMPLETE_GENERATION_NOTE)
@@ -358,54 +461,63 @@ async def invoke_llm_safely(
                 # Stream ended (hit num_predict or stopped) before a closing
                 # tag ever showed up — the buffered text is unfinished
                 # thinking, not an answer.
-                print(
-                    f"[LLM] generation ended mid-thinking ({len(buffer)} "
-                    "buffered chars, no closing tag)"
+                logger.warning(
+                    "generation ended mid-thinking (%s buffered chars, no closing tag)",
+                    len(buffer),
                 )
                 visible_response = _INCOMPLETE_GENERATION_NOTE
                 await queue.put(_INCOMPLETE_GENERATION_NOTE)
             return visible_response
 
         try:
-            return await asyncio.wait_for(_drain(), timeout=_LLM_TIMEOUT_SECONDS)
+            result = await asyncio.wait_for(_drain(), timeout=_LLM_TIMEOUT_SECONDS)
+            _llm_breaker.record_success()
+            return result
         except asyncio.TimeoutError:
             # Same treatment as a user-initiated Stop: keep whatever was
             # already streamed to the client rather than discarding it.
+            _llm_breaker.record_failure()
             note = "\n\n*(Response generation took too long and was cut short.)*"
             visible_response += note
             await queue.put(note)
-            print(f"[LLM] generation exceeded {_LLM_TIMEOUT_SECONDS}s, returning partial output")
+            logger.warning(
+                "generation exceeded %ss, returning partial output", _LLM_TIMEOUT_SECONDS
+            )
             return visible_response
-        except Exception as e:
-            print(f"LLM streaming error: {e}")
+        except Exception:
+            _llm_breaker.record_failure()
+            logger.exception("LLM streaming error")
             raise
     else:
-        # Normal (non-streaming) mode
+        # Non-streaming mode. ainvoke (not run_in_executor + invoke): on
+        # timeout wait_for cancels the in-flight HTTP request itself, where a
+        # thread would keep blocking a shared executor worker until the
+        # client's own (longer) timeout fired.
         try:
-            loop: AbstractEventLoop = asyncio.get_event_loop()
             response = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None, lambda: llm.invoke([HumanMessage(content=prompt)])
-                ),
+                llm.ainvoke([HumanMessage(content=prompt)]),
                 timeout=_LLM_TIMEOUT_SECONDS,
             )
+            _llm_breaker.record_success()
             raw = response.content
             if "</think>" not in raw and not get_settings().llm_thinking:
                 return raw.strip()
             if "</think>" not in raw:
                 # Never closed the thinking phase — raw is entirely internal
                 # monologue, not an answer (see docstring).
-                print(
-                    f"[LLM] non-streaming generation ended without </think> "
-                    f"({len(raw)} chars) — giving up"
+                logger.warning(
+                    "non-streaming generation ended without </think> (%s chars) — giving up",
+                    len(raw),
                 )
                 return _INCOMPLETE_GENERATION_NOTE
             return strip_reasoning_tags(raw)
         except asyncio.TimeoutError:
-            print(f"[LLM] generation exceeded {_LLM_TIMEOUT_SECONDS}s")
+            _llm_breaker.record_failure()
+            logger.warning("generation exceeded %ss", _LLM_TIMEOUT_SECONDS)
             raise
-        except Exception as e:
-            print(f"LLM invocation error: {e}")
+        except Exception:
+            _llm_breaker.record_failure()
+            logger.exception("LLM invocation error")
             raise
 
 
@@ -496,31 +608,16 @@ async def _rewrite_query_for_retrieval(
         if rewritten == _INCOMPLETE_GENERATION_NOTE or not rewritten or len(rewritten) > 300 or "\n" in rewritten:
             return current_input
         if rewritten.lower() != current_input.lower():
-            print(f"[Router] Retrieval query rewritten: {rewritten[:120]}")
+            logger.info(f"Retrieval query rewritten: {rewritten[:120]}")
         return rewritten
     except Exception as e:
-        print(f"[Router] Query rewrite failed ({e}) — using raw input.")
+        logger.warning(f"[Router] Query rewrite failed ({e}) — using raw input.")
         return current_input
 
 
 # ============================================================================
 # Primary Router (embedding-based) + deterministic policy layer
 # ============================================================================
-
-# Hard-wired per-intent tool sets — metadata for state["selected_tools"];
-# each handler still calls its specific tool_dispatch.invoke_* function(s)
-# directly (bespoke prompt assembly per handler), it doesn't loop over this
-# dict generically. find_lawyer deliberately omits indian_kanoon here — that
-# handler keeps its own cheap local keyword gate (purely locational lawyer
-# searches get no benefit from case-law retrieval).
-INTENT_TOOL_MAP: Dict[str, List[str]] = {
-    "document_analysis": ["indian_kanoon"],
-    "crime_report": ["crime_sections"],
-    "general_query": ["indian_kanoon", "statute_context"],
-    "find_lawyer": ["lawyer_recommender"],
-    "non_legal": [],
-}
-
 
 def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
     """
@@ -537,6 +634,54 @@ def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
     return GROUNDING_UNAVAILABLE_DISCLAIMER, GROUNDING_UNAVAILABLE_PROMPT_WARNING
 
 
+_UPLOAD_HELP_KEYWORDS = ("upload", "i will upload", "how to upload", "can i upload")
+_ACTION_INTENTS = frozenset({"find_lawyer", "crime_report"})
+_CLARIFY_MAX_WORDS = 25  # a long, detailed message has enough to answer directly
+
+
+def _asks_about_uploading(text: str) -> bool:
+    lowered = text.lower()
+    return any(kw in lowered for kw in _UPLOAD_HELP_KEYWORDS)
+
+
+def _merge_trace(state: ChatState, **entries: Any) -> Dict[str, Any]:
+    return {**(state.get("trace") or {}), **entries}
+
+
+def _clarification_for(
+    result, intent: str, has_document: bool, messages: List[Message], user_input: str
+) -> Optional[str]:
+    """One clarifying question when the router is genuinely torn between an
+    *action* flow (report a crime / find a lawyer) and another one. Guessing
+    wrong here is worse than for two explanatory flows: the user gets a
+    confident answer to a question they did not ask, and cannot tell.
+
+    Deliberately narrow so it does not nag: it never fires with an attached
+    document, on long messages, or right after its own previous question, and
+    only when an action intent is among the near-tied contenders."""
+    if not get_settings().clarify_on_ambiguous or not result.is_ambiguous:
+        return None
+    if has_document or len(user_input.split()) > _CLARIFY_MAX_WORDS:
+        return None
+    if (
+        messages
+        and messages[-1]["role"] == "assistant"
+        and messages[-1]["content"].startswith(CLARIFY_PREFIX)
+    ):
+        return None
+    contenders = {result.primary_intent, *result.secondary_intents} - {
+        "non_legal",
+        "document_analysis",
+    }
+    if len(contenders) < 2 or not (contenders & _ACTION_INTENTS):
+        return None
+    if contenders == {"general_query", "find_lawyer"}:
+        return CLARIFY_LAW_OR_LAWYER
+    if contenders == {"general_query", "crime_report"}:
+        return CLARIFY_LAW_OR_REPORT
+    return CLARIFY_GENERIC
+
+
 async def classify_intent(state: ChatState) -> ChatState:
     """
     Intent classification and tool selection.
@@ -549,32 +694,29 @@ async def classify_intent(state: ChatState) -> ChatState:
        verified empirically that this alone handles even single-word
        document-attached queries ("review", "thoughts?") confidently, so no
        separate word-count fast path is needed.
-    2. Domain-hint inference (classify_domain_hint_embedding), an
+    2. Clarification: a near-tie between an action intent (report a crime,
+       find a lawyer) and another flow becomes one clarifying question
+       instead of a silent guess (_clarification_for).
+    3. Domain-hint inference (classify_domain_hint_embedding), an
        independent binary embedding classifier
-    3. History-aware query rewrite for retrieval (unchanged)
+    4. History-aware query rewrite for retrieval
+    5. Tool selection (tool_dispatch.select_tools) — the handlers execute
+       exactly the tools chosen here.
 
     Returns enriched state with:
-    - intent: Primary classification
-    - routing_confidence: Confidence score (0-1)
-    - routing_reasoning: Explanation
-    - secondary_intents: For multi-intent queries
-    - selected_tools: Tools to be used by handlers (from INTENT_TOOL_MAP)
+    - intent: Primary classification ("clarify" when a question is asked)
+    - routing_confidence / routing_reasoning / is_ambiguous / secondary_intents
+    - selected_tools: Tools the handler will run
     - domain_hint: Soft bias for unified statute retrieval
     - extracted_entities: Legal terms found
+    - trace["routing"]: what was decided and why
     """
     user_input = state["current_input"]
     has_document = bool(state.get("document_content"))
     messages = state.get("messages", [])
 
-    print(f"[Router] Input: {user_input[:100]}...")
-    print(f"[Router] Has document: {has_document}")
+    logger.info("Router input=%.100r has_document=%s", user_input, has_document)
 
-    # =========================================================================
-    # PRIMARY ROUTER: embedding nearest-centroid classification, 5-way
-    # (document_analysis / crime_report / find_lawyer / general_query /
-    # non_legal) — no separate keyword-based domain gate. non_legal is a
-    # real competing class here, not a hardcoded-pattern fallback.
-    # =========================================================================
     result = await classify_intent_embedding(user_input, has_document)
     # Ambiguous ties among the four *legal* intents default to general_query
     # (still grounded, just not the specific handler) rather than falling
@@ -588,50 +730,93 @@ async def classify_intent(state: ChatState) -> ChatState:
         # An attached document must not be silently dropped by the fallback.
         intent = "document_analysis" if has_document else "general_query"
 
+    # No document attached means nothing to analyse: answer as a general legal
+    # question, unless the user is asking how uploading works. Decided here so
+    # the reported intent matches the flow that actually runs.
+    if intent == "document_analysis" and not has_document:
+        if not _asks_about_uploading(user_input):
+            intent = "general_query"
+
+    routing_trace = {
+        "intent": intent,
+        "top_intent": result.primary_intent,
+        "confidence": round(result.confidence, 3),
+        "margin": round(result.margin, 3),
+        "ambiguous": result.is_ambiguous,
+        "secondary": list(result.secondary_intents),
+    }
+    base = {
+        **state,
+        "routing_confidence": result.confidence,
+        "routing_reasoning": result.reasoning,
+        "is_ambiguous": result.is_ambiguous,
+        "active_document_context": has_document,
+    }
+
     if intent == "non_legal":
-        print(
-            f"[Router] Non-legal (confidence={result.confidence:.3f}, "
-            f"margin={result.margin:.3f}) — skipping domain_hint/entities/retrieval"
+        logger.info(
+            "Router: non-legal (confidence=%.3f, margin=%.3f) — skipping retrieval",
+            result.confidence,
+            result.margin,
         )
+        await emit_event("routing", intent="non_legal")
         return {
-            **state,
+            **base,
             "intent": "non_legal",
-            "routing_confidence": result.confidence,
-            "routing_reasoning": result.reasoning,
-            "is_ambiguous": result.is_ambiguous,
             "selected_tools": [],
             "domain_hint": None,
-            "active_document_context": has_document,
+            "trace": _merge_trace(state, routing=routing_trace),
+        }
+
+    question = _clarification_for(result, intent, has_document, messages, user_input)
+    if question:
+        logger.info("Router: ambiguous %s — asking a clarifying question", routing_trace["secondary"])
+        await emit_event("routing", intent="clarify")
+        return {
+            **base,
+            "intent": "clarify",
+            "response": question,
+            "clarification": True,
+            "selected_tools": [],
+            "domain_hint": None,
+            "trace": _merge_trace(state, routing={**routing_trace, "intent": "clarify"}),
         }
 
     domain_hint = await classify_domain_hint_embedding(user_input)
     entities = _extract_legal_entities(user_input)
-    print(
-        f"[Router] Decision: intent={intent}, confidence={result.confidence:.3f}, "
-        f"margin={result.margin:.3f}, ambiguous={result.is_ambiguous}, "
-        f"domain_hint={domain_hint}, secondary={result.secondary_intents}"
+    logger.info(
+        "Router decision: intent=%s confidence=%.3f margin=%.3f ambiguous=%s "
+        "domain_hint=%s secondary=%s",
+        intent,
+        result.confidence,
+        result.margin,
+        result.is_ambiguous,
+        domain_hint,
+        result.secondary_intents,
     )
 
-    # =========================================================================
-    # HISTORY-AWARE QUERY REWRITE (multi-turn only; no-op on first turns)
-    # =========================================================================
+    # History-aware query rewrite (multi-turn only; no-op on first turns).
     retrieval_query = await _rewrite_query_for_retrieval(messages, user_input)
+    selected_tools = select_tools(intent, retrieval_query)
 
-    # =========================================================================
-    # BUILD ENRICHED STATE
-    # =========================================================================
+    await emit_event("routing", intent=intent)
     return {
-        **state,
+        **base,
         "retrieval_query": retrieval_query,
         "intent": intent,
-        "routing_confidence": result.confidence,
-        "routing_reasoning": result.reasoning,
-        "is_ambiguous": result.is_ambiguous,
         "secondary_intents": result.secondary_intents,
         "extracted_entities": entities,
-        "selected_tools": INTENT_TOOL_MAP.get(intent, []),
+        "selected_tools": selected_tools,
         "domain_hint": domain_hint,
-        "active_document_context": has_document,
+        "trace": _merge_trace(
+            state,
+            routing={
+                **routing_trace,
+                "domain_hint": domain_hint,
+                "tools": selected_tools,
+                "retrieval_query": retrieval_query,
+            },
+        ),
     }
 
 
@@ -647,25 +832,17 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     document_type = state.get("document_type", "unknown")
     user_query = state.get("current_input", "")
 
-    # If no document content, redirect to general query handler instead of showing upload prompt
+    # classify_intent only routes here without a document when the user is
+    # asking how uploading works (anything else is rerouted to general_query
+    # there, so the reported intent matches the flow that runs).
     if not document_content:
-        # Check if user is explicitly asking to upload
-        input_lower = user_query.lower()
-        if any(
-            kw in input_lower
-            for kw in ["upload", "i will upload", "how to upload", "can i upload"]
-        ):
-            response = DOCUMENT_UPLOAD_HELP
-
-            return {
-                **state,
-                "response": response,
-                "messages": state["messages"]
-                + [{"role": "assistant", "content": response}],
-            }
-        else:
-            # Reroute to general query since no document was actually provided
-            return await handle_general_query(state)
+        response = DOCUMENT_UPLOAD_HELP
+        return {
+            **state,
+            "response": response,
+            "messages": state["messages"]
+            + [{"role": "assistant", "content": response}],
+        }
 
     # Check if user is asking for validation/compliance checking
     subintent = await classify_document_subintent_embedding(user_query)
@@ -686,12 +863,12 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             doc_summary = document_content[:500]
             ik_result = await RAG_TOOL_REGISTRY["indian_kanoon"](doc_summary)
             results = ik_result.raw.get("results", []) if ik_result.raw else []
-            print(
+            logger.info(
                 f"Indian Kanoon found {len(results)} relevant legal references for document"
             )
             return indian_kanoon_tool, results
         except Exception as e:
-            print(f"Indian Kanoon search error in document analysis: {e}")
+            logger.warning(f"Indian Kanoon search error in document analysis: {e}")
             return None, []
 
     async def init_crime_rag():
@@ -804,7 +981,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     except Exception as e:
         # Fallback to basic analysis
         error_msg = f"Enhanced analysis unavailable: {str(e)}"
-        print(error_msg)
+        logger.warning(error_msg)
 
         # Basic fallback analysis
         llm = get_llm()
@@ -815,8 +992,10 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
                 "\n\n[Document truncated for analysis. Full document is longer.]"
             )
 
-        prompt = DOCUMENT_ANALYSIS_PROMPT.format(document_text=doc_text)
-        analysis = await invoke_llm_safely(llm, prompt)
+        prompt = DOCUMENT_ANALYSIS_PROMPT.format(
+            document_text=sanitize_untrusted_document(doc_text)
+        )
+        analysis = await invoke_llm_safely(llm, prompt, stream=True)
 
         # Compulsory RAG: always prepend disclaimer when using fallback path
         analysis = DOC_RAG_UNAVAILABLE_DISCLAIMER + analysis
@@ -882,10 +1061,11 @@ async def handle_crime_report(state: ChatState) -> ChatState:
         no_rag_warning=no_rag_warning,
     )
 
+    await emit_text(disclaimer_prefix)
     try:
-        final_response = await invoke_llm_safely(llm, prompt)
+        final_response = await invoke_llm_safely(llm, prompt, stream=True)
     except Exception as e:
-        print(f"LLM error in crime report: {e}")
+        logger.error("LLM error in crime report: %s", e)
         final_response = CRIME_REPORT_FALLBACK.format(
             crime_name=identified_crime.replace("_", " ").title()
         )
@@ -903,6 +1083,10 @@ async def handle_crime_report(state: ChatState) -> ChatState:
         },
         "messages": state["messages"]
         + [{"role": "assistant", "content": final_response}],
+        "trace": _merge_trace(
+            state,
+            crime_report={"crime_type": identified_crime, "rag_succeeded": rag_succeeded},
+        ),
     }
 
 
@@ -912,12 +1096,15 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     Finds relevant lawyers based on user needs and location.
     """
     user_input = state["current_input"]
-    lawyer_query = state.get("lawyer_query") or user_input
+    lawyer_query = (state.get("lawyer_query") or user_input)[:_MAX_QUERY_CHARS]
+    tools = state.get("selected_tools") or []
 
     # Real Postgres-backed recommendation (pgvector semantic search + weighted
     # rating/success_rate score). ChatState has no session plumbing, and this
     # is the only DB access chatbot.py needs, so open one locally rather than
-    # threading a Session through the whole graph.
+    # threading a Session through the whole graph. recommend_lawyers runs its
+    # blocking query in a worker thread; everything that reads the ORM rows
+    # happens inside the `with` so none is touched after the session closes.
     from app.db.engine import get_engine
     from sqlmodel import Session as DBSession
 
@@ -925,18 +1112,28 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
         lawyers = await recommend_lawyers_core(
             session, problem_description=lawyer_query, limit=5
         )
-    formatted_results = format_lawyer_results(lawyers)
+        formatted_results = format_lawyer_results(lawyers)
+        lawyers_info: List[LawyerInfo] = [
+            {
+                "id": l.id,
+                "name": l.name,
+                "specialization": l.specialty,
+                "location": l.location,
+                "contact": None,
+                "rating": l.rating,
+                "experience_years": l.experience,
+                "hourly_rate": l.hourly_rate,
+                "success_rate": l.success_rate,
+                "bio": l.bio,
+            }
+            for l in lawyers
+        ]
 
-    # Optionally use Indian Kanoon to provide legal context for lawyer search —
-    # purely locational searches ("find a lawyer near me") get no benefit
-    # from case-law retrieval, so this stays gated on a cheap keyword check
-    # rather than running unconditionally like general_query's tools.
+    # select_tools() adds indian_kanoon only when the request names a legal
+    # area — purely locational searches ("find a lawyer near me") get no
+    # benefit from case-law retrieval.
     legal_context = ""
-    query_lower = lawyer_query.lower()
-    if any(
-        kw in query_lower
-        for kw in ["criminal", "civil", "family", "property", "divorce", "ipc", "case"]
-    ):
+    if "indian_kanoon" in tools:
         ik_result = await RAG_TOOL_REGISTRY["indian_kanoon"](lawyer_query)
         if ik_result.succeeded:
             docs = ik_result.raw.get("results", [])
@@ -944,7 +1141,7 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
                 legal_context = "\n\n**Relevant Legal Context:**\n"
                 for doc in docs[:2]:
                     legal_context += f"• {doc.title}\n"
-                print(f"Added Indian Kanoon legal context to lawyer search")
+                logger.info("Added Indian Kanoon legal context to lawyer search")
 
     # Enhance with LLM for personalized recommendations
     try:
@@ -952,33 +1149,15 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
         prompt = LAWYER_SEARCH_PROMPT.format(
             query=lawyer_query, lawyer_results=formatted_results
         )
-        # Add legal context if available
         if legal_context:
             prompt = f"{prompt}\n\n{legal_context}"
 
-        final_response = await invoke_llm_safely(llm, prompt)
+        final_response = await invoke_llm_safely(llm, prompt, stream=True)
     except Exception:
         # Use formatted results directly if LLM fails
         final_response = LAWYER_SEARCH_FALLBACK.format(
             formatted_results=formatted_results
         )
-
-    # Convert to LawyerInfo format
-    lawyers_info: List[LawyerInfo] = [
-        {
-            "id": l.id,
-            "name": l.name,
-            "specialization": l.specialty,
-            "location": l.location,
-            "contact": None,
-            "rating": l.rating,
-            "experience_years": l.experience,
-            "hourly_rate": l.hourly_rate,
-            "success_rate": l.success_rate,
-            "bio": l.bio,
-        }
-        for l in lawyers
-    ]
 
     return {
         **state,
@@ -987,6 +1166,9 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
         "lawyers_found": lawyers_info,
         "messages": state["messages"]
         + [{"role": "assistant", "content": final_response}],
+        "trace": _merge_trace(
+            state, lawyer_search={"candidates": len(lawyers_info), "tools": tools}
+        ),
     }
 
 
@@ -995,7 +1177,7 @@ async def _verify_response_citations(
     retrieved_sections=None,
     retrieved_context_text: str = "",
     llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
-) -> str:
+) -> tuple:
     """
     Two-layer post-generation grounding gate:
 
@@ -1008,8 +1190,10 @@ async def _verify_response_citations(
        what's flagged) uses one batched LLM call to rewrite the unsupported
        part from evidence alone. Supported sentences are never touched.
 
-    Appends advisory footers from both layers; silent when everything
-    checks out. Never raises — a verifier bug must not break chat.
+    Returns (text, report): the answer with advisory footers from both layers
+    (silent when everything checks out) and the GroundingReport the caller
+    can act on — or (response_text, None) when the gate was skipped. Never
+    raises — a verifier bug must not break chat.
     """
     try:
         from app.tools.grounding_verifier import ground_and_correct, grounding_footer
@@ -1018,7 +1202,7 @@ async def _verify_response_citations(
 
         rag = get_unified_rag_system()
         if not rag.initialized:
-            return response_text
+            return response_text, None
 
         corrected_text, report = await ground_and_correct(
             response_text,
@@ -1028,133 +1212,397 @@ async def _verify_response_citations(
             llm_invoke=llm_invoke,
         )
         if report.citation_report.checks:
-            print(
-                f"[CitationVerify] {len(report.citation_report.verified)}/"
-                f"{len(report.citation_report.checks)} citations verified"
+            logger.info(
+                "CitationVerify: %s/%s citations verified",
+                len(report.citation_report.verified),
+                len(report.citation_report.checks),
             )
         if report.claim_sentences:
             corrected_count = sum(
                 1 for s in report.sentences if s.outcome == "corrected"
             )
-            print(
-                f"[GroundingGate] confidence={report.overall_score:.2f} "
-                f"flagged={len(report.flagged)}/{len(report.claim_sentences)} "
-                f"corrected={corrected_count}"
+            logger.info(
+                "GroundingGate: confidence=%.2f flagged=%s/%s corrected=%s",
+                report.overall_score,
+                len(report.flagged),
+                len(report.claim_sentences),
+                corrected_count,
             )
         return (
             corrected_text
             + verification_footer(report.citation_report)
-            + grounding_footer(report)
+            + grounding_footer(report),
+            report,
         )
-    except Exception as e:
-        print(f"[CitationVerify] Skipped due to error: {e}")
-        return response_text
+    except Exception:
+        logger.exception("Citation verification skipped")
+        return response_text, None
 
 
-async def handle_general_query(state: ChatState) -> ChatState:
-    """
-    Handle general legal questions and complex legal analysis.
+# ============================================================================
+# General-query agentic loop
+#
+#   gq_plan -> gq_retrieve -> gq_grade -+-> gq_generate -> gq_verify -+-> END
+#                  ^                    |                             |
+#                  +---- gq_rewrite <---+ (weak/empty retrieval)      |
+#                  +-------------------------------------------------+
+#                                        (grounding score low: regenerate once)
+#
+# Both loops are bounded (one retry each) and skipped once the request has
+# used its wall-clock budget, so the worst case stays predictable.
+# ============================================================================
 
-    Always runs both Indian Kanoon case-law search and unified statute
-    retrieval — general_query's tool set is hard-wired (INTENT_TOOL_MAP),
-    not decided per-query, since the unified index already covers every
-    legal domain and always ran unconditionally in practice.
+_QUESTION_SPLIT_RE = re.compile(r"(?<=\?)\s+")
+_ENUM_SPLIT_RE = re.compile(r"(?:^|\s)\(?(?:[a-d]|[1-4])[\).]\s+(?=[A-Za-z])")
+_MIN_SUBQUESTION_WORDS = 5
+_MAX_SUBQUESTIONS = 3
+_ENTRY_SPLIT_RE = re.compile(r"\n\n(?=• )")
 
-    This handles:
-    - Multi-offense scenarios (forgery + assault + threat + trespass)
-    - Cross-act questions (IPC + Prevention of Corruption Act + IT Act)
-    - Procedural questions (cognizable/non-cognizable, CrPC procedures)
-    - Sanction requirements, jurisdictional questions
-    """
-    user_input = state["current_input"]
-    messages = state.get("messages", [])
 
-    # Standalone query for retrieval (rewritten from conversation history
-    # when this is a follow-up turn); generation still sees the raw input.
-    retrieval_query = state.get("retrieval_query") or user_input
-    domain_hint = state.get("domain_hint")
-    extracted_entities = state.get("extracted_entities", [])
+def decompose_question(text: str) -> List[str]:
+    """Split a multi-part question into standalone sub-questions so retrieval
+    can search for each part instead of one blended query.
 
-    print(
-        f"[GeneralQuery] domain_hint={domain_hint} extracted_entities={extracted_entities}"
+    Deterministic on purpose: a 4B model spends seconds thinking through even
+    a trivial decomposition, and this box has none to spare. Only genuinely
+    separable parts are returned — a fragment like "On what grounds?" depends
+    on the sentence before it, so it is dropped, and a query with no
+    separable structure returns [] and retrieval runs on the full text alone.
+    The full query is always searched too, so decomposition can only add
+    recall."""
+    text = text.strip()
+
+    def _qualifying(parts: List[str]) -> List[str]:
+        return [p.strip() for p in parts if len(p.split()) >= _MIN_SUBQUESTION_WORDS]
+
+    questions = _qualifying(
+        [p for p in _QUESTION_SPLIT_RE.split(text) if p.strip().endswith("?")]
+    )
+    if len(questions) >= 2:
+        return questions[:_MAX_SUBQUESTIONS]
+    enumerated = _qualifying(_ENUM_SPLIT_RE.split(text)[1:])
+    if len(enumerated) >= 2:
+        return enumerated[:_MAX_SUBQUESTIONS]
+    return []
+
+
+def _merge_entries(texts: List[str]) -> str:
+    """Join formatted context blocks, dropping entries (keyed by their first
+    line, e.g. "• **IPC § 420** — Cheating") already seen in an earlier one."""
+    seen: set = set()
+    out: List[str] = []
+    for text in texts:
+        for entry in _ENTRY_SPLIT_RE.split(text or ""):
+            entry = entry.strip()
+            if not entry:
+                continue
+            key = entry.split("\n", 1)[0]
+            if key not in seen:
+                seen.add(key)
+                out.append(entry)
+    return "\n\n".join(out)
+
+
+def _merge_statute_results(results: list) -> ToolInvocationResult:
+    """Fold several statute_context results (one per query) into one, in
+    priority order. Exceptions and empty results are skipped."""
+    ok = [r for r in results if isinstance(r, ToolInvocationResult) and r.succeeded]
+    if not ok:
+        return ToolInvocationResult(
+            name="statute_context",
+            succeeded=False,
+            context_text="",
+            raw={"case_law_text": "", "confidence": 0.0, "chunk_count": 0},
+        )
+    if len(ok) == 1:
+        return ok[0]
+    sections: set = set()
+    for r in ok:
+        sections |= set((r.raw or {}).get("retrieved_sections") or ())
+    text = _merge_entries([r.context_text for r in ok])
+    return ToolInvocationResult(
+        name="statute_context",
+        succeeded=True,
+        context_text=text,
+        raw={
+            "case_law_text": _merge_entries(
+                [(r.raw or {}).get("case_law_text", "") for r in ok]
+            ),
+            "retrieved_sections": sections,
+            "confidence": max((r.raw or {}).get("confidence", 0.0) for r in ok),
+            # The retriever's own counts are authoritative (the formatted text
+            # can hold fewer entries than chunks after budgeting); a merge must
+            # never report fewer provisions than its best input.
+            "chunk_count": max(
+                len(_ENTRY_SPLIT_RE.split(text)) if text else 0,
+                *((r.raw or {}).get("chunk_count", 0) for r in ok),
+            ),
+        },
     )
 
-    # Build conversation context from recent messages (last 3-4 exchanges)
-    conversation_context = ""
-    if len(messages) > 1:
-        recent_messages = messages[-6:]  # Last 3 exchanges (user + assistant)
-        context_parts = []
-        for msg in recent_messages:
-            role = msg["role"]
-            content = msg["content"][:200]  # Truncate long messages
-            context_parts.append(f"{role.upper()}: {content}")
-        conversation_context = "\n".join(context_parts)
 
-    # Multi-offense bumps the statute-retrieval k parameter
-    crime_count = _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS)
-    is_multi_offense = crime_count >= 2
+def _time_elapsed(state: ChatState) -> float:
+    started = state.get("started_at")
+    return time.monotonic() - started if started else 0.0
+
+
+def _tool_result(state: ChatState, name: str) -> Optional[ToolInvocationResult]:
+    result = (state.get("tool_results") or {}).get(name)
+    return result if isinstance(result, ToolInvocationResult) else None
+
+
+async def gq_plan(state: ChatState) -> ChatState:
+    """Split multi-part questions into sub-questions and reset loop counters."""
+    sub_questions = decompose_question(state["current_input"])
+    if sub_questions:
+        logger.info("Plan: %s sub-questions", len(sub_questions))
+    return {
+        **state,
+        "sub_questions": sub_questions,
+        "retrieval_attempts": 0,
+        "regen_count": 0,
+        "regen_pending": False,
+        "extra_queries": [],
+        "trace": _merge_trace(state, plan={"sub_questions": sub_questions}),
+    }
+
+
+async def gq_retrieve(state: ChatState) -> ChatState:
+    """Run the tools chosen by the router (state["selected_tools"]) in
+    parallel. The statute search is repeated per sub-question and, on a
+    regeneration pass, aimed at the citations the grounding gate could not
+    support."""
+    user_input = state["current_input"]
+    retrieval_query = state.get("retrieval_query") or user_input
+    tools = state.get("selected_tools") or []
+    prior = dict(state.get("tool_results") or {})
+    regenerating = bool(state.get("regen_feedback"))
+    widen = regenerating or (state.get("retrieval_attempts") or 0) > 0
+    domain_hint = state.get("domain_hint")
+
+    await emit_event(
+        "status", stage="retrieval", label="Searching statutes and case law…"
+    )
+
+    is_multi_offense = _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS) >= 2
 
     async def _fast_llm_invoke(prompt: str) -> str:
         return await _invoke_fast_text(prompt, timeout=25.0)
 
-    # =========================================================================
-    # PARALLEL TOOL EXECUTION — both tools always run for general_query
-    # =========================================================================
-    context_type = infer_indian_kanoon_context_type(user_input)
-    ik_task = RAG_TOOL_REGISTRY["indian_kanoon"](retrieval_query, context_type)
-    statute_task = RAG_TOOL_REGISTRY["statute_context"](
-        retrieval_query,
-        k=10 if is_multi_offense else 8,
-        domain_hint=["criminal"] if domain_hint == "criminal" else None,
-        fast_llm_invoke=_fast_llm_invoke,
+    jobs: Dict[str, Any] = {}
+    statute_queries: List[str] = []
+    if "statute_context" in tools:
+        extra = list(state.get("extra_queries") or [])
+        if regenerating and extra:
+            statute_queries = extra
+        else:
+            statute_queries = [retrieval_query] + [
+                q for q in (state.get("sub_questions") or []) if q != retrieval_query
+            ]
+        primary_k = 12 if widen else (10 if is_multi_offense else 8)
+        for i, query in enumerate(statute_queries):
+            is_primary = i == 0 and not regenerating
+            jobs[f"statute_context:{i}"] = RAG_TOOL_REGISTRY["statute_context"](
+                query,
+                k=primary_k if is_primary else 4,
+                # Widening drops the domain bias; a second-chance search must
+                # not be limited by the guess that just under-delivered.
+                domain_hint=(
+                    ["criminal"] if domain_hint == "criminal" and not widen else None
+                ),
+                # Only the primary query pays for the LLM query parser.
+                fast_llm_invoke=(
+                    _fast_llm_invoke if is_primary and not widen else None
+                ),
+            )
+    if "indian_kanoon" in tools and "indian_kanoon" not in prior:
+        jobs["indian_kanoon"] = RAG_TOOL_REGISTRY["indian_kanoon"](
+            retrieval_query, infer_indian_kanoon_context_type(user_input)
+        )
+
+    names = list(jobs)
+    results = await asyncio.gather(*jobs.values(), return_exceptions=True)
+    by_name = dict(zip(names, results))
+
+    statute_results = [r for n, r in by_name.items() if n.startswith("statute_context")]
+    for name, r in by_name.items():
+        if isinstance(r, Exception):
+            logger.warning("Tool %s failed: %s", name, r)
+    if statute_results:
+        merged = _merge_statute_results(
+            ([_tool_result_from(prior, "statute_context")] if regenerating else [])
+            + statute_results
+        )
+        prior["statute_context"] = merged
+    if "indian_kanoon" in by_name:
+        ik = by_name["indian_kanoon"]
+        prior["indian_kanoon"] = ik
+
+    rag_succeeded = any(
+        isinstance(r, ToolInvocationResult) and r.succeeded for r in prior.values()
     )
-    ik_result, statute_result = await asyncio.gather(
-        ik_task, statute_task, return_exceptions=True
+    return {
+        **state,
+        "tool_results": prior,
+        "rag_succeeded": rag_succeeded,
+        "trace": _merge_trace(
+            state,
+            retrieval={
+                **(state.get("trace") or {}).get("retrieval", {}),
+                "queries": statute_queries,
+                "tools": tools,
+            },
+        ),
+    }
+
+
+def _tool_result_from(results: Dict[str, Any], name: str) -> Any:
+    r = results.get(name)
+    return r if isinstance(r, ToolInvocationResult) else None
+
+
+async def gq_grade(state: ChatState) -> ChatState:
+    """Turn retrieval quality into a decision. Emptiness alone is not enough:
+    non-empty but off-topic provisions produce a fluent, confidently-cited
+    answer about the wrong law. "weak" = fewer than 3 provisions, or a mean
+    reranker score under settings.retrieval_min_confidence."""
+    settings = get_settings()
+    statute = _tool_result(state, "statute_context")
+    confidence = 0.0
+    chunk_count = 0
+    if statute is None:
+        # Statute search wasn't selected; judge on whether anything came back.
+        grade = "good" if state.get("rag_succeeded") else "none"
+    elif not statute.succeeded:
+        grade = "none"
+    else:
+        raw = statute.raw or {}
+        confidence = float(raw.get("confidence", 0.0))
+        chunk_count = int(raw.get("chunk_count", 0))
+        weak = chunk_count < 3 or confidence < settings.retrieval_min_confidence
+        grade = "weak" if weak else "good"
+
+    logger.info(
+        "Retrieval grade=%s confidence=%.3f provisions=%s attempts=%s",
+        grade,
+        confidence,
+        chunk_count,
+        state.get("retrieval_attempts") or 0,
     )
+    sections = sorted((statute.raw or {}).get("retrieved_sections") or ()) if statute else []
+    return {
+        **state,
+        "retrieval_grade": grade,
+        "retrieval_confidence": confidence,
+        "retrieved_sections": (statute.raw or {}).get("retrieved_sections") if statute else None,
+        "trace": _merge_trace(
+            state,
+            retrieval={
+                **(state.get("trace") or {}).get("retrieval", {}),
+                "grade": grade,
+                "confidence": round(confidence, 3),
+                "provisions": chunk_count,
+                "attempts": (state.get("retrieval_attempts") or 0) + 1,
+                "sections": sections[:20],
+            },
+        ),
+    }
 
-    indian_kanoon_results = ""
-    rag_sections_text = ""
-    case_law_text = ""
-    rag_succeeded = False  # Compulsory RAG tracking
 
-    if isinstance(ik_result, Exception):
-        print(f"Tool indian_kanoon failed: {ik_result}")
-    else:
-        indian_kanoon_results = ik_result.context_text
-        rag_succeeded = rag_succeeded or ik_result.succeeded
+def _route_after_grade(state: ChatState) -> Literal["gq_rewrite", "gq_generate"]:
+    settings = get_settings()
+    can_retry = (
+        (state.get("retrieval_attempts") or 0) < 1
+        and _time_elapsed(state) < settings.request_budget_seconds / 3
+    )
+    if state.get("retrieval_grade") in ("weak", "none") and can_retry:
+        return "gq_rewrite"
+    return "gq_generate"
 
-    if isinstance(statute_result, Exception):
-        print(f"Tool statute_context failed: {statute_result}")
-    else:
-        rag_sections_text = statute_result.context_text
-        case_law_text = (statute_result.raw or {}).get("case_law_text", "")
-        rag_succeeded = rag_succeeded or statute_result.succeeded
 
-    # =========================================================================
-    # BUILD PROMPT WITH RETRIEVED CONTEXT
-    # =========================================================================
+async def gq_rewrite(state: ChatState) -> ChatState:
+    """Second-chance query for weak/empty retrieval: restate the question as a
+    statute-oriented keyword query (falls back to the original on any
+    failure — the widened, unfiltered search still runs)."""
+    await emit_event(
+        "status", stage="retrieval", label="Broadening the search…"
+    )
+    original = state.get("retrieval_query") or state["current_input"]
+    rewritten = original
+    try:
+        candidate = (
+            await _invoke_fast_text(
+                STATUTE_QUERY_REWRITE_PROMPT.format(question=original[:1000]),
+                timeout=25.0,
+            )
+        ).strip().strip('"').strip()
+        if (
+            candidate
+            and candidate != _INCOMPLETE_GENERATION_NOTE
+            and len(candidate) <= 300
+            and "\n" not in candidate
+        ):
+            rewritten = candidate
+    except Exception as e:
+        logger.warning("Retrieval rewrite failed (%s) — reusing the original query", e)
+    logger.info("Retrieval rewrite: %.120r -> %.120r", original, rewritten)
+    return {
+        **state,
+        "retrieval_query": rewritten,
+        "retrieval_attempts": 1,
+        "sub_questions": [],
+    }
 
+
+async def gq_generate(state: ChatState) -> ChatState:
+    """Build the grounded prompt from what retrieval returned and generate,
+    streaming to the client. The "grounding unavailable" disclaimer is streamed
+    *before* the answer — it is known the moment retrieval returns, and must
+    not be something that only arrives with the final event."""
+    user_input = state["current_input"]
+    messages = state.get("messages", [])
+    regenerating = bool(state.get("regen_pending"))
+
+    conversation_context = ""
+    if len(messages) > 1:
+        conversation_context = "\n".join(
+            f"{m['role'].upper()}: {m['content'][:200]}" for m in messages[-6:]
+        )
+
+    statute = _tool_result(state, "statute_context")
+    kanoon = _tool_result(state, "indian_kanoon")
+    rag_sections_text = statute.context_text if statute else ""
+    case_law_text = (statute.raw or {}).get("case_law_text", "") if statute else ""
+    indian_kanoon_results = kanoon.context_text if kanoon else ""
+
+    rag_succeeded = bool(state.get("rag_succeeded"))
     disclaimer_prefix, prompt_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
-    retrieved_context = (
-        ""  # populated inside the try — guarded so it's always defined below
-    )
+    if regenerating:
+        await emit_event("reset")
+        await emit_event(
+            "status",
+            stage="regenerating",
+            label="Some claims weren't supported — redrafting from the sources…",
+        )
+    else:
+        await emit_event("status", stage="generating", label="Drafting the answer…")
+    await emit_text(disclaimer_prefix)
+
+    retrieved_context = ""
+    failed = False
     try:
         llm = get_llm()
 
-        # Build context sections
         context_parts = []
-
         if rag_sections_text:
             context_parts.append(
                 STATUTE_CONTEXT_BLOCK.format(rag_sections_text=rag_sections_text)
             )
-
         if case_law_text:
             context_parts.append(
                 CASE_LAW_CONTEXT_BLOCK.format(case_law_text=case_law_text)
             )
-
         if indian_kanoon_results:
             context_parts.append(
                 INDIAN_KANOON_CONTEXT_BLOCK.format(
@@ -1165,82 +1613,159 @@ async def handle_general_query(state: ChatState) -> ChatState:
         from app.metrics.engineering_metrics import count_tokens_approx
 
         user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
+        feedback = state.get("regen_feedback") if regenerating else None
         # Reserve budget for the fixed scaffolding (instruction template ~500
-        # tokens) plus the query and conversation history, then fit the context
-        # blocks into whatever input budget remains.
+        # tokens) plus the query, conversation history and any regeneration
+        # feedback, then fit the context blocks into whatever input budget
+        # remains.
         reserved = (
             count_tokens_approx(user_input_for_prompt)
             + count_tokens_approx(conversation_context or "")
+            + count_tokens_approx(feedback or "")
             + 500
         )
         retrieved_context = (
             _fit_context_blocks(context_parts, reserved) if context_parts else ""
         )
 
-        # Choose appropriate prompt based on context
         if retrieved_context:
-            # Use enhanced prompt with retrieved legal context
             prompt = GROUNDED_QUERY_PROMPT.format(
                 user_query=user_input_for_prompt,
                 retrieved_context=retrieved_context,
             )
+            if feedback:
+                prompt += REGENERATION_FEEDBACK_BLOCK.format(feedback=feedback)
         else:
-            # No retrieved context — tools returned empty.
-            # Use general prompt with extra caution about ungrounded claims.
+            # No retrieved context — tools returned empty. Use the general
+            # prompt with extra caution about ungrounded claims.
             prompt = (
                 GENERAL_QUERY_PROMPT.format(query=user_input_for_prompt)
                 + prompt_warning
             )
 
-        # Add conversation context if available
         if conversation_context:
             prompt = f"""Previous conversation context:
 {conversation_context}
 
 {prompt}"""
 
-        final_response = await invoke_llm_safely(llm, prompt)
-
+        answer = await invoke_llm_safely(llm, prompt, stream=True)
     except Exception as e:
-        print(f"LLM error in general query: {e}")
-        final_response = GENERAL_QUERY_ERROR
-
-    # Compulsory RAG: if retrieval failed across all sources, prepend disclaimer
-    if disclaimer_prefix:
-        final_response = disclaimer_prefix + final_response
-    else:
-        # Check citations whenever any RAG source succeeded — not just
-        # when statute context specifically was retrieved. When only
-        # Indian Kanoon case-law search succeeded, retrieved_sections is
-        # None (no statute chunks to compare against), so this still
-        # existence-checks any "Section N"/"Article N" claim in the answer
-        # against the indexed corpus without the "was it actually
-        # retrieved" check that requires a real statute_result.
-        retrieved_sections = (
-            (statute_result.raw or {}).get("retrieved_sections")
-            if not isinstance(statute_result, Exception)
-            else None
-        )
-
-        async def _grounding_correction_invoke(prompt: str) -> str:
-            raw = await invoke_llm_safely(
-                get_grounding_correction_llm(), prompt, stream=False
-            )
-            return strip_reasoning_tags(raw)
-
-        final_response = await _verify_response_citations(
-            final_response,
-            retrieved_sections,
-            retrieved_context_text=retrieved_context,
-            llm_invoke=_grounding_correction_invoke,
-        )
+        logger.error("LLM error in general query: %s", e)
+        answer = GENERAL_QUERY_ERROR
+        failed = True
+        await emit_text(answer)
 
     return {
         **state,
-        "response": final_response,
-        "messages": state["messages"]
-        + [{"role": "assistant", "content": final_response}],
+        "response": disclaimer_prefix + answer,
+        "retrieved_context": retrieved_context,
+        "regen_pending": False,
+        "error": "generation_failed" if failed else state.get("error"),
     }
+
+
+def _regeneration_plan(report) -> tuple:
+    """(feedback text, targeted retrieval queries) for the flagged claims."""
+    flagged = report.flagged[:3]
+    feedback = "\n".join(
+        f"- \"{s.text.strip()[:240]}\"" + (f" — {s.reason}" if s.reason else "")
+        for s in flagged
+    )
+    queries: List[str] = []
+    for s in report.flagged:
+        for citation in s.citations:
+            if citation not in queries:
+                queries.append(citation)
+    return feedback, queries[:3]
+
+
+async def gq_verify(state: ChatState) -> ChatState:
+    """Post-generation grounding gate. Corrects unsupported sentences in
+    place; if the answer is still poorly supported it loops back once to
+    regenerate with retrieval aimed at the unsupported citations."""
+    settings = get_settings()
+    response = state.get("response") or ""
+    finished = {
+        **state,
+        "messages": state["messages"] + [{"role": "assistant", "content": response}],
+    }
+
+    # Nothing to verify against: retrieval failed (the disclaimer already says
+    # so) or generation itself failed (the text is a canned apology).
+    if state.get("error") == "generation_failed" or not state.get("rag_succeeded"):
+        return {
+            **finished,
+            "trace": _merge_trace(state, grounding={"verified": False}),
+        }
+
+    await emit_event(
+        "status", stage="verifying", label="Checking citations against the statutes…"
+    )
+
+    async def _grounding_correction_invoke(prompt: str) -> str:
+        raw = await invoke_llm_safely(
+            get_grounding_correction_llm(), prompt, stream=False
+        )
+        return strip_reasoning_tags(raw)
+
+    final_text, report = await _verify_response_citations(
+        response,
+        state.get("retrieved_sections"),
+        retrieved_context_text=state.get("retrieved_context") or "",
+        llm_invoke=_grounding_correction_invoke,
+    )
+
+    score = report.overall_score if report is not None else None
+    can_regenerate = (
+        settings.grounding_retry_enabled
+        and report is not None
+        and report.flagged
+        and score is not None
+        and score < settings.grounding_retry_threshold
+        and (state.get("regen_count") or 0) < 1
+        and _time_elapsed(state) < settings.request_budget_seconds
+    )
+    grounding_trace = {
+        "verified": report is not None,
+        "score": score,
+        "flagged": len(report.flagged) if report is not None else 0,
+        "regenerated": bool(state.get("regen_count")),
+    }
+    if can_regenerate:
+        feedback, queries = _regeneration_plan(report)
+        logger.info(
+            "Grounding score %.2f < %.2f — regenerating once (targeted: %s)",
+            score,
+            settings.grounding_retry_threshold,
+            queries,
+        )
+        return {
+            **state,
+            "regen_pending": True,
+            "regen_count": 1,
+            "regen_feedback": feedback,
+            "extra_queries": queries,
+            "retrieval_attempts": 1,
+            "grounding_score": score,
+            "trace": _merge_trace(state, grounding={**grounding_trace, "regenerating": True}),
+        }
+
+    if final_text != response:
+        # Corrections and footers land in the client immediately, not only
+        # once the terminal event arrives.
+        await emit_event("replace", content=final_text)
+    return {
+        **state,
+        "response": final_text,
+        "grounding_score": score,
+        "messages": state["messages"] + [{"role": "assistant", "content": final_text}],
+        "trace": _merge_trace(state, grounding=grounding_trace),
+    }
+
+
+def _route_after_verify(state: ChatState) -> Literal["gq_retrieve", "end"]:
+    return "gq_retrieve" if state.get("regen_pending") else "end"
 
 
 async def _handle_document_validation(state: ChatState) -> ChatState:
@@ -1274,7 +1799,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         classifier = get_document_classifier()
         classification = classifier.classify(document_content)
 
-        print(
+        logger.info(
             f"[Layer 1] Document classified as: {classification.document_type} "
             f"(confidence: {classification.confidence:.2f})"
         )
@@ -1285,7 +1810,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         validator = get_statutory_validator()
         validation = validator.validate(document_content, classification.document_type)
 
-        print(
+        logger.info(
             f"[Layer 2] Statutory validation: {validation.passed}/{validation.total_checks} passed, "
             f"compliance score: {format_score(validation.compliance_score)}"
         )
@@ -1303,7 +1828,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
                 await ik_tool.initialize()
                 return ik_tool
             except Exception as e:
-                print(f"Indian Kanoon init error: {e}")
+                logger.warning(f"Indian Kanoon init error: {e}")
                 return None
 
         async def init_rag():
@@ -1340,7 +1865,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             jurisdiction_hints=classification.jurisdiction_hints,
         )
 
-        print(
+        logger.info(
             f"[Layer 2.5] Retrieved {len(law_context.references)} law references, "
             f"{len(law_context.applicable_acts)} applicable acts"
         )
@@ -1359,7 +1884,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
         response = result["formatted_response"]
 
-        print(
+        logger.info(
             f"[Layer 3] Analysis complete. Defects: {result['defect_count']}, "
             f"Compliance: {format_score(result['compliance_score'])}"
         )
@@ -1394,10 +1919,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         }
 
     except Exception as e:
-        print(f"Document validation error: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Document validation error: %s", e)
 
         # Fallback: try basic classification and validation without LLM
         try:
@@ -1468,6 +1990,16 @@ async def handle_non_legal_query(state: ChatState) -> ChatState:
     }
 
 
+async def handle_clarification(state: ChatState) -> ChatState:
+    """Ask the one clarifying question classify_intent put in state["response"]."""
+    response = state.get("response") or CLARIFY_GENERIC
+    return {
+        **state,
+        "response": response,
+        "messages": state["messages"] + [{"role": "assistant", "content": response}],
+    }
+
+
 # ============================================================================
 # Router Function
 # ============================================================================
@@ -1481,6 +2013,7 @@ def route_by_intent(
     "find_lawyer",
     "general_query",
     "non_legal",
+    "clarify",
 ]:
     """Route to the appropriate handler based on classified intent."""
     intent = state.get("intent")
@@ -1490,6 +2023,7 @@ def route_by_intent(
         "find_lawyer",
         "general_query",
         "non_legal",
+        "clarify",
     ):
         return intent
     return "general_query"
@@ -1502,26 +2036,38 @@ def route_by_intent(
 
 def build_legal_chatbot_graph() -> StateGraph:
     """
-    Build the LangGraph workflow for the legal chatbot.
+    Build the LangGraph workflow for the legal chatbot. The one graph serves
+    both /api/chat and /api/chat/stream — streaming is a contextvar side
+    channel (see invoke_llm_safely / emit_event), not a second code path.
 
-    Graph structure:
-    START -> classify_intent -> [route_by_intent] -> handler -> END
+    START -> classify_intent -> [route_by_intent] -+-> document_analysis -> END
+                                                   +-> crime_report     -> END
+                                                   +-> find_lawyer      -> END
+                                                   +-> non_legal        -> END
+                                                   +-> clarify          -> END
+                                                   +-> general_query loop:
+       gq_plan -> gq_retrieve -> gq_grade -> gq_generate -> gq_verify -> END
+                     ^              | weak/empty            | score low
+                     +-- gq_rewrite-+                        |
+                     +---------------------------------------+ (regenerate once)
     """
-    # Create the graph
     workflow = StateGraph(ChatState)
 
-    # Add nodes
     workflow.add_node("classify_intent", classify_intent)
     workflow.add_node("document_analysis", handle_document_analysis)
     workflow.add_node("crime_report", handle_crime_report)
     workflow.add_node("find_lawyer", handle_find_lawyer)
-    workflow.add_node("general_query", handle_general_query)
     workflow.add_node("non_legal", handle_non_legal_query)
+    workflow.add_node("clarify", handle_clarification)
+    workflow.add_node("gq_plan", gq_plan)
+    workflow.add_node("gq_retrieve", gq_retrieve)
+    workflow.add_node("gq_grade", gq_grade)
+    workflow.add_node("gq_rewrite", gq_rewrite)
+    workflow.add_node("gq_generate", gq_generate)
+    workflow.add_node("gq_verify", gq_verify)
 
-    # Set entry point
     workflow.set_entry_point("classify_intent")
 
-    # Add conditional routing
     workflow.add_conditional_edges(
         "classify_intent",
         route_by_intent,
@@ -1529,17 +2075,35 @@ def build_legal_chatbot_graph() -> StateGraph:
             "document_analysis": "document_analysis",
             "crime_report": "crime_report",
             "find_lawyer": "find_lawyer",
-            "general_query": "general_query",
+            "general_query": "gq_plan",
             "non_legal": "non_legal",
+            "clarify": "clarify",
         },
     )
 
-    # All handlers go to END
-    workflow.add_edge("document_analysis", END)
-    workflow.add_edge("crime_report", END)
-    workflow.add_edge("find_lawyer", END)
-    workflow.add_edge("general_query", END)
-    workflow.add_edge("non_legal", END)
+    workflow.add_edge("gq_plan", "gq_retrieve")
+    workflow.add_edge("gq_retrieve", "gq_grade")
+    workflow.add_conditional_edges(
+        "gq_grade",
+        _route_after_grade,
+        {"gq_rewrite": "gq_rewrite", "gq_generate": "gq_generate"},
+    )
+    workflow.add_edge("gq_rewrite", "gq_retrieve")
+    workflow.add_edge("gq_generate", "gq_verify")
+    workflow.add_conditional_edges(
+        "gq_verify",
+        _route_after_verify,
+        {"gq_retrieve": "gq_retrieve", "end": END},
+    )
+
+    for terminal in (
+        "document_analysis",
+        "crime_report",
+        "find_lawyer",
+        "non_legal",
+        "clarify",
+    ):
+        workflow.add_edge(terminal, END)
 
     return workflow
 
@@ -1547,6 +2111,8 @@ def build_legal_chatbot_graph() -> StateGraph:
 # ============================================================================
 # Chatbot Class
 # ============================================================================
+
+_MAX_SESSION_MESSAGES = 20  # live LangGraph context window per session
 
 
 class LegalChatbot:
@@ -1561,6 +2127,17 @@ class LegalChatbot:
         self._sessions: Dict[str, List[Message]] = {}
         self._session_last_access: Dict[str, float] = {}
         self._active_stream_tasks: Dict[str, asyncio.Task] = {}
+        self._in_flight = 0
+
+    def _acquire_slot(self) -> None:
+        # One GPU serves every request; past this many concurrent chats the
+        # extra ones would only queue behind Ollama, so refuse them quickly.
+        if self._in_flight >= get_settings().chat_max_concurrent:
+            raise ChatBusyError("The assistant is busy right now. Please try again shortly.")
+        self._in_flight += 1
+
+    def _release_slot(self) -> None:
+        self._in_flight = max(0, self._in_flight - 1)
 
     def _evict_stale_sessions(self):
         """Drop sessions idle beyond the TTL and cap the total session count."""
@@ -1593,48 +2170,37 @@ class LegalChatbot:
 
     def _add_message(self, session_id: str, message: Message):
         """Add a message to session history."""
-        if session_id not in self._sessions:
+        is_new = session_id not in self._sessions
+        if is_new:
             self._sessions[session_id] = []
         self._sessions[session_id].append(message)
         self._session_last_access[session_id] = time.monotonic()
+        if is_new:
+            # A brand-new session must respect max_sessions like the read
+            # path; evicting after the add keeps the newest session safe
+            # (eviction drops the least recently used).
+            self._evict_stale_sessions()
 
-        # Keep only last 20 messages for memory efficiency
-        if len(self._sessions[session_id]) > 20:
-            self._sessions[session_id] = self._sessions[session_id][-20:]
+        if len(self._sessions[session_id]) > _MAX_SESSION_MESSAGES:
+            self._sessions[session_id] = self._sessions[session_id][
+                -_MAX_SESSION_MESSAGES:
+            ]
 
-    async def stream_chat(
+    def _initial_state(
         self,
-        message: str,
-        session_id: str = "default",
-        document_content: Optional[str] = None,
-        document_type: Optional[str] = None,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Stream chat response token by token.
-        Yields dicts: {"type": "token", "content": "..."} or {"type": "done", ...}
-        """
-        # Multilingual layer. Translate the query to English up front so
-        # routing/retrieval/reasoning run in English and memory stays canonical.
-        # Hybrid streaming (see class docstring): English replies stream token
-        # by token; a non-English reply cannot stream because it is translated
-        # only after the full English answer exists, so for those we suppress
-        # per-token output and emit one translated message at the end.
-        english_message, lang = await preprocess_query(message)
-        translate_out = (
-            lang.is_reliable and lang.language != get_settings().default_language
-        )
-
-        # Get session history — snapshot into a new list so a concurrent
-        # request for the same session_id (double-submit/retry) appending
-        # via _add_message() can't mutate the list this run is still reading.
+        session_id: str,
+        english_message: str,
+        document_content: Optional[str],
+        document_type: Optional[str],
+    ) -> ChatState:
+        """Snapshot history, record the user turn, and build the graph input.
+        Shared by chat() and stream_chat() so the two cannot drift."""
+        # Snapshot into a new list so a concurrent request for the same
+        # session_id (double-submit/retry) appending via _add_message() can't
+        # mutate the list this run is still reading.
         messages = list(self._get_session_messages(session_id))
-
-        # Add user message to history (English canonical)
-        user_message: Message = {"role": "user", "content": english_message}
-        self._add_message(session_id, user_message)
-
-        # Build initial state
-        initial_state: ChatState = {
+        self._add_message(session_id, {"role": "user", "content": english_message})
+        return {
             "messages": messages,
             "current_input": english_message,
             "conversation_context": None,
@@ -1650,42 +2216,83 @@ class LegalChatbot:
             "response": None,
             "session_id": session_id,
             "error": None,
+            "started_at": time.monotonic(),
+            "trace": {},
         }
 
-        # Phase 1: Classification (non-streaming)
-        classified_state = await classify_intent(initial_state)
-        intent = route_by_intent(classified_state)
+    async def stream_chat(
+        self,
+        message: str,
+        session_id: str = "default",
+        document_content: Optional[str] = None,
+        document_type: Optional[str] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream a chat turn (see _stream_chat), holding a concurrency slot
+        for its whole lifetime — including when the client disconnects."""
+        self._acquire_slot()
+        inner = self._stream_chat(message, session_id, document_content, document_type)
+        try:
+            async for event in inner:
+                yield event
+        finally:
+            # Close the inner generator deterministically: its `finally` is
+            # what cancels the graph task when the client has gone away.
+            await inner.aclose()
+            self._release_slot()
 
-        # Phase 2: Run handler with streaming
-        handler_map = {
-            "document_analysis": handle_document_analysis,
-            "crime_report": handle_crime_report,
-            "find_lawyer": handle_find_lawyer,
-            "general_query": handle_general_query,
-            "non_legal": handle_non_legal_query,
-        }
+    async def _stream_chat(
+        self,
+        message: str,
+        session_id: str = "default",
+        document_content: Optional[str] = None,
+        document_type: Optional[str] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Stream chat response token by token.
 
-        handler = handler_map.get(intent, handle_general_query)
+        Runs the same compiled graph as chat(); the graph's nodes push tokens
+        and progress events into a queue (see invoke_llm_safely / emit_event)
+        that this generator relays. Yields dicts:
+          {"type": "token", "content": "..."}     answer text
+          {"type": "status", "stage", "label"}    progress for the UI
+          {"type": "reset"}                       discard text streamed so far
+          {"type": "replace", "content": "..."}   corrected full text
+          {"type": "done"|"stopped", ...}         terminal, with metadata
+        """
+        request_id_var.set(uuid.uuid4().hex[:8])
+        # Multilingual layer. Translate the query to English up front so
+        # routing/retrieval/reasoning run in English and memory stays canonical.
+        # Hybrid streaming: English replies stream token by token; a
+        # non-English reply cannot stream because it is translated only after
+        # the full English answer exists, so for those we suppress per-token
+        # output and emit one translated message at the end.
+        english_message, lang = await preprocess_query(message)
+        translate_out = (
+            lang.is_reliable and lang.language != get_settings().default_language
+        )
 
-        # Set up streaming queue
+        initial_state = self._initial_state(
+            session_id, english_message, document_content, document_type
+        )
+
         queue: asyncio.Queue = asyncio.Queue()
         tokens_streamed = False
 
-        async def run_handler():
+        async def run_graph():
             _stream_queue_var.set(queue)
             try:
-                return await handler(classified_state)
+                return await self.graph.ainvoke(initial_state)
             except Exception as e:
-                print(f"Handler error during streaming: {e}")
+                logger.exception("Graph error during streaming")
                 return {
-                    **classified_state,
-                    "response": f"I apologize, but I encountered an error processing your request. Please try again.",
+                    **initial_state,
+                    "response": "I apologize, but I encountered an error processing your request. Please try again.",
                     "error": str(e),
                 }
             finally:
                 await queue.put(None)  # Signal completion
 
-        task = asyncio.create_task(run_handler())
+        task = asyncio.create_task(run_graph())
         # A new stream supersedes any still-running one for this session — cancel
         # the old task first so it isn't orphaned (unstoppable, still burning
         # LLM compute) by the dict overwrite below.
@@ -1695,35 +2302,55 @@ class LegalChatbot:
         self._active_stream_tasks[session_id] = task
 
         accumulated = ""
+        intent_seen: Optional[str] = None
         stopped = False
         superseded = False
         try:
-            # Yield tokens as they arrive. For a non-English reply we still
-            # drain the queue (to accumulate the full English answer) but do
-            # not emit per-token — the client receives one translated message
-            # after generation completes.
+            # Relay tokens and events as they arrive. For a non-English reply
+            # we still drain the queue (to accumulate the full English answer)
+            # but do not emit per-token — the client receives one translated
+            # message after generation completes.
             while True:
-                chunk = await queue.get()
-                if chunk is None:
+                item = await queue.get()
+                if item is None:
                     break
+                if isinstance(item, dict):
+                    kind = item.get("type")
+                    if kind == "routing":
+                        intent_seen = item.get("intent")
+                        continue
+                    if kind == "reset":
+                        accumulated = ""
+                    elif kind == "replace":
+                        accumulated = item.get("content", "")
+                    if translate_out and kind in ("reset", "replace"):
+                        continue
+                    yield item
+                    continue
                 tokens_streamed = True
-                accumulated += chunk
+                accumulated += item
                 if not translate_out:
-                    yield {"type": "token", "content": chunk}
+                    yield {"type": "token", "content": item}
 
-            # Wait for handler to complete and get result
+            # Wait for the graph to complete and get its result
             try:
                 result = await task
             except asyncio.CancelledError:
-                # stop_stream() cancelled the handler mid-generation — the
+                # stop_stream() cancelled the graph mid-generation — the
                 # tokens already yielded above are everything the user saw,
                 # so save that partial text as the assistant turn instead of
                 # dropping it (keeps conversation context coherent).
                 stopped = True
-                result = {"intent": intent, "response": accumulated}
+                result = {"intent": intent_seen, "response": accumulated}
         finally:
             if self._active_stream_tasks.get(session_id) is task:
                 self._active_stream_tasks.pop(session_id, None)
+                # Reached without the task finishing means the consumer went
+                # away (client disconnect closes this generator). Deregistering
+                # alone would leave the graph generating with nothing able to
+                # stop it, so cancel it here.
+                if not task.done():
+                    task.cancel()
             else:
                 # A newer stream_chat() call for this session_id superseded
                 # us (and cancelled us) before we finished — don't let our
@@ -1731,17 +2358,17 @@ class LegalChatbot:
                 # already-completed turn.
                 superseded = True
 
-        # English answer (canonical) — from the handler, or accumulated tokens.
+        # English answer (canonical) — from the graph, or accumulated tokens.
         english_text = result.get("response", "") or accumulated
+        intent = result.get("intent") or intent_seen
 
         # Add the English answer (or partial, if stopped) to session history so
-        # memory stays language-independent.
+        # memory stays language-independent. The graph already appended its own
+        # assistant turn to the state it returned; session memory is separate.
         if english_text and not superseded:
-            assistant_message: Message = {
-                "role": "assistant",
-                "content": english_text,
-            }
-            self._add_message(session_id, assistant_message)
+            self._add_message(
+                session_id, {"role": "assistant", "content": english_text}
+            )
 
         # Client-facing text: translated for non-English, else the English
         # answer. For English replies that streamed token-by-token, the client
@@ -1769,7 +2396,7 @@ class LegalChatbot:
             yield {
                 "type": "stopped",
                 "session_id": session_id,
-                "intent": result.get("intent") or intent,
+                "intent": intent,
                 "response": response_text,
                 "response_en": english_text,
                 "query_en": english_message,
@@ -1781,7 +2408,7 @@ class LegalChatbot:
         yield {
             "type": "done",
             "session_id": session_id,
-            "intent": result.get("intent") or intent,
+            "intent": intent,
             "response": response_text,
             "response_en": english_text,
             "query_en": english_message,
@@ -1790,14 +2417,12 @@ class LegalChatbot:
             "document_info": result.get("document_info"),
             "document_validation": result.get("document_validation"),
             "crime_report": result.get("crime_report"),
+            "trace": result.get("trace"),
         }
 
     def stop_stream(self, session_id: str) -> bool:
         """Cancel an in-flight stream_chat() generation for this session, if
-        any. Called from the /api/chat/stream/stop endpoint (the Stop button)
-        rather than relying on HTTP disconnect detection, since the handler
-        task is a detached asyncio task that a closed response body alone
-        would not cancel."""
+        any. Called from the /api/chat/stream/stop endpoint (the Stop button)."""
         task = self._active_stream_tasks.get(session_id)
         if task is not None and not task.done():
             task.cancel()
@@ -1805,6 +2430,20 @@ class LegalChatbot:
         return False
 
     async def chat(
+        self,
+        message: str,
+        session_id: str = "default",
+        document_content: Optional[str] = None,
+        document_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Process a chat turn (see _chat) while holding a concurrency slot."""
+        self._acquire_slot()
+        try:
+            return await self._chat(message, session_id, document_content, document_type)
+        finally:
+            self._release_slot()
+
+    async def _chat(
         self,
         message: str,
         session_id: str = "default",
@@ -1823,39 +2462,16 @@ class LegalChatbot:
         Returns:
             Dict containing response and any additional data
         """
+        request_id_var.set(uuid.uuid4().hex[:8])
         # Multilingual layer (no-op for English / when disabled): detect the
         # input language and translate the query to English so the entire
         # downstream pipeline — routing, retrieval, reasoning — runs in English.
         # Conversation memory therefore stays canonical-English.
         english_message, lang = await preprocess_query(message)
 
-        # Get session history — snapshot into a new list so a concurrent
-        # request for the same session_id can't mutate the list this run
-        # is still reading (see stream_chat for the same fix).
-        messages = list(self._get_session_messages(session_id))
-
-        # Add user message to history (English canonical)
-        user_message: Message = {"role": "user", "content": english_message}
-        self._add_message(session_id, user_message)
-
-        # Build initial state
-        initial_state: ChatState = {
-            "messages": messages,
-            "current_input": english_message,
-            "conversation_context": None,
-            "intent": None,
-            "document_content": document_content,
-            "document_type": document_type or "unknown",  # Pass document type to state
-            "document_info": None,
-            "document_validation": None,
-            "crime_details": None,
-            "crime_report": None,
-            "lawyer_query": None,
-            "lawyers_found": None,
-            "response": None,
-            "session_id": session_id,
-            "error": None,
-        }
+        initial_state = self._initial_state(
+            session_id, english_message, document_content, document_type
+        )
 
         # Run the graph
         result = await self.graph.ainvoke(initial_state)
@@ -1864,11 +2480,9 @@ class LegalChatbot:
         # language-independent). Only the client-facing copy is translated.
         english_response = result.get("response")
         if english_response:
-            assistant_message: Message = {
-                "role": "assistant",
-                "content": english_response,
-            }
-            self._add_message(session_id, assistant_message)
+            self._add_message(
+                session_id, {"role": "assistant", "content": english_response}
+            )
 
         # Translate the final answer back into the user's language (no-op for
         # English / when disabled). Falls back to English text on failure.
@@ -1892,10 +2506,14 @@ class LegalChatbot:
             "crime_report": result.get("crime_report"),
             "lawyers_found": result.get("lawyers_found"),
             "error": result.get("error"),
+            "trace": result.get("trace"),
         }
 
     def clear_session(self, session_id: str):
-        """Clear a session's message history."""
+        """Clear a session's message history and stop any in-flight generation
+        for it (otherwise it would keep running and write into a session the
+        user just cleared)."""
+        self.stop_stream(session_id)
         self._sessions.pop(session_id, None)
         self._session_last_access.pop(session_id, None)
 
@@ -1920,7 +2538,7 @@ class LegalChatbot:
         if session_id not in self._sessions:
             # Matches _add_message's cap — DB may hold the full untruncated
             # transcript, but the live LangGraph context window is unaffected.
-            self._sessions[session_id] = list(messages[-20:])
+            self._sessions[session_id] = list(messages[-_MAX_SESSION_MESSAGES:])
             self._session_last_access[session_id] = time.monotonic()
 
 

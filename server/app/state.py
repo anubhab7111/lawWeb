@@ -2,7 +2,7 @@
 State definitions for the LangGraph legal chatbot.
 """
 
-from typing import TypedDict, Literal, Optional, List, Any
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 
 class Message(TypedDict):
@@ -130,9 +130,29 @@ class ChatState(TypedDict):
     lawyer_query: Optional[str]
     lawyers_found: Optional[List[LawyerInfo]]
 
+    # General-query agentic loop (retrieve -> grade -> generate -> verify)
+    sub_questions: Optional[List[str]]
+    tool_results: Optional[Dict[str, Any]]  # name -> ToolInvocationResult | Exception
+    retrieved_context: Optional[str]  # fitted context actually put in the prompt
+    retrieved_sections: Optional[Any]  # set of section numbers, for citation checks
+    rag_succeeded: Optional[bool]
+    retrieval_confidence: Optional[float]
+    retrieval_grade: Optional[str]  # good | weak | none
+    retrieval_attempts: Optional[int]
+    regen_count: Optional[int]
+    regen_pending: Optional[bool]  # verify decided to loop back for a regeneration
+    regen_feedback: Optional[str]  # unsupported claims/citations to fix on regeneration
+    extra_queries: Optional[List[str]]  # targeted retrieval queries for the regeneration
+    grounding_score: Optional[float]
+    clarification: Optional[bool]
+
     # Response
     response: Optional[str]
 
     # Metadata
     session_id: Optional[str]
     error: Optional[str]
+    started_at: Optional[float]  # time.monotonic() at request start
+    # Audit trail of what the workflow did — routing, retrieval, grading,
+    # grounding — returned to the client with the final event.
+    trace: Optional[Dict[str, Any]]

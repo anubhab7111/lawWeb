@@ -109,15 +109,18 @@ async def recommend_lawyers(
         for f in filters:
             stmt = stmt.where(f)
         stmt = stmt.order_by(distance_col).limit(CANDIDATE_POOL_SIZE)
+        # Blocking SQLAlchemy + pgvector scan: keep it off the event loop.
+        rows = await asyncio.to_thread(lambda: session.exec(stmt).all())
         candidates: List[Tuple[Lawyer, Optional[float]]] = [
-            (lawyer, float(distance)) for lawyer, distance in session.exec(stmt).all()
+            (lawyer, float(distance)) for lawyer, distance in rows
         ]
     else:
         stmt = select(Lawyer)
         for f in filters:
             stmt = stmt.where(f)
         stmt = stmt.order_by(Lawyer.rating.desc()).limit(CANDIDATE_POOL_SIZE)
-        candidates = [(lawyer, None) for lawyer in session.exec(stmt).all()]
+        rows = await asyncio.to_thread(lambda: session.exec(stmt).all())
+        candidates = [(lawyer, None) for lawyer in rows]
 
     if not candidates:
         return []
