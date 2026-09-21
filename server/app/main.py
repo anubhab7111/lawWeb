@@ -71,12 +71,27 @@ async def _warmup() -> None:
         traceback.print_exc()
 
 
+def _ensure_chat_schema() -> None:
+    """The chat_messages.trace column postdates already-deployed databases and
+    migrations otherwise run only via `python -m app.db.init_db`. Without it,
+    every logged-in user's chat turn would fail to persist. Idempotent."""
+    try:
+        from app.db.engine import get_engine
+        from app.db.migrations import ensure_chat_messages_trace_column
+
+        ensure_chat_messages_trace_column(get_engine())
+    except Exception:
+        traceback.print_exc()
+        print("[Startup] could not ensure chat_messages.trace; run `python -m app.db.init_db`")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # First-ever startup hook in this app. Scheduler jobs are durable
     # (SQLAlchemy jobstore) so restarts don't need to recreate DB state, but
     # add_job(..., replace_existing=True) inside register_jobs() still runs
     # every boot to pick up code changes to job schedules.
+    _ensure_chat_schema()
     scheduler = get_scheduler()
     register_jobs(scheduler)
     scheduler.start()

@@ -487,6 +487,12 @@ In the meantime, I can help you with:
 
 Please try rephrasing your question or selecting one of the options above."""
 
+# Appended to the grounded prompt on the retry after the model gave up (spent its
+# whole budget deliberating). Asks for a short answer to shorten the reasoning.
+CONCISE_ANSWER_SUFFIX = """
+
+**Answer directly and concisely** — under 300 words, short bullet points, no long deliberation before you answer. Cover the key rule, the provision that supports it and the main exception or caveat."""
+
 # Second-chance retrieval query, used when the first statute retrieval came
 # back empty or weak. Output must be a single line.
 STATUTE_QUERY_REWRITE_PROMPT = """Rewrite this legal question as ONE short keyword query for searching Indian bare acts. Name the Act(s) most likely to govern it, the section topics and the core legal concepts; drop chatty wording. Do not answer the question. Output only the query, on a single line.

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -191,6 +192,7 @@ def _persist_turn_sync(
     language: str = "en",
     user_message_display: Optional[str] = None,
     assistant_message_display: Optional[str] = None,
+    trace: Optional[Dict[str, Any]] = None,
 ) -> None:
     """No-op for guests. For authenticated users: create the chat_sessions
     row if absent, then append both turns to chat_messages. Assumes
@@ -258,6 +260,8 @@ def _persist_turn_sync(
             content=assistant_message,
             language=language,
             content_display=assistant_message_display,
+            # jsonable_encoder: the trace can hold sets/tuples that JSONB rejects.
+            trace=jsonable_encoder(trace) if trace else None,
             created_at=user_turn_at + timedelta(microseconds=1),
         )
     )
@@ -301,6 +305,7 @@ async def _persist_chat_result(
         language=language,
         user_message_display=typed_message if is_translated else None,
         assistant_message_display=result.get("response") if is_translated else None,
+        trace=result.get("trace"),
     )
 
 
@@ -395,6 +400,7 @@ async def chat_stream(
                             assistant_message_display=(
                                 event.get("response") if is_translated else None
                             ),
+                            trace=event.get("trace"),
                         )
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
@@ -810,6 +816,7 @@ def get_session_history(
                     "role": r.role.value,
                     "content": r.content_display or r.content,
                     "language": r.language,
+                    "trace": r.trace,
                 }
                 for r in rows
             ]

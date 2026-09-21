@@ -276,6 +276,9 @@ CREATE TABLE "chat_messages" (
     "content" TEXT NOT NULL,
     "language" TEXT NOT NULL DEFAULT 'en',
     "content_display" TEXT,
+    -- how the assistant produced this reply (routing, retrieval, grounding);
+    -- assistant rows only, NULL otherwise.
+    "trace" JSONB,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "chat_messages_pkey" PRIMARY KEY ("id"),

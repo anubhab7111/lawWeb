@@ -29,6 +29,7 @@ from app.config import get_settings
 from app.prompts import (
     CASE_LAW_CONTEXT_BLOCK,
     CLARIFY_GENERIC,
+    CONCISE_ANSWER_SUFFIX,
     CLARIFY_LAW_OR_LAWYER,
     CLARIFY_LAW_OR_REPORT,
     CLARIFY_PREFIX,
@@ -155,7 +156,28 @@ def _truncate_block(block: str, max_chars: int) -> str:
     return head.rsplit(" ", 1)[0]
 
 
-def _fit_context_blocks(context_parts: list, reserved_tokens: int) -> str:
+@lru_cache()
+def get_retry_llm() -> ChatOllama:
+    """get_llm() with a higher temperature, used for the single retry after a
+    give-up. At temperature 0.1 the same prompt tends to retrace the same
+    reasoning; a different sample plus a smaller prompt gives it a real chance.
+    Same model and num_ctx, so Ollama doesn't reload anything."""
+    settings = get_settings()
+    return ChatOllama(
+        model=settings.llm_model,
+        temperature=settings.llm_retry_temperature,
+        base_url=settings.ollama_base_url,
+        num_ctx=LLM_NUM_CTX,
+        num_predict=LLM_NUM_PREDICT,
+        timeout=210.0,
+        reasoning=False,
+        keep_alive="1h",
+    )
+
+
+def _fit_context_blocks(
+    context_parts: list, reserved_tokens: int, max_tokens: Optional[int] = None
+) -> str:
     """
     Join retrieved-context blocks (already in priority order: statute → case
     law → Indian Kanoon) without exceeding the model's input budget. Drops
@@ -166,6 +188,8 @@ def _fit_context_blocks(context_parts: list, reserved_tokens: int) -> str:
     from app.metrics.engineering_metrics import count_tokens_approx
 
     budget = LLM_NUM_CTX - LLM_NUM_PREDICT - _PROMPT_SAFETY_MARGIN - reserved_tokens
+    if max_tokens is not None:
+        budget = min(budget, max_tokens)
     if budget <= 0:
         return ""
 
@@ -390,7 +414,7 @@ async def emit_text(text: str) -> None:
 
 
 async def invoke_llm_safely(
-    llm: ChatOllama, prompt: str, stream: bool = False
+    llm: ChatOllama, prompt: str, stream: bool = False, notify_incomplete: bool = True
 ) -> str:
     """Safely invoke LLM with proper error handling.
 
@@ -401,6 +425,9 @@ async def invoke_llm_safely(
     inside a chat handler (query rewrite, grounding fact-check, a summariser)
     dump its raw output into the user's answer. Pass stream=True only for the
     call whose text is the answer.
+
+    notify_incomplete=False keeps the give-up note (see below) out of the
+    stream — the return value is still the note — for a caller that will retry.
 
     Every model here runs with reasoning=False (see get_llm()), so a
     thinking preamble arrives inline in the token stream ending with a
@@ -455,7 +482,8 @@ async def invoke_llm_safely(
                         _THINKING_BUFFER_SAFETY_CAP,
                     )
                     visible_response = _INCOMPLETE_GENERATION_NOTE
-                    await queue.put(_INCOMPLETE_GENERATION_NOTE)
+                    if notify_incomplete:
+                        await queue.put(_INCOMPLETE_GENERATION_NOTE)
                     return visible_response
             if in_thinking and buffer:
                 # Stream ended (hit num_predict or stopped) before a closing
@@ -466,7 +494,8 @@ async def invoke_llm_safely(
                     len(buffer),
                 )
                 visible_response = _INCOMPLETE_GENERATION_NOTE
-                await queue.put(_INCOMPLETE_GENERATION_NOTE)
+                if notify_incomplete:
+                    await queue.put(_INCOMPLETE_GENERATION_NOTE)
             return visible_response
 
         try:
@@ -1554,11 +1583,19 @@ async def gq_rewrite(state: ChatState) -> ChatState:
     }
 
 
-async def gq_generate(state: ChatState) -> ChatState:
-    """Build the grounded prompt from what retrieval returned and generate,
-    streaming to the client. The "grounding unavailable" disclaimer is streamed
-    *before* the answer — it is known the moment retrieval returns, and must
-    not be something that only arrives with the final event."""
+_CONCISE_CONTEXT_TOKENS = 1400  # retry pass: a much smaller context block
+
+
+def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
+    """Assemble the grounded prompt for the general-query answer. Returns
+    (prompt, retrieved_context).
+
+    concise=True builds the give-up retry variant: statute and case-law blocks
+    only (Indian Kanoon excerpts are the lowest-priority block), a fraction of
+    the context budget, and an instruction to answer directly. The give-up is
+    the model spending its whole budget deliberating inside <think>, so
+    re-running the identical prompt is just latency; less to reason over and an
+    explicit ask for a short answer is what can change the outcome."""
     user_input = state["current_input"]
     messages = state.get("messages", [])
     regenerating = bool(state.get("regen_pending"))
@@ -1574,9 +1611,89 @@ async def gq_generate(state: ChatState) -> ChatState:
     rag_sections_text = statute.context_text if statute else ""
     case_law_text = (statute.raw or {}).get("case_law_text", "") if statute else ""
     indian_kanoon_results = kanoon.context_text if kanoon else ""
+    _, prompt_warning = _apply_compulsory_rag_policy(bool(state.get("rag_succeeded")))
 
-    rag_succeeded = bool(state.get("rag_succeeded"))
-    disclaimer_prefix, prompt_warning = _apply_compulsory_rag_policy(rag_succeeded)
+    context_parts = []
+    if rag_sections_text:
+        context_parts.append(
+            STATUTE_CONTEXT_BLOCK.format(rag_sections_text=rag_sections_text)
+        )
+    if case_law_text:
+        context_parts.append(CASE_LAW_CONTEXT_BLOCK.format(case_law_text=case_law_text))
+    if indian_kanoon_results and not concise:
+        context_parts.append(
+            INDIAN_KANOON_CONTEXT_BLOCK.format(
+                indian_kanoon_results=indian_kanoon_results[:3000]
+            )
+        )
+
+    from app.metrics.engineering_metrics import count_tokens_approx
+
+    user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
+    feedback = state.get("regen_feedback") if regenerating else None
+    # Reserve budget for the fixed scaffolding (instruction template ~500
+    # tokens) plus the query, conversation history and any regeneration
+    # feedback, then fit the context blocks into whatever input budget remains.
+    reserved = (
+        count_tokens_approx(user_input_for_prompt)
+        + count_tokens_approx(conversation_context or "")
+        + count_tokens_approx(feedback or "")
+        + 500
+    )
+    retrieved_context = (
+        _fit_context_blocks(
+            context_parts,
+            reserved,
+            max_tokens=_CONCISE_CONTEXT_TOKENS if concise else None,
+        )
+        if context_parts
+        else ""
+    )
+
+    if retrieved_context:
+        prompt = GROUNDED_QUERY_PROMPT.format(
+            user_query=user_input_for_prompt,
+            retrieved_context=retrieved_context,
+        )
+        if feedback:
+            prompt += REGENERATION_FEEDBACK_BLOCK.format(feedback=feedback)
+    else:
+        # No retrieved context — tools returned empty. Use the general prompt
+        # with extra caution about ungrounded claims.
+        prompt = (
+            GENERAL_QUERY_PROMPT.format(query=user_input_for_prompt) + prompt_warning
+        )
+
+    if concise:
+        prompt += CONCISE_ANSWER_SUFFIX
+    if conversation_context:
+        prompt = f"""Previous conversation context:
+{conversation_context}
+
+{prompt}"""
+    return prompt, retrieved_context
+
+
+def _can_retry_giveup(state: ChatState) -> bool:
+    settings = get_settings()
+    return (
+        settings.llm_giveup_retry_enabled
+        and _time_elapsed(state) < settings.llm_giveup_retry_max_elapsed_seconds
+    )
+
+
+async def gq_generate(state: ChatState) -> ChatState:
+    """Build the grounded prompt from what retrieval returned and generate,
+    streaming to the client. The "grounding unavailable" disclaimer is streamed
+    *before* the answer — it is known the moment retrieval returns, and must
+    not be something that only arrives with the final event.
+
+    If the model gives up (spends its whole budget thinking and never answers),
+    retry once with a trimmed, concise variant of the prompt before showing the
+    user a "please try again" note. The give-up note is withheld from the stream
+    on the first attempt so the user never sees it when the retry succeeds."""
+    regenerating = bool(state.get("regen_pending"))
+    disclaimer_prefix, _ = _apply_compulsory_rag_policy(bool(state.get("rag_succeeded")))
 
     if regenerating:
         await emit_event("reset")
@@ -1591,68 +1708,30 @@ async def gq_generate(state: ChatState) -> ChatState:
 
     retrieved_context = ""
     failed = False
+    attempts = 1
+    retried = False
     try:
-        llm = get_llm()
-
-        context_parts = []
-        if rag_sections_text:
-            context_parts.append(
-                STATUTE_CONTEXT_BLOCK.format(rag_sections_text=rag_sections_text)
-            )
-        if case_law_text:
-            context_parts.append(
-                CASE_LAW_CONTEXT_BLOCK.format(case_law_text=case_law_text)
-            )
-        if indian_kanoon_results:
-            context_parts.append(
-                INDIAN_KANOON_CONTEXT_BLOCK.format(
-                    indian_kanoon_results=indian_kanoon_results[:3000]
+        retry_possible = get_settings().llm_giveup_retry_enabled
+        prompt, retrieved_context = _build_answer_prompt(state)
+        answer = await invoke_llm_safely(
+            get_llm(), prompt, stream=True, notify_incomplete=not retry_possible
+        )
+        if answer == _INCOMPLETE_GENERATION_NOTE and retry_possible:
+            if _can_retry_giveup(state):
+                logger.warning("Generation gave up — retrying once with a concise prompt")
+                await emit_event(
+                    "status",
+                    stage="retrying",
+                    label="That was taking too long to work out — trying a simpler pass…",
                 )
-            )
-
-        from app.metrics.engineering_metrics import count_tokens_approx
-
-        user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
-        feedback = state.get("regen_feedback") if regenerating else None
-        # Reserve budget for the fixed scaffolding (instruction template ~500
-        # tokens) plus the query, conversation history and any regeneration
-        # feedback, then fit the context blocks into whatever input budget
-        # remains.
-        reserved = (
-            count_tokens_approx(user_input_for_prompt)
-            + count_tokens_approx(conversation_context or "")
-            + count_tokens_approx(feedback or "")
-            + 500
-        )
-        retrieved_context = (
-            _fit_context_blocks(context_parts, reserved) if context_parts else ""
-        )
-
-        if retrieved_context:
-            prompt = GROUNDED_QUERY_PROMPT.format(
-                user_query=user_input_for_prompt,
-                retrieved_context=retrieved_context,
-            )
-            if feedback:
-                prompt += REGENERATION_FEEDBACK_BLOCK.format(feedback=feedback)
-        else:
-            # No retrieved context — tools returned empty. Use the general
-            # prompt with extra caution about ungrounded claims.
-            prompt = (
-                GENERAL_QUERY_PROMPT.format(query=user_input_for_prompt)
-                + prompt_warning
-            )
-
-        if conversation_context:
-            prompt = f"""Previous conversation context:
-{conversation_context}
-
-{prompt}"""
-
-        answer = await invoke_llm_safely(llm, prompt, stream=True)
-        # The model spent its whole budget thinking and never produced an
-        # answer: the text is a canned "please retry" note, not something to
-        # fact-check (and a "verified, score 1.0" trace for it would mislead).
+                prompt, retrieved_context = _build_answer_prompt(state, concise=True)
+                answer = await invoke_llm_safely(get_retry_llm(), prompt, stream=True)
+                attempts, retried = 2, True
+            else:
+                await emit_text(answer)  # no time left: show the note we withheld
+        # Still no answer: the text is a canned "please retry" note, not
+        # something to fact-check (and a "verified, score 1.0" trace for it
+        # would mislead).
         if answer == _INCOMPLETE_GENERATION_NOTE:
             failed = True
     except Exception as e:
@@ -1667,6 +1746,9 @@ async def gq_generate(state: ChatState) -> ChatState:
         "retrieved_context": retrieved_context,
         "regen_pending": False,
         "error": "generation_failed" if failed else state.get("error"),
+        "trace": _merge_trace(
+            state, generation={"attempts": attempts, "giveup_retry": retried, "failed": failed}
+        ),
     }
 
 
