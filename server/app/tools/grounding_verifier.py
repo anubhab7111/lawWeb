@@ -99,6 +99,8 @@ _SUPPORTED_THRESHOLD = 0.25
 _PARTIAL_THRESHOLD = 0.12
 _HIGH_RISK_SUPPORTED_THRESHOLD = 0.45
 
+_VERBATIM_FRACTION = 0.6  # this share of a claim's word-trigrams in the context = quoted
+_CITED_REVIEW_BELOW = 0.6  # cited claims under this overlap are adjudicated, not trusted
 _MAX_LLM_CORRECTIONS = 8  # bound prompt size / latency regardless of how much is flagged
 _MAX_EVIDENCE_CHARS = 800
 
@@ -117,6 +119,9 @@ class SentenceGrounding:
     evidence: str = ""
     needs_llm: bool = False
     outcome: str = "unchanged"  # unchanged | corrected
+    # Status from the deterministic pass alone, before any LLM adjudication. A
+    # sentence is only ever rewritten when this already condemned it.
+    det_status: str = SUPPORTED
 
 
 @dataclass
@@ -138,6 +143,16 @@ class GroundingReport:
         return [s for s in self.claim_sentences if s.status != SUPPORTED]
 
     @property
+    def confirmed_flagged(self) -> List[SentenceGrounding]:
+        """Flagged claims the deterministic evidence also condemned (fabricated
+        quantity, unresolvable citation, invented condition, near-zero overlap).
+        A flag only the small LLM raises is advisory: measured on real answers it
+        varies run to run and objected to faithful paraphrases, so it may lower
+        the score but is never enough to rewrite text, regenerate the answer or
+        be itemised for the user."""
+        return [s for s in self.flagged if s.det_status in (CONTRADICTED, UNGROUNDED)]
+
+    @property
     def overall_score(self) -> float:
         claims = self.claim_sentences
         if not claims:
@@ -152,6 +167,22 @@ class GroundingReport:
 _LEAD_RE = re.compile(r"^(\s*(?:[-*•]\s+|\d+\.\s+|#{1,6}\s+)?)")
 _TRAIL_WS_RE = re.compile(r"(\s*)$")
 _WORD_RE = re.compile(r"\b[a-z]{4,}\b")
+
+
+# "B. Heading", "1. Item", "Ghose v. Mugneeram", "No. 5", "Sec. 3" — a period here
+# does not end a sentence, and splitting there produced fragments that were then
+# graded (and rewritten) as if they were claims.
+_ABBREVIATIONS = frozenset(
+    {"v", "vs", "no", "nos", "sec", "art", "dr", "mr", "mrs", "ms", "cf", "viz", "eg", "ie", "s", "ss"}
+)
+
+
+def _period_is_boundary(text: str, i: int) -> bool:
+    j = i - 1
+    while j >= 0 and (text[j].isalnum()):
+        j -= 1
+    token = text[j + 1 : i].lower()
+    return not (token in _ABBREVIATIONS or len(token) == 1)
 
 
 def _split_sentences(text: str) -> List[Tuple[int, int]]:
@@ -176,7 +207,7 @@ def _split_sentences(text: str) -> List[Tuple[int, int]]:
             j = i + 1
             while j < n and text[j] in ".!?":
                 j += 1
-            if j >= n or text[j].isspace():
+            if (j >= n or text[j].isspace()) and (ch != "." or j - i > 1 or _period_is_boundary(text, i)):
                 spans.append((start, j))
                 i = j
                 start = j
@@ -199,21 +230,49 @@ def _assign_citations_to_sentences(spans, occurrences):
     return assigned
 
 
+# Suffix-insensitive matching: "established"/"establishes" or "violated"/"violation"
+# are the same word for grounding purposes. A fixed-length prefix is crude but
+# robust for legal English, and errs toward matching (fewer false flags).
+_STEM_LEN = 6
+
+
+def _content_words(text: str) -> set:
+    return {w[:_STEM_LEN] for w in _WORD_RE.findall(text.lower())}
+
+
 def _word_overlap(claim: str, evidence: str) -> float:
     """What fraction of the claim's content vocabulary appears in the
     evidence text. Same family of heuristic as
     metrics/generation_metrics._keyword_faithfulness — rough by design,
     it only needs to separate "clearly grounded" from "clearly not"."""
-    claim_words = set(_WORD_RE.findall(claim.lower()))
+    claim_words = _content_words(claim)
     if not claim_words:
         return 1.0
-    evidence_words = set(_WORD_RE.findall(evidence.lower()))
-    return len(claim_words & evidence_words) / len(claim_words)
+    return len(claim_words & _content_words(evidence)) / len(claim_words)
+
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _trigrams(text: str) -> set:
+    words = _TOKEN_RE.findall(text.lower())
+    return {tuple(words[i : i + 3]) for i in range(len(words) - 2)}
+
+
+def _verbatim_fraction(claim: str, context_text: str) -> float:
+    """Fraction of the claim's word-trigrams that occur in the context. Statute
+    quoted or closely followed scores near 1.0 even when it spans several
+    passages, which bag-of-words overlap cannot see; a fluent paraphrase or a
+    fabricated rule scores near 0."""
+    claim_tris = _trigrams(claim)
+    if not claim_tris:
+        return 0.0
+    return len(claim_tris & _trigrams(context_text)) / len(claim_tris)
 
 
 def _trigger_set(text: str) -> set:
     t = text.lower()
-    return {trig for trig in CONTRADICTION_TRIGGERS if trig in t}
+    return {trig for trig in CONTRADICTION_TRIGGERS if re.search(r"\b" + re.escape(trig) + r"\b", t)}
 
 
 def _has_high_risk(text: str) -> bool:
@@ -221,11 +280,31 @@ def _has_high_risk(text: str) -> bool:
     return any(re.search(r"\b" + re.escape(w) + r"\b", t) for w in HIGH_RISK_ABSOLUTES)
 
 
+# Words that assert a rule with no exceptions. Only these make *dropping* a
+# qualifier from the provision a contradiction ("X can never be restricted" vs
+# "X … except according to procedure established by law"). Ordinary obligation
+# words (must, cannot) are common in faithful restatements — "no person shall be
+# deprived … except according to procedure" is fairly restated as "cannot be
+# deprived without procedure" — so they are not enough.
+_ABSOLUTE_MARKERS = (
+    "always", "never", "absolute", "absolutely", "under any circumstances",
+    "in all cases", "without exception", "unconditional", "unconditionally",
+)
+
+
+def _has_absolute(text: str) -> bool:
+    t = text.lower()
+    return any(re.search(r"\b" + re.escape(m) + r"\b", t) for m in _ABSOLUTE_MARKERS)
+
+
 def _contradiction_reason(claim: str, evidence: str) -> Optional[str]:
-    """Deterministic polarity check: did the claim invent a condition the
-    evidence doesn't state, or drop one it does (while asserting an
-    absolute)? Word overlap can't catch either — same vocabulary, opposite
-    meaning — which is exactly why this check exists separately."""
+    """Deterministic polarity check against ONE provision: did the claim invent
+    a condition it doesn't state, or assert an exceptionless rule for a provision
+    that is qualified? Word overlap can't catch either — same vocabulary,
+    opposite meaning. Callers must pass the specific provision the claim is
+    about, never the whole retrieved context: that always contains some
+    "except"/"unless" somewhere, which makes the dropped-qualifier test fire on
+    everything."""
     if not evidence.strip():
         return None
     claim_trig = _trigger_set(claim)
@@ -237,11 +316,56 @@ def _contradiction_reason(claim: str, evidence: str) -> Optional[str]:
             f"claim adds {', '.join(sorted(invented))!r}, a condition not present "
             f"in the retrieved provision"
         )
-    if dropped and _has_high_risk(claim):
+    if dropped and _has_absolute(claim):
         return (
-            f"claim states an absolute rule but the retrieved provision qualifies it "
+            f"claim states an exceptionless rule but the retrieved provision qualifies it "
             f"with {', '.join(sorted(dropped))!r}"
         )
+    return None
+
+
+# Quantities that carry legal weight: a punishment term, a deadline, a fine.
+# Word overlap ignores digits entirely, so "imprisonment up to two years" passed
+# as SUPPORTED against a provision that says seven.
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+    "seventy": 70, "eighty": 80, "ninety": 90,
+    "hundred": 100, "thousand": 1000,
+}
+_UNITS = r"(?:years?|months?|weeks?|days?|hours?|rupees?|lakhs?|crores?|per\s?cent|percent|%)"
+_QUANTITY_RE = re.compile(
+    r"(?:(?:rs\.?|₹)\s?(?P<cur>\d[\d,]*)|(?P<num>\d[\d,]*|" + "|".join(sorted(_NUMBER_WORDS, key=len, reverse=True)) + r")[\s-]+(?P<unit>" + _UNITS + r"))",
+    re.IGNORECASE,
+)
+
+
+def _quantities(text: str) -> set:
+    """{(value, unit)} for punishments/periods/amounts, number words folded to
+    digits so "seven years" == "7 years"."""
+    found = set()
+    for m in _QUANTITY_RE.finditer(text):
+        raw = (m.group("cur") or m.group("num")).lower().replace(",", "")
+        value = _NUMBER_WORDS.get(raw, raw)
+        unit = "rs" if m.group("cur") else re.sub(r"s$", "", m.group("unit").lower().replace(" ", ""))
+        unit = {"percent": "%", "rupee": "rs", "lakh": "lakh", "crore": "crore"}.get(unit, unit)
+        found.add((str(value), unit))
+    return found
+
+
+def _unsupported_quantity(claim: str, passages: List[str]) -> Optional[str]:
+    """A quantity the claim states that no candidate passage contains."""
+    claimed = _quantities(claim)
+    if not claimed:
+        return None
+    available = set()
+    for p in passages:
+        available |= _quantities(p)
+    missing = sorted(f"{v} {u}" for v, u in claimed - available)
+    if missing:
+        return f"claim states {', '.join(missing)}, which the retrieved provisions do not"
     return None
 
 
@@ -252,6 +376,72 @@ def _classify_overlap(overlap: float, is_high_risk: bool) -> str:
     if overlap >= _PARTIAL_THRESHOLD:
         return PARTIALLY_SUPPORTED
     return UNGROUNDED
+
+
+# --- what counts as a claim --------------------------------------------------
+
+_HEADING_RE = re.compile(r"^\s*#{1,6}\s")
+# Statements ABOUT the retrieved context ("the context does not specify …") are
+# the hedges GROUNDED_QUERY_PROMPT tells the model to write. They assert nothing
+# to verify, and rewriting them would remove the disclosure.
+_HEDGE_RE = re.compile(
+    r"\b(?:retrieved (?:context|provisions?|sources?|evidence|materials?)|"
+    r"(?:context|provisions?) (?:does not|do not|lacks?|doesn't) |"
+    r"(?:does not|do not|doesn't) (?:specify|define|address|mention|cover|provide)|"
+    r"not (?:specified|defined|covered|addressed) in)",
+    re.IGNORECASE,
+)
+
+
+def _is_non_claim(stripped: str) -> bool:
+    return (
+        bool(_HEADING_RE.match(stripped))
+        or "|" in stripped
+        or stripped.endswith(":")  # introduces a list; the items are the claims
+        or bool(_HEDGE_RE.search(stripped))
+    )
+
+
+# --- evidence ------------------------------------------------------------------
+
+# Entries are separated by one or two newlines: the first provision follows the
+# block's header line directly, and splitting on blank lines only would drop it.
+_ENTRY_SPLIT_RE = re.compile(r"\n+(?=• \*\*)")
+_ENTRY_HEAD_RE = re.compile(r"^• \*\*(?P<head>.+?)\*\*")
+_SECTION_HEAD_RE = re.compile(r"^.+?\s+(?:§\s*|Article\s+)(?P<sec>[0-9A-Za-z\-]+)$")
+
+
+def _context_passages(context_text: str) -> List[Tuple[str, str]]:
+    """(section_number_upper or "", text) for each entry of the retrieved-context
+    block the model was actually shown. Case-law entries have no section."""
+    passages: List[Tuple[str, str]] = []
+    for entry in _ENTRY_SPLIT_RE.split(context_text or ""):
+        entry = entry.strip()
+        head = _ENTRY_HEAD_RE.match(entry)
+        if not head:
+            continue
+        sec = _SECTION_HEAD_RE.match(head.group("head"))
+        passages.append((sec.group("sec").upper() if sec else "", entry))
+    return passages
+
+
+_WINDOW = 800
+
+
+def _best_window(claim: str, passage: str, size: int = _WINDOW) -> str:
+    """The stretch of `passage` (≤ size chars) that best matches the claim. The
+    adjudicator used to be shown the first `size` chars, so a claim about the
+    third sub-clause of a long section was judged against its preamble."""
+    if len(passage) <= size:
+        return passage
+    step = max(size // 3, 1)
+    best, best_score = passage[:size], -1.0
+    for start in range(0, len(passage) - size + step, step):
+        window = passage[start : start + size]
+        score = _word_overlap(claim, window)
+        if score > best_score:
+            best, best_score = window, score
+    return best
 
 
 def assess_grounding(
@@ -265,11 +455,23 @@ def assess_grounding(
     every citation-bearing or high-risk-absolute sentence, and classify
     each. No LLM calls. Reuses citation_verifier.verify_citations for the
     existing existence/act/retrieved-section checks unchanged.
+
+    A claim is judged against the best-matching *passage* — the provision it
+    cites, or any provision/case in the retrieved context — never against the
+    context as one blob. A citation that names no Act resolves to the provision
+    that was retrieved for this query, not to whichever Act happens to have a
+    section with that number.
     """
     citation_report = verify_citations(answer, rag, retrieved_sections)
     occurrences = iter_citation_occurrences(answer)
     spans = _split_sentences(answer)
     by_sentence = _assign_citations_to_sentences(spans, occurrences)
+    context_passages = _context_passages(retrieved_context_text)
+    context_texts = [t for _, t in context_passages]
+    context_blob = "\n".join(context_texts)
+    # Case law carries no section number; a claim that cites a section may still
+    # legitimately rest on it ("Article 19 … (Shreya Singhal)").
+    case_law_texts = [t for sec, t in context_passages if not sec]
 
     sentences: List[SentenceGrounding] = []
     for i, (start, end) in enumerate(spans):
@@ -278,35 +480,64 @@ def assess_grounding(
         occs = by_sentence.get(i, [])
         high_risk = _has_high_risk(stripped) if stripped else False
 
-        if not stripped or (not occs and not high_risk):
+        if not stripped or _is_non_claim(stripped) or (not occs and not high_risk):
             sentences.append(
                 SentenceGrounding(text=raw_span, start=start, end=end, is_claim=False)
             )
             continue
 
-        if occs:
-            evidence_parts: List[str] = []
-            for occ in occs:
-                hits = rag.find_section(occ.act_hint, occ.section, max_parts=2)
-                evidence_parts.extend(h.text for h in hits)
-            evidence = "\n".join(evidence_parts)
-            citations = [occ.raw for occ in occs]
-        else:
-            evidence = retrieved_context_text
-            citations = []
+        cited: List[str] = []
+        for occ in occs:
+            hits = rag.find_section(occ.act_hint, occ.section, max_parts=2) if occ.act_hint else []
+            if hits:
+                cited.extend(h.text for h in hits)
+            else:
+                cited.extend(t for sec, t in context_passages if sec == occ.section.upper())
+        citations = [occ.raw for occ in occs]
+        # A claim that cites a provision is judged against THAT provision (and
+        # case law). Falling back to any retrieved passage would let a citation
+        # to a nonexistent section ride on vocabulary shared with its neighbours.
+        # An uncited claim may rest on anything that was retrieved.
+        candidates = list(dict.fromkeys((cited + case_law_texts) if occs else context_texts))
 
-        if not evidence.strip():
-            status, overlap = UNGROUNDED, 0.0
-            reason = "no retrieved text is available to verify this claim"
+        if not candidates:
+            status, overlap, evidence = UNGROUNDED, 0.0, ""
+            reason = (
+                "the cited provision is not among the retrieved provisions"
+                if occs
+                else "no retrieved text is available to verify this claim"
+            )
         else:
-            overlap = _word_overlap(stripped, evidence)
+            scored = [(_word_overlap(stripped, c), c) for c in candidates]
+            overlap, best = max(scored, key=lambda pair: pair[0])
+            if len(cited) > 1:  # a claim may span the provisions it cites together
+                overlap = max(overlap, _word_overlap(stripped, "\n".join(cited)))
+            evidence = _best_window(stripped, best)
+            # Quoted or near-verbatim statute is grounded however it spreads
+            # across passages.
+            if _verbatim_fraction(stripped, context_blob) >= _VERBATIM_FRACTION:
+                overlap = max(overlap, 1.0)
             status = _classify_overlap(overlap, high_risk)
             reason = f"~{overlap:.0%} term overlap with the retrieved evidence"
-            contradiction = _contradiction_reason(stripped, evidence)
+            # Judged against the one passage it matches best, and only when it
+            # plausibly is about that passage.
+            contradiction = (
+                _contradiction_reason(stripped, best) if overlap >= _PARTIAL_THRESHOLD else None
+            ) or _unsupported_quantity(stripped, candidates)
             if contradiction:
                 status, reason = CONTRADICTED, contradiction
+            elif occs and not cited and status != SUPPORTED:
+                # Say what is actually wrong, not a meaningless overlap figure
+                # against whatever case law happened to be retrieved.
+                reason = "the cited provision is not among the retrieved provisions"
 
-        needs_llm = high_risk and status == PARTIALLY_SUPPORTED
+        # Worth the adjudicator's time: a high-risk claim that only partly
+        # matches, and any cited claim that is not near-verbatim — overlap cannot
+        # tell a faithful paraphrase of a section from a fabricated rule about it.
+        needs_llm = bool(candidates) and (
+            (high_risk and status == PARTIALLY_SUPPORTED)
+            or (bool(occs) and overlap < _CITED_REVIEW_BELOW)
+        )
 
         sentences.append(
             SentenceGrounding(
@@ -317,6 +548,7 @@ def assess_grounding(
                 is_claim=True,
                 is_high_risk=high_risk,
                 status=status,
+                det_status=status,
                 overlap=overlap,
                 reason=reason,
                 evidence=evidence,
@@ -488,13 +720,18 @@ async def ground_and_correct(
     """
     report = assess_grounding(answer, rag, retrieved_sections, retrieved_context_text)
 
-    to_fix = [
-        s
-        for s in report.sentences
-        if s.is_claim
-        and s.status != SUPPORTED
-        and (s.status in (CONTRADICTED, UNGROUNDED) or s.is_high_risk)
-    ][:_MAX_LLM_CORRECTIONS]
+    to_fix = sorted(
+        (
+            s
+            for s in report.sentences
+            if s.is_claim
+            and (
+                (s.status != SUPPORTED and (s.status in (CONTRADICTED, UNGROUNDED) or s.is_high_risk))
+                or s.needs_llm
+            )
+        ),
+        key=lambda s: s.overlap,  # weakest evidence first when over the cap
+    )[:_MAX_LLM_CORRECTIONS]
 
     if not to_fix or llm_invoke is None:
         return answer, report
@@ -516,8 +753,18 @@ async def ground_and_correct(
             continue
         new_status, corrected_sentence = fix
         original_span = answer[s.start : s.end]
-        if new_status == SUPPORTED and corrected_sentence.strip() == s.text.strip():
+        if new_status == SUPPORTED:
+            # Verified as stated: never rewrite it, whatever wording came back.
             s.status = SUPPORTED
+            continue
+        if s.det_status not in (CONTRADICTED, UNGROUNDED):
+            # Only the small model objects; the deterministic evidence (quantities,
+            # citations, conditions, overlap) does not. Measured on real answers,
+            # a 4B model rewriting a sentence from an 800-char window flips
+            # correct claims ("not applicable" -> "applicable") and overwrites
+            # faithful paraphrases with boilerplate. Flag it, keep the text.
+            s.status = new_status
+            s.reason = "the fact-check could not confirm this against the retrieved provisions"
             continue
         replacement = _reassemble(original_span, corrected_sentence)
         new_text = new_text[: s.start] + replacement + new_text[s.end :]
@@ -543,8 +790,14 @@ def grounding_footer(report: GroundingReport) -> str:
     """
     claims = report.claim_sentences
     corrected = [s for s in claims if s.outcome == "corrected"]
-    still_flagged = [s for s in claims if s.status != SUPPORTED and s.outcome != "corrected"]
-    if not corrected and not still_flagged:
+    confirmed = [s for s in report.confirmed_flagged if s.outcome != "corrected"]
+    advisory = [
+        s for s in claims
+        if s.status != SUPPORTED and s.outcome != "corrected" and s not in confirmed
+    ]
+    # Only what the deterministic evidence also condemned is worth a footer; an
+    # LLM-only objection alone never produces one.
+    if not corrected and not confirmed:
         return ""
     if not report.llm_succeeded or report.overall_score >= 0.5:
         return ""
@@ -559,10 +812,15 @@ def grounding_footer(report: GroundingReport) -> str:
             "- A claim was rewritten to match the retrieved text — the original "
             "statement was not adequately supported."
         )
-    for s in still_flagged:
+    for s in confirmed:
         cite = f" ({', '.join(s.citations)})" if s.citations else ""
         lines.append(
             f"- {s.status.replace('_', ' ').title()}{cite}: {s.reason}. "
             f"\"{s.text.strip()[:140]}\""
+        )
+    if advisory:
+        lines.append(
+            f"- {len(advisory)} other statement(s) could not be confirmed against the "
+            f"retrieved provisions."
         )
     return "\n".join(lines)

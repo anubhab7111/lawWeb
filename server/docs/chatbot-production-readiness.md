@@ -42,7 +42,7 @@ correction, marked in B10). This section records what was done about it.
 | A1 unify paths | **Done** | See B3. |
 | A2 clarification | **Done, narrowly scoped** | Fires only when an *action* intent (find a lawyer / report a crime) is among near-tied contenders, never with a document, on long messages, or twice in a row. In the live run the router was confident (margin 0.076 vs the 0.03 threshold) on the example I expected to be ambiguous, so expect this to fire rarely; `CLARIFY_ON_AMBIGUOUS=false` disables it. |
 | A3 retrieval grading | **Done** | Weak (<3 provisions or mean score < `retrieval_min_confidence`) or empty retrieval triggers one LLM-rewritten, unfiltered retry. The 0.45 threshold comes from a **7-query** sample (in-corpus 0.58-1.00, off-topic 0.34-0.40) and should be re-tuned against the eval set. |
-| A4 grounding retry | **Done; live once the correction bug below was fixed** | One targeted regeneration, only on an *adjudicated* report. It was silently unreachable until the wrapper bug described in the last follow-up section was fixed (my earlier note here blamed the model; that was wrong). |
+| A4 grounding retry | **Done; live once the correction bug below was fixed** | One targeted regeneration, only on an *adjudicated* report with at least one *corroborated* flag (see Follow-up 3). It was silently unreachable until the wrapper bug described in the last follow-up section was fixed (my earlier note here blamed the model; that was wrong). |
 | A5 decomposition | **Done, deterministic** | Splits on question marks / enumerations; the full query is always searched too, so it can only add recall. No LLM call: a 4B model spends seconds on even a trivial split. |
 | A6 real tool selection | **Done (option 1)** | `select_tools()` decides what handlers run. `bare_act_lookup` is still not wired to any handler. |
 | A7 LangGraph checkpointer | **Done** (follow-up, see below) | Conversation memory now lives in Postgres checkpoints. |
@@ -198,6 +198,96 @@ caveats: the gate still flags a large share of claims on long answers (12/19
 after the redraft), so its strictness on long, paraphrased answers deserves a
 look; and the regeneration adds ~60s on the full-prompt path (it is not
 concise-eligible when the question is multi-part).
+
+### Follow-up 3: the grounding gate was too strict, and it was rewriting correct answers
+
+**What was wrong.** Once correction actually ran (previous section), the gate
+flagged 37 of 67 claims across 15 real answers and rewrote 28 sentences. Reading
+every flag against the evidence, the problem was not just noise: on the Hindu
+Marriage Act answer it replaced six correct, near-verbatim statutory statements
+with *"The retrieved evidence does not confirm this claim and recommends
+consulting a lawyer."* Causes, each verified in the code and reproduced:
+
+1. **The dropped-qualifier check ran against the whole retrieved-context blob.**
+   That always contains "except"/"unless"/"provided that" somewhere, so any
+   uncited sentence containing `must` or `cannot` was CONTRADICTED. It also fired
+   on faithful restatements: Article 21's "no person shall be deprived … *except*
+   according to procedure" restated as "cannot be deprived without procedure".
+2. **Wrong evidence for the adjudicator.** For an uncited claim it was the first
+   800 characters of the context (the header and first provision); for an
+   act-less citation ("Section 56") it was the first Act with that section
+   number, i.e. the **Copyright Act** for a Contract Act claim.
+3. **Non-claims graded as claims:** markdown headings, table cells, and the
+   "I don't have specific references" hedges the prompt *instructs* the model to
+   write. The sentence splitter also cut at "B. " and "Ghose v. Mugneeram",
+   creating fragments (one became `*Satyabrata Ghose v. The retrieved sources do
+   not confirm…`).
+4. **Numbers were invisible.** Word overlap looks only at alphabetic words of
+   4+ letters, so "maximum punishment of two years" for a provision saying seven
+   passed as SUPPORTED. The gate was too lenient exactly where an error is worst.
+5. **A 4B model rewriting a sentence from an 800-char window flips meaning in both
+   directions**: "§53 is *not* applicable" became "§53 *is* applicable", and
+   "marital rape is *not* criminalized for adult spouses" (what the retrieved text
+   says) became "*criminalizes*".
+
+**What changed** (`app/tools/grounding_verifier.py`, `app/chatbot.py`):
+
+- A claim is graded against the best-matching *passage* (its cited provision,
+  case law, or, if uncited, any retrieved passage), and the adjudicator is shown
+  that passage's best-matching 800-char window. An act-less citation resolves to
+  the provision that was actually retrieved; a citation to a section that was not
+  retrieved is ungrounded, and says so.
+- Near-verbatim statute (word-trigram match against the context) is grounded,
+  and matching is suffix-insensitive ("established"/"establishes").
+- The contradiction check compares against one passage, uses word boundaries, and
+  the dropped-qualifier rule now needs an exceptionless marker (`always`, `never`,
+  `absolute`, `under any circumstances`), not `must`/`cannot`.
+- **New quantity check:** punishments, periods and amounts ("seven years",
+  "24 hours", "₹5 lakh") must appear in the evidence; number words fold to digits.
+- Headings, table cells, hedges and list lead-ins are not claims; the splitter
+  no longer breaks on enumerators and abbreviations.
+- Cited claims that are not near-verbatim are sent to the adjudicator, since
+  overlap cannot tell a faithful paraphrase from a fabricated rule about the same
+  section. A "SUPPORTED" verdict never rewrites text.
+- **Two signals must agree before the system acts visibly.** A flag is
+  *confirmed* only if the deterministic pass also condemned the claim
+  (`GroundingReport.confirmed_flagged`). Only confirmed claims are rewritten,
+  trigger the regeneration, or are itemised in the footer. An LLM-only objection
+  still lowers the score and gets one honest summary line ("N other statement(s)
+  could not be confirmed"); it never edits text.
+
+**Measured** (same 15 real answers from 8 questions, plus 9 hand-written faults:
+fabricated sections and amounts, reversed rules, an invented condition):
+
+| | Before | After |
+|---|---|---|
+| Claims graded (non-claims removed) | 67 | 48 |
+| Claims flagged | 37 | 22 (advisory) |
+| **Sentences rewritten** | **28** | **2** |
+| Answers that would regenerate | 3 | 0 |
+| Injected faults caught | 7/9 | **8/9** |
+
+Through the real graph, the multi-part question that previously scored 0.27 on
+noisy flags, regenerated and took 187s now takes 144s with no regeneration and no
+rewrites. Reading the 22 residual flags by hand, roughly half are real problems
+(e.g. "privacy remains protected even during emergencies unless overridden",
+which is wrong because Article 21 cannot be suspended; "IPC §376 explicitly
+defines marital rape"; an unverifiable quoted Karnataka amendment); the rest are
+mild noise (a correct WhatsApp summary; a paraphrase of §55). They are advisory
+only now. 19 new tests (`test_grounding_gate.py`); four mutants of the key fixes
+are all killed, which exposed one missing test (a mis-cited section riding on a
+neighbouring provision's wording), now added.
+
+**Limits, stated plainly.** The corpus is small (15 answers, 8 questions), the
+faults are 9 and hand-written by me, and I judged the flags myself: treat the
+numbers as directional, not a benchmark. The one missed fault ("divorce solely
+because one spouse earns less", citing a real section) is the inherent limit of a
+lexical gate: fabricated content in familiar vocabulary needs the adjudicator,
+which is non-deterministic run to run (flag counts moved by ±1-3 between
+identical runs) and is therefore never trusted to edit on its own. Thresholds
+(`_CITED_REVIEW_BELOW` 0.6, `_VERBATIM_FRACTION` 0.6) are heuristics tuned on this
+corpus. Not done: pronoun-style back-references ("This provision establishes…")
+do not inherit the previous sentence's citation.
 
 ### Still open
 

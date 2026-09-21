@@ -1797,13 +1797,13 @@ async def gq_generate(state: ChatState) -> ChatState:
 
 def _regeneration_plan(report) -> tuple:
     """(feedback text, targeted retrieval queries) for the flagged claims."""
-    flagged = report.flagged[:3]
+    flagged = report.confirmed_flagged[:3]
     feedback = "\n".join(
         f"- \"{s.text.strip()[:240]}\"" + (f" — {s.reason}" if s.reason else "")
         for s in flagged
     )
     queries: List[str] = []
-    for s in report.flagged:
+    for s in report.confirmed_flagged:
         for citation in s.citations:
             if citation not in queries:
                 queries.append(citation)
@@ -1860,7 +1860,7 @@ async def gq_verify(state: ChatState) -> ChatState:
         settings.grounding_retry_enabled
         and report is not None
         and report.llm_succeeded
-        and report.flagged
+        and report.confirmed_flagged
         and score is not None
         and score < settings.grounding_retry_threshold
         and (state.get("regen_count") or 0) < 1
