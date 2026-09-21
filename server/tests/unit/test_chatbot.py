@@ -446,7 +446,9 @@ def test_giveup_with_failing_retry_shows_the_note_once_and_is_not_verified(monke
     assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1  # not twice
     assert rig.verify_calls == 0
     assert done["trace"]["grounding"] == {"verified": False, "reason": "generation_failed"}
-    assert done["trace"]["generation"] == {"attempts": 2, "giveup_retry": True, "failed": True}
+    assert done["trace"]["generation"] == {
+        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": True
+    }
 
 
 def test_giveup_retry_recovers_without_the_user_ever_seeing_the_note(monkeypatch):
@@ -460,7 +462,9 @@ def test_giveup_retry_recovers_without_the_user_ever_seeing_the_note(monkeypatch
     assert cb._INCOMPLETE_GENERATION_NOTE not in "".join(_tokens(events))
     assert any(e["type"] == "status" and e["stage"] == "retrying" for e in events)
     assert rig.verify_calls == 1  # the recovered answer is verified like any other
-    assert done["trace"]["generation"] == {"attempts": 2, "giveup_retry": True, "failed": False}
+    assert done["trace"]["generation"] == {
+        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": False
+    }
 
 
 def test_giveup_retry_can_be_disabled(monkeypatch):
@@ -716,3 +720,134 @@ def test_sanitize_untrusted_document_blocks_fence_breakout():
     clean = sanitize_untrusted_document(hostile)
     assert "</document>" not in clean.lower() and "<document>" not in clean.lower()
     assert "Rent is 5000." in clean
+
+
+# --------------------------------------------------------------------------
+# Schema-constrained calls (the grounding-correction LLM)
+# --------------------------------------------------------------------------
+
+_CORRECTION_JSON = (
+    '[{"index": 1, "status": "SUPPORTED", "corrected": "Bail may be granted under s.438."},'
+    ' {"index": 2, "status": "UNGROUNDED", "corrected": "The sources do not confirm this."}]'
+)
+
+
+class ConstrainedJSONLLM(FakeLLM):
+    """Grammar-constrained decoding (ChatOllama(format=schema)): the reply is
+    the JSON itself, with no <think> block at all."""
+
+    format = {"type": "array"}
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        return SimpleNamespace(content=_CORRECTION_JSON)
+
+
+def test_schema_constrained_reply_without_a_think_block_is_not_a_giveup():
+    out = run(cb.invoke_llm_safely(ConstrainedJSONLLM(), "check these claims"))
+    assert out == _CORRECTION_JSON
+    assert out != cb._INCOMPLETE_GENERATION_NOTE
+
+
+def test_unconstrained_reply_without_a_think_block_is_still_a_giveup():
+    class NoThinkLLM(FakeLLM):
+        async def ainvoke(self, messages):
+            return SimpleNamespace(content="a reply that never closed its thinking")
+
+    out = run(cb.invoke_llm_safely(NoThinkLLM(), "question"))
+    assert out == cb._INCOMPLETE_GENERATION_NOTE
+
+
+def test_grounding_adjudication_parses_the_constrained_llm_reply():
+    """End to end through the same call shape gq_verify uses: previously the
+    reply was discarded as a give-up, llm_succeeded stayed False, and neither
+    claim correction nor the regeneration trigger could ever fire."""
+    from app.tools import grounding_verifier as gv
+
+    sentences = [
+        gv.SentenceGrounding(text="Bail may be granted.", start=0, end=20, evidence="s.438 ..."),
+        gv.SentenceGrounding(text="Ten years applies.", start=21, end=40, evidence="(none)"),
+    ]
+    llm = ConstrainedJSONLLM()
+
+    async def invoke(prompt):
+        return cb.strip_reasoning_tags(await cb.invoke_llm_safely(llm, prompt))
+
+    result = run(gv._llm_adjudicate_and_correct(sentences, invoke))
+    assert result[0][0] == "SUPPORTED"
+    assert result[1] == ("UNGROUNDED", "The sources do not confirm this.")
+
+
+# --------------------------------------------------------------------------
+# Concise-first for simple, well-retrieved questions
+# --------------------------------------------------------------------------
+
+CONCISE_MARK = "under 300 words"
+
+
+def _first_prompt(rig, message="Can an FIR be quashed by the High Court?"):
+    events = run(rig.stream(message))
+    return rig.llm.prompts[0], events[-1]
+
+
+def test_simple_well_retrieved_question_gets_the_concise_prompt_first(monkeypatch):
+    rig = Rig(monkeypatch, FakeLLM(["Short answer."]), _classification("general_query"),
+              [_statute()], [_report(1.0)])
+    prompt, done = _first_prompt(rig)
+    assert CONCISE_MARK in prompt
+    assert rig.llm.calls == 1  # one pass, no retry needed
+    assert done["trace"]["generation"]["variant"] == "concise"
+
+
+def test_multi_part_question_keeps_the_full_prompt(monkeypatch):
+    rig = Rig(monkeypatch, FakeLLM(["Long answer."]), _classification("general_query"),
+              [_statute()], [_report(1.0)])
+    two_parts = ("Can Parliament restrict social media speech citing public order? "
+                 "How would courts test its constitutionality under Article 19?")
+    prompt, done = _first_prompt(rig, two_parts)
+    assert CONCISE_MARK not in prompt
+    assert done["trace"]["generation"]["variant"] == "full"
+
+
+def test_weakly_retrieved_question_keeps_the_full_prompt(monkeypatch):
+    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
+              [_statute(chunks=1, conf=0.05)], [_report(1.0)])
+    prompt, done = _first_prompt(rig)
+    assert CONCISE_MARK not in prompt and done["trace"]["retrieval"]["grade"] == "weak"
+
+
+def test_long_question_keeps_the_full_prompt(monkeypatch):
+    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
+              [_statute()], [_report(1.0)])
+    long_q = "Can an FIR be quashed by the High Court " + "given these facts " * 12 + "?"
+    prompt, _ = _first_prompt(rig, long_q)
+    assert CONCISE_MARK not in prompt
+
+
+def test_concise_first_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("CONCISE_FIRST_ENABLED", "false")
+    get_settings.cache_clear()
+    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
+              [_statute()], [_report(1.0)])
+    prompt, done = _first_prompt(rig)
+    assert CONCISE_MARK not in prompt and done["trace"]["generation"]["variant"] == "full"
+
+
+def test_multi_offense_scenario_keeps_the_full_prompt():
+    keywords = list(cb.CRIME_TYPE_KEYWORDS)[:2]
+    state = {"current_input": "He committed " + " and ".join(keywords) + " together",
+             "retrieval_grade": "good", "sub_questions": []}
+    assert cb._prefers_concise(state) is False
+    state["current_input"] = "He committed " + keywords[0]
+    assert cb._prefers_concise(state) is True
+
+
+def test_concise_first_that_gives_up_still_retries(monkeypatch):
+    first = NeverClosesLLM()
+    retry = FakeLLM(["Recovered."])
+    rig = Rig(monkeypatch, first, _classification("general_query"),
+              [_statute()], [_report(1.0)], retry_llm=retry)
+    events = run(rig.stream())
+    assert CONCISE_MARK in first.prompts[0]
+    assert events[-1]["response"].strip() == "Recovered."
+    assert events[-1]["trace"]["generation"]["attempts"] == 2
