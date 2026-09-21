@@ -23,7 +23,12 @@ from typing import Dict, Any
 from app.tools.document_classifier import DocumentClassification
 from app.tools.statutory_validator import StatutoryValidationResult, format_score
 from app.tools.indian_law_rag import IndianLawContext
-from app.prompts import REACT_THINK_PROMPT, REACT_OBSERVE_PROMPT, REACT_ANALYZE_PROMPT
+from app.prompts import (
+    REACT_ANALYZE_PROMPT,
+    REACT_OBSERVE_PROMPT,
+    REACT_THINK_PROMPT,
+    sanitize_untrusted_document,
+)
 
 # ============================================================================
 # Disclaimer Templates
@@ -214,7 +219,7 @@ class LegalDefectAnalyzer:
             nc_str = "  (none identified)"
 
         # Truncate document text for prompt — keep enough for meaningful analysis
-        doc_text_for_prompt = (
+        doc_text_for_prompt = sanitize_untrusted_document(
             document_text[:6000] if document_text else "(no document text available)"
         )
 

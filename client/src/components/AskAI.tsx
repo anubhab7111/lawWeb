@@ -39,6 +39,7 @@ interface Message {
   streaming?: boolean;
   error?: boolean;
   stopped?: boolean;
+  status?: string;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -225,14 +226,25 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onBookLawyer, o
               // meta.response is that final text; fall back to the streamed
               // tokens only if the server didn't send one.
               setMessages((m) => m.map((msg) => msg.id === botId ? {
-                ...msg, streaming: false, meta, stopped: meta.type === "stopped",
+                ...msg, streaming: false, status: undefined, meta, stopped: meta.type === "stopped",
                 content: meta.response || acc,
               } : msg));
             },
             (err) => {
-              setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, error: true, content: msg.content ? `${msg.content}\n\n${err}` : err } : msg));
+              setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, status: undefined, error: true, content: msg.content ? `${msg.content}\n\n${err}` : err } : msg));
             },
             controller.signal,
+            (ev) => {
+              if (ev.type === "status") {
+                setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, status: ev.label } : msg));
+              } else if (ev.type === "reset") {
+                acc = "";
+                setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: "" } : msg));
+              } else if (ev.type === "replace" && ev.content) {
+                acc = ev.content;
+                setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: acc } : msg));
+              }
+            },
           );
         }
       } catch (e: any) {
@@ -364,15 +376,19 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onBookLawyer, o
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ font: "600 10.5px var(--font-body)", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--muted-2)", marginBottom: 8 }}>LawWeb · Counsel</div>
                     {m.streaming && !m.content ? (
-                      <div style={{ display: "flex", gap: 4, padding: "10px 0" }}>
+                      <div style={{ display: "flex", gap: 4, padding: "10px 0", alignItems: "center" }}>
                         {[0, 1, 2].map((i) => (
                           <span key={i} style={{ width: 6, height: 6, borderRadius: 99, background: "var(--faint)", display: "inline-block", animation: `lw-dotPulse 1.2s infinite ${i * 0.15}s` }} />
                         ))}
+                        {m.status && <span style={{ marginLeft: 8, font: "400 13px var(--font-body)", color: "var(--muted-2)" }}>{m.status}</span>}
                       </div>
                     ) : (
                       <div className="prose" style={{ font: "400 16.5px var(--font-serif)", color: m.error ? "var(--danger)" : "var(--text-strong)" }}>
                         <RichText text={m.content} />
                       </div>
+                    )}
+                    {m.streaming && m.content && m.status && (
+                      <div style={{ font: "400 12.5px var(--font-body)", color: "var(--muted-2)", marginTop: 6 }}>{m.status}</div>
                     )}
 
                     {/* handoff: lawyers surfaced by the chatbot */}
@@ -419,7 +435,7 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onBookLawyer, o
 
                     {!m.streaming && !m.error && (
                       <div style={{ marginTop: 10, font: "400 12.5px var(--font-body)", color: "var(--muted-3)" }}>
-                        {m.stopped ? "stopped · " : ""}
+                        {m.stopped ? "stopped, not checked against the sources · " : ""}
                         {m.meta?.intent ? `${m.meta.intent.replace(/_/g, " ")} · ` : ""}educational information, not legal advice
                       </div>
                     )}

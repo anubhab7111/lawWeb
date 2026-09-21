@@ -103,8 +103,13 @@ export async function sendChatMessage(message: string, sessionId?: string): Prom
 }
 
 export interface StreamEvent {
-    type: 'token' | 'done' | 'error' | 'stopped' | 'superseded';
+    // status: progress label; reset: discard the text streamed so far (a
+    // regeneration follows); replace: `content` is the corrected full answer.
+    type: 'token' | 'done' | 'error' | 'stopped' | 'superseded' | 'status' | 'reset' | 'replace';
     content?: string;
+    stage?: string;
+    label?: string;
+    trace?: Record<string, any>;
     session_id?: string;
     response?: string;
     intent?: string;
@@ -128,6 +133,7 @@ export async function sendChatMessageStream(
     onDone: (metadata: StreamEvent) => void,
     onError?: (error: string) => void,
     signal?: AbortSignal,
+    onEvent?: (event: StreamEvent) => void,
 ): Promise<void> {
     const response = await apiFetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
@@ -172,6 +178,8 @@ export async function sendChatMessageStream(
 
                     if (event.type === 'token' && event.content) {
                         onToken(event.content);
+                    } else if (event.type === 'status' || event.type === 'reset' || event.type === 'replace') {
+                        onEvent?.(event);
                     } else if (event.type === 'done' || event.type === 'stopped' || event.type === 'superseded') {
                         sawTerminal = true;
                         // 'superseded': a newer request for the same session_id
@@ -199,7 +207,7 @@ export async function sendChatMessageStream(
     }
 
     if (!sawTerminal && !signal?.aborted) {
-        onError?.('The connection was interrupted before the answer finished. Please try again.');
+        onError?.('The connection was interrupted before the answer finished. Any text shown above was not checked against the sources — please do not rely on it, and try again.');
     }
 }
 

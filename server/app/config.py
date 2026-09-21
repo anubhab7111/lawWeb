@@ -53,6 +53,31 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 7200
     max_sessions: int = 500
 
+    log_level: str = "INFO"
+
+    # Agentic chat workflow (see app/chatbot.py). Ambiguous action-type queries
+    # ("my landlord threatened me") get one clarifying question instead of a
+    # silent guess between the law-explainer, crime-report and lawyer flows.
+    clarify_on_ambiguous: bool = True
+    # Retrieval grading: below this mean reranker score (or fewer than 3
+    # provisions) the statute retrieval is treated as weak and retried once
+    # with a rewritten, unfiltered query before generating.
+    retrieval_min_confidence: float = 0.25
+    # After generation, a grounding score below this triggers ONE regeneration
+    # with retrieval targeted at the unsupported citations.
+    grounding_retry_enabled: bool = True
+    grounding_retry_threshold: float = 0.5
+    # No retry/regeneration starts once a request has used this much wall time.
+    request_budget_seconds: int = 200
+    # Ollama circuit breaker: after N consecutive failures/timeouts, fail fast
+    # for the cooldown instead of making every request wait out the timeout.
+    llm_breaker_failures: int = 3
+    llm_breaker_cooldown_seconds: int = 30
+
+    # Chat endpoint limits (in-memory, per process — the app runs one worker).
+    chat_rate_limit_per_minute: int = 20
+    chat_max_concurrent: int = 4
+
     # Server configuration
     host: str = "0.0.0.0"
     python_port: int = 8000

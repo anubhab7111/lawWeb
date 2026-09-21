@@ -8,13 +8,16 @@ a bug fixed here (or a call-signature change in the underlying tool) is
 fixed everywhere at once.
 """
 
+import logging
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from app.config import get_settings
 from app.text_match import any_word
 from app.tools.base_legal_rag import compress_chunks_for_context
 from app.tools.indian_kanoon import get_indian_kanoon_tool
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -178,7 +181,7 @@ async def invoke_indian_kanoon(
             raw=result,
         )
     except Exception as e:
-        print(f"Indian Kanoon error: {e}")
+        logger.warning(f"Indian Kanoon error: {e}")
         return ToolInvocationResult(
             name="indian_kanoon", succeeded=False, context_text=""
         )
@@ -257,12 +260,12 @@ async def invoke_statute_context(
                 name="statute_context",
                 succeeded=False,
                 context_text="",
-                raw={"case_law_text": ""},
+                raw={"case_law_text": "", "confidence": 0.0, "chunk_count": 0},
             )
 
         compressed = await compress_chunks_for_context(query, context.chunks)
         text = _budget_context(compressed)
-        print(
+        logger.info(
             f"Unified RAG: {len(context.chunks)} provisions retrieved "
             f"(confidence: {context.confidence:.2%}): "
             f"{[f'{c.act_name} §{c.section_number}' for c in context.chunks]}"
@@ -273,12 +276,12 @@ async def invoke_statute_context(
             cases = await retrieve_case_law(query, parsed, context.chunks)
             if cases:
                 case_text = _format_case_law(cases)
-                print(
+                logger.info(
                     f"Case law: {len(cases)} judgments retrieved: "
                     f"{[c.case_name for c in cases]}"
                 )
         except Exception as e:
-            print(f"Case law lookup error: {e}")
+            logger.warning(f"Case law lookup error: {e}")
 
         retrieved_sections = {
             c.section_number.replace("Article", "").replace("§", "").strip().upper()
@@ -293,10 +296,12 @@ async def invoke_statute_context(
             raw={
                 "case_law_text": case_text,
                 "retrieved_sections": retrieved_sections,
+                "confidence": context.confidence,
+                "chunk_count": len(context.chunks),
             },
         )
     except Exception as e:
-        print(f"Unified RAG lookup error: {e}")
+        logger.warning(f"Unified RAG lookup error: {e}")
         import traceback
 
         traceback.print_exc()
@@ -329,7 +334,7 @@ async def invoke_crime_sections(
             )
 
         features = extract_crime_features(query)
-        print(
+        logger.info(
             f"Crime features: violence={features.violence}, death={features.death}, "
             f"weapon={features.weapon}, intent={features.intent}, "
             f"property={features.property_loss}, trespass={features.trespass}, "
@@ -350,7 +355,7 @@ async def invoke_crime_sections(
             for match in rag_result.ipc_sections
         ]
         sections_text = "\n".join(section_lines)
-        print(
+        logger.info(
             f"RAG retrieved {len(rag_result.ipc_sections)} IPC sections for '{crime_type}' "
             f"(avg confidence: {rag_result.confidence:.0%}, "
             f"sections: {[m.section for m in rag_result.ipc_sections]})"
@@ -362,7 +367,7 @@ async def invoke_crime_sections(
             raw=rag_result,
         )
     except Exception as e:
-        print(f"RAG lookup error (non-critical): {e}")
+        logger.warning(f"RAG lookup error (non-critical): {e}")
         import traceback
 
         traceback.print_exc()
@@ -388,8 +393,37 @@ async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
             name="bare_act_lookup", succeeded=True, context_text=text, raw=result
         )
     except Exception as e:
-        print(f"Bare act lookup error: {e}")
+        logger.warning(f"Bare act lookup error: {e}")
         return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
+
+
+# Per-intent tool ceiling. select_tools() narrows it per request; handlers run
+# exactly the tools it returns (state["selected_tools"]) instead of a fixed set.
+INTENT_TOOL_MAP: Dict[str, List[str]] = {
+    "document_analysis": ["indian_kanoon"],
+    "crime_report": ["crime_sections"],
+    "general_query": ["statute_context", "indian_kanoon"],
+    "find_lawyer": ["lawyer_recommender"],
+    "non_legal": [],
+}
+
+# find_lawyer only pays for a case-law search when the request names a legal
+# area — purely locational searches ("lawyer near me") gain nothing from it.
+_LAWYER_LEGAL_AREA_KEYWORDS = (
+    "criminal", "civil", "family", "property", "divorce", "ipc", "case",
+)
+
+
+def select_tools(intent: str, query: str) -> List[str]:
+    """Deterministic tool policy for one request. Drops tools that cannot
+    contribute (Indian Kanoon without an API key would return empty after a
+    wasted round-trip) and gates the optional ones on the query."""
+    tools = list(INTENT_TOOL_MAP.get(intent, []))
+    if not get_settings().indian_kanoon_api_key:
+        tools = [t for t in tools if t != "indian_kanoon"]
+    elif intent == "find_lawyer" and any_word(query.lower(), _LAWYER_LEGAL_AREA_KEYWORDS):
+        tools.append("indian_kanoon")
+    return tools
 
 
 RAG_TOOL_REGISTRY: Dict[str, Callable] = {

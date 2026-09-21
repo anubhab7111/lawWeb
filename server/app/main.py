@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.deps.errors import MessageHTTPException
+from app.logging_config import configure_logging
 from app.routers import (
     auth,
     bare_acts,
@@ -31,6 +32,8 @@ from app.routers import (
 )
 from app.scheduler import get_scheduler, register_jobs
 
+configure_logging(get_settings().log_level)
+
 
 async def _warmup() -> None:
     """Pre-load everything the chatbot lazily initializes on first use —
@@ -43,10 +46,10 @@ async def _warmup() -> None:
     connections, and must never raise: any failure here just means the
     first request falls back to the existing per-component lazy-init path.
 
-    Uses print(), not the logging module — nothing in this app configures a
-    logging handler/level (uvicorn only configures its own loggers), so
-    logger.info()/logger.exception() calls here would be silently dropped.
-    print() is what every other diagnostic line in this codebase uses.
+    Still uses print(): this runs before most modules log anything and its
+    "[Warmup]" lines are what operators tail for readiness. The chat workflow
+    (app/chatbot.py, app/tool_dispatch.py) logs through the `app.*` logger
+    configured by app.logging_config.configure_logging() above.
     """
     try:
         from app.chatbot import get_fast_llm, get_llm, invoke_llm_safely
