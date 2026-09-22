@@ -80,7 +80,7 @@ ctranslate2>=4.0
 IndicTransToolkit>=1.0.0
 sentencepiece>=0.1.99
 
-# IL-TUR benchmark dataset (server/app/metrics/iltur_loader.py, tests/test_chatbot_iltur.py)
+# IL-TUR benchmark dataset (server/app/metrics/iltur_loader.py, tests/test_chatbot.py — default dataset)
 datasets>=2.19.0
 
 flake8

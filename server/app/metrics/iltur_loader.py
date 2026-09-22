@@ -1,8 +1,8 @@
 """
 Loader for the IL-TUR (Indian Legal Text Understanding & Reasoning) benchmark
 — specifically its `lsi` (Legal Statute Identification) subtask, used by
-tests/test_chatbot_iltur.py to sample real case-fact patterns for evaluating
-the chatbot's statute-citation accuracy.
+tests/test_chatbot.py (default dataset) to sample real case-fact patterns
+for evaluating the chatbot's statute-citation accuracy.
 
 IL-TUR is gated on HuggingFace (CC BY-NC-SA 4.0, non-commercial): accept the
 license at https://huggingface.co/datasets/Exploration-Lab/IL-TUR and set

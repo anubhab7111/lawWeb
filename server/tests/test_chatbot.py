@@ -1,3 +1,17 @@
+"""
+Evaluate the legal chatbot.
+
+Default mode draws a fresh random sample of real case-fact patterns from
+IL-TUR (Indian Legal Text Understanding & Reasoning, `lsi` subtask) every
+run — use --seed for a reproducible sample. IL-TUR is gated on HuggingFace:
+accept the license at https://huggingface.co/datasets/Exploration-Lab/IL-TUR
+and set HUGGINGFACE_TOKEN in server/.env before running with no arguments.
+
+Pass --dataset builtin to instead use the original hand-curated prompt
+lists (TEST_PROMPTS / EXTENDED_PROMPTS), which require no network access
+or HF token.
+"""
+
 import argparse
 import asyncio
 import csv
@@ -80,6 +94,30 @@ EXTENDED_PROMPTS = [
     "On what grounds can an arbitral award be set aside by a court?",
     "What are the functions and powers of the National Human Rights Commission?",
 ]
+
+
+def prepare_iltur_prompts(sample_size: int, seed: "int | None"):
+    """Sample IL-TUR cases, register their ground truth, and return prompts."""
+    from app.metrics.ground_truth import GROUND_TRUTH
+    from app.metrics.iltur_loader import (
+        iltur_case_to_ground_truth,
+        iltur_case_to_prompt,
+        sample_iltur_cases,
+    )
+
+    print("[IL-TUR] Loading the Exploration-Lab/IL-TUR lsi test split...")
+    rows = sample_iltur_cases(sample_size, seed=seed)
+
+    prompts = []
+    print(f"[IL-TUR] Sampled {len(rows)} cases (seed={seed})")
+    for row in rows:
+        prompt = iltur_case_to_prompt(row)
+        gt_entry = iltur_case_to_ground_truth(row, prompt)
+        GROUND_TRUTH.append(gt_entry)  # mutate in place — evaluator holds this same list object
+        prompts.append(prompt)
+        print(f"  id={row.get('id')} sections={gt_entry.get('relevant_sections')}")
+
+    return prompts
 
 
 # ============================================================================
@@ -178,6 +216,7 @@ async def run_metrics_evaluation(
     chatbot_results: list,
     timestamp: str,
     use_llm_judge: bool = True,
+    prefix: str = "",
 ) -> None:
     """
     Run the MetricsEvaluator over the chatbot results and save both
@@ -192,6 +231,8 @@ async def run_metrics_evaluation(
     use_llm_judge : bool
         True  -> uses the OpenRouter LLM-as-judge (slower, higher quality).
         False -> uses keyword heuristics only     (fast,  offline mode).
+    prefix : str
+        Prepended to output filenames (e.g. "iltur_" for IL-TUR-sourced runs).
     """
     try:
         from app.metrics.evaluator import MetricsEvaluator
@@ -217,11 +258,11 @@ async def run_metrics_evaluation(
     evaluator.print_report(eval_results)
 
     # Save detailed CSV (one row per query, all 9 metrics as columns)
-    metrics_csv_path = RESULTS_DIR / f"metrics_{timestamp}.csv"
+    metrics_csv_path = RESULTS_DIR / f"{prefix}metrics_{timestamp}.csv"
     evaluator.save_csv(eval_results, metrics_csv_path)
 
     # Save full JSON (includes per-query reasoning strings + aggregate)
-    metrics_json_path = RESULTS_DIR / f"metrics_{timestamp}.json"
+    metrics_json_path = RESULTS_DIR / f"{prefix}metrics_{timestamp}.json"
     evaluator.save_json(eval_results, metrics_json_path)
 
     print(f"\n[Metrics] Reports written:")
@@ -240,19 +281,22 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python tests/test_chatbot.py                        # basic run (no metrics)
-  python tests/test_chatbot.py --metrics              # full 9-metric eval with LLM judge
-  python tests/test_chatbot.py --metrics --no-llm-judge  # keyword heuristics only
+  python tests/test_chatbot.py                          # 20 fresh random IL-TUR cases, full metrics (default; needs HUGGINGFACE_TOKEN)
+  python tests/test_chatbot.py --seed 42                 # reproducible IL-TUR sample for before/after comparisons
+  python tests/test_chatbot.py --sample 5 --no-llm-judge # quick IL-TUR smoke test
+  python tests/test_chatbot.py --dataset builtin --no-llm-judge  # fully offline run on the hardcoded prompt set (no HF token/network needed)
+  python tests/test_chatbot.py --dataset builtin --extended      # hardcoded prompts + extended-domain prompts
         """,
     )
     parser.add_argument(
-        "--metrics",
-        action="store_true",
-        default=True,
+        "--dataset",
+        choices=["iltur", "builtin"],
+        default="iltur",
         help=(
-            "Run the full 9-metric evaluation suite (Hit Rate@k, MRR, "
-            "Context Precision, Faithfulness, Answer Relevance, Context Recall, "
-            "Latency, Cost, Token Efficiency)."
+            "Prompt source. 'iltur' (default): random sample of real case-fact "
+            "patterns from the IL-TUR benchmark (needs HUGGINGFACE_TOKEN + "
+            "network). 'builtin': the original hand-curated TEST_PROMPTS / "
+            "EXTENDED_PROMPTS lists (offline, no token needed)."
         ),
     )
     parser.add_argument(
@@ -260,16 +304,40 @@ Examples:
         action="store_true",
         default=False,
         help=(
-            "Also run the extended new-domain prompts (family, labour, "
-            "corporate, tax, environment, consumer, cyber/IP, election, "
-            "property, commercial, human rights)."
+            "Builtin mode only (implies --dataset builtin): also run the "
+            "extended new-domain prompts (family, labour, corporate, tax, "
+            "environment, consumer, cyber/IP, election, property, "
+            "commercial, human rights)."
         ),
     )
     parser.add_argument(
         "--extended-only",
         action="store_true",
         default=False,
-        help="Run ONLY the extended new-domain prompts.",
+        help="Builtin mode only (implies --dataset builtin): run ONLY the extended new-domain prompts.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "IL-TUR mode only: seed the random sample for reproducibility. "
+            "Default: fresh random sample every run. Ignored in builtin mode."
+        ),
+    )
+    parser.add_argument(
+        "--metrics",
+        action="store_true",
+        default=True,
+        help="Deprecated no-op kept for backward compatibility; metrics run by default. Use --no-metrics to skip them.",
+    )
+    parser.add_argument(
+        "--no-metrics",
+        action="store_true",
+        default=False,
+        dest="no_metrics",
+        help="Only run the chatbot and save answers; skip the full metric suite.",
     )
     parser.add_argument(
         "--no-llm-judge",
@@ -278,20 +346,25 @@ Examples:
         dest="no_llm_judge",
         help=(
             "Disable the OpenRouter LLM-as-judge and use keyword heuristics "
-            "instead. Much faster and uses zero API quota; useful for "
-            "offline / CI runs. Only applies when --metrics is also passed."
+            "instead. Much faster and uses zero API quota. Combine with "
+            "--dataset builtin for a fully offline / CI run; only applies "
+            "when metrics are enabled."
         ),
     )
     parser.add_argument(
         "--sample",
+        "--sample-size",
         type=int,
         default=None,
+        dest="sample",
         metavar="N",
         help=(
-            "Evaluate only the first N prompts instead of the full set. "
-            "Each prompt costs up to 4 LLM-judge calls, so use this to stay "
-            "inside OpenRouter's free-tier daily budget (see "
-            "OPENROUTER_DAILY_LIMIT in server/.env, default 50/day)."
+            "In --dataset iltur (default) mode: number of IL-TUR cases to "
+            "randomly sample (default: 20). In --dataset builtin mode: "
+            "evaluate only the first N prompts instead of the full set "
+            "(default: all). Each prompt costs up to 4 LLM-judge calls, so "
+            "use this to stay inside OpenRouter's free-tier daily budget "
+            "(see OPENROUTER_DAILY_LIMIT in server/.env, default 50/day)."
         ),
     )
     return parser.parse_args()
@@ -300,16 +373,17 @@ Examples:
 async def main() -> None:
     args = parse_args()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    prefix = "iltur_" if args.dataset == "iltur" else ""
 
     # Save the complete console output of this run to its own log file.
-    run_log_path = RESULTS_DIR / f"run_{timestamp}.log"
+    run_log_path = RESULTS_DIR / f"{prefix}run_{timestamp}.log"
     log_fh = open(run_log_path, "w", encoding="utf-8")
     sys.stdout = _Tee(sys.__stdout__, log_fh)
     sys.stderr = _Tee(sys.__stderr__, log_fh)
     print(f"[log] Saving full run log to {run_log_path}\n")
 
     try:
-        await _run(args, timestamp)
+        await _run(args, timestamp, prefix)
     finally:
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
@@ -317,20 +391,37 @@ async def main() -> None:
         print(f"[log] Full run log written to {run_log_path}")
 
 
-async def _run(args: argparse.Namespace, timestamp: str) -> None:
+async def _run(args: argparse.Namespace, timestamp: str, prefix: str) -> None:
     # ------------------------------------------------------------------
-    # Pass 1: run the chatbot and collect raw answers + latencies
+    # Pass 1: assemble prompts from the selected dataset
     # ------------------------------------------------------------------
-    if args.extended_only:
-        prompts = EXTENDED_PROMPTS
-    elif args.extended:
-        prompts = TEST_PROMPTS + EXTENDED_PROMPTS
-    else:
-        prompts = TEST_PROMPTS
-    if args.sample is not None:
-        prompts = prompts[: max(0, args.sample)]
+    if (args.extended or args.extended_only) and args.dataset != "builtin":
+        print("[Dataset] --extended/--extended-only implies --dataset builtin.\n")
+        args.dataset = "builtin"
 
-    use_llm_judge = args.metrics and not args.no_llm_judge
+    if args.dataset == "builtin":
+        if args.extended_only:
+            prompts = EXTENDED_PROMPTS
+        elif args.extended:
+            prompts = TEST_PROMPTS + EXTENDED_PROMPTS
+        else:
+            prompts = TEST_PROMPTS
+        if args.sample is not None:
+            prompts = prompts[: max(0, args.sample)]
+    else:  # args.dataset == "iltur"
+        sample_size = args.sample if args.sample is not None else 20
+        try:
+            prompts = prepare_iltur_prompts(sample_size, args.seed)
+        except RuntimeError as e:
+            print(f"\n[IL-TUR] {e}")
+            print(
+                "[IL-TUR] Run with --dataset builtin to use the hardcoded "
+                "prompt set instead (no HF token/network required).\n"
+            )
+            return
+
+    run_metrics = not args.no_metrics
+    use_llm_judge = run_metrics and not args.no_llm_judge
     if use_llm_judge:
         from app.config import get_settings
 
@@ -348,22 +439,23 @@ async def _run(args: argparse.Namespace, timestamp: str) -> None:
     chatbot_results = await run_evaluation(prompts)
 
     # Save the basic CSV (same format as before, always written)
-    basic_csv_path = RESULTS_DIR / f"eval_results_{timestamp}.csv"
+    basic_csv_path = RESULTS_DIR / f"{prefix}eval_results_{timestamp}.csv"
     save_csv(chatbot_results, basic_csv_path)
     print_summary(chatbot_results)
 
     # ------------------------------------------------------------------
     # Pass 2 (optional): full metrics evaluation
     # ------------------------------------------------------------------
-    if args.metrics:
+    if run_metrics:
         await run_metrics_evaluation(
             chatbot_results=chatbot_results,
             timestamp=timestamp,
             use_llm_judge=use_llm_judge,
+            prefix=prefix,
         )
     else:
         print(
-            "\nTip: re-run with --metrics to compute Hit Rate@k, MRR, "
+            "\nTip: drop --no-metrics to compute Hit Rate@k, MRR, "
             "Faithfulness, Answer Relevance, Context Recall, Latency stats, "
             "Cost estimates, and Token Efficiency.\n"
         )

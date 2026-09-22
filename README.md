@@ -74,7 +74,7 @@ python rebuild_rag_indices.py --all      # or --domain unified | case_law
 
 ```bash
 cd server
-python tests/test_chatbot.py    # accuracy sweep over domain prompts; needs Ollama running, slow
+python tests/test_chatbot.py    # accuracy sweep; needs Ollama, slow; defaults to a random IL-TUR sample (needs HUGGINGFACE_TOKEN + network) — pass --dataset builtin for the old offline hardcoded-prompt run
 ```
 
 Fast, Ollama-free unit tests: `cd server && python -m pytest tests/unit` (DB-backed tests use a scratch database — `createdb lawweb_scratch` with the `vector` extension, or set `TEST_DATABASE_URL`).
