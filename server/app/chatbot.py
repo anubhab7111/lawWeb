@@ -1384,21 +1384,30 @@ async def _verify_response_citations(
     try:
         from app.tools.grounding_verifier import ground_and_correct, grounding_footer
         from app.tools.citation_verifier import verify_citations, verification_footer
+        from app.tools.case_citation_verifier import (
+            case_verification_footer,
+            verify_case_citations,
+        )
         from app.tools.unified_legal_rag import get_unified_rag_system
+        from app.tools.case_law_rag import get_case_law_rag_system
 
         rag = get_unified_rag_system()
+        case_rag = get_case_law_rag_system()
 
         if citation_only:
-            if not rag.initialized:
-                return response_text, None
-            citation_report = verify_citations(response_text, rag, retrieved_sections)
-            if citation_report.checks:
-                logger.info(
-                    "CitationVerify (no-retrieval path): %s/%s citations verified",
-                    len(citation_report.verified),
-                    len(citation_report.checks),
-                )
-            return response_text + verification_footer(citation_report), None
+            text = response_text
+            if rag.initialized:
+                citation_report = verify_citations(response_text, rag, retrieved_sections)
+                if citation_report.checks:
+                    logger.info(
+                        "CitationVerify (no-retrieval path): %s/%s citations verified",
+                        len(citation_report.verified),
+                        len(citation_report.checks),
+                    )
+                text += verification_footer(citation_report)
+            if case_rag.initialized:
+                text += case_verification_footer(verify_case_citations(response_text, case_rag))
+            return text, None
 
         if not rag.initialized:
             return response_text, None
@@ -1427,10 +1436,15 @@ async def _verify_response_citations(
                 len(report.claim_sentences),
                 corrected_count,
             )
-        return (
+        text = (
             corrected_text
             + verification_footer(report.citation_report)
-            + grounding_footer(report),
+            + grounding_footer(report)
+        )
+        if case_rag.initialized:
+            text += case_verification_footer(verify_case_citations(corrected_text, case_rag))
+        return (
+            text,
             report,
         )
     except Exception:

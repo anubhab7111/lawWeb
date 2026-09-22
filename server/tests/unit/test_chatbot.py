@@ -766,6 +766,47 @@ def test_citation_only_mode_no_ops_when_rag_uninitialized(monkeypatch):
     assert text == answer and report is None
 
 
+class _StubCaseRag:
+    def __init__(self, initialized, known_names=()):
+        self.initialized = initialized
+        self._known = list(known_names)
+
+    def find_case(self, name):
+        from app.tools.case_law_rag import normalize_case_name
+        target = normalize_case_name(name)
+        for known in self._known:
+            if normalize_case_name(known) == target:
+                return SimpleNamespace(case_name=known)
+        return None
+
+
+def test_citation_only_mode_also_flags_a_fabricated_case_name(monkeypatch):
+    monkeypatch.setattr(
+        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _UninitializedRag()
+    )
+    monkeypatch.setattr(
+        "app.tools.case_law_rag.get_case_law_rag_system",
+        lambda: _StubCaseRag(True, ["Shreya Singhal v. Union of India (2015)"]),
+    )
+    answer = "As in Fabricated Party v. Other Party (2019), this rule applies."
+    text, report = run(cb._verify_response_citations(answer, citation_only=True))
+    assert report is None
+    assert "Fabricated Party v. Other Party" in text
+    assert "could not be verified against the indexed case-law corpus" in text
+
+
+def test_citation_only_mode_no_ops_case_check_when_case_rag_uninitialized(monkeypatch):
+    monkeypatch.setattr(
+        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _UninitializedRag()
+    )
+    monkeypatch.setattr(
+        "app.tools.case_law_rag.get_case_law_rag_system", lambda: _StubCaseRag(False)
+    )
+    answer = "As in Fabricated Party v. Other Party (2019), this rule applies."
+    text, report = run(cb._verify_response_citations(answer, citation_only=True))
+    assert text == answer and report is None
+
+
 # --------------------------------------------------------------------------
 # B4 / B9: LLM invocation
 # --------------------------------------------------------------------------
