@@ -16,6 +16,16 @@ CONTEXT = (
     "• **Constitution of India Article 21** — Protection of life and personal liberty [constitutional]\n"
     "21. Protection of life and personal liberty. —No person shall be deprived of his life or "
     "personal liberty except according to procedure established by law.\n\n"
+    "• **Constitution of India Article 19** — Protection of certain rights regarding freedom of speech [constitutional]\n"
+    "19. Protection of certain rights regarding freedom of speech, etc.—(1) All citizens shall have "
+    "the right to freedom of speech and expression, to assemble peaceably, to form associations or "
+    "unions, to move freely throughout the territory of India, and to practise any profession, or to "
+    "carry on any occupation, trade or business.\n\n"
+    "• **Indian Contract Act § 10** — What agreements are contracts [civil]\n"
+    "10. What agreements are contracts.—All agreements are contracts if they are made by the free "
+    "consent of parties competent to contract, for a lawful consideration and with a lawful object, "
+    "and are not hereby expressly declared to be void. Nothing herein contained shall affect any law "
+    "in force in India by which any contract is required to be made in writing.\n\n"
     "• **Hindu Marriage Act § 13B** — Divorce by mutual consent [family]\n"
     "13B. Divorce by mutual consent.—(1) A petition for dissolution of marriage may be presented on "
     "the ground that they have been living separately for a period of one year or more, that they "
@@ -30,7 +40,7 @@ CONTEXT = (
     "• **Shreya Singhal v. Union of India** (2015) — Supreme Court\n"
     "Restrictions on speech must be reasonable and proximate to public order."
 )
-SECTIONS = {"21", "13B", "56"}
+SECTIONS = {"21", "19", "10", "13B", "56"}
 
 DECOY_COPYRIGHT_56 = [SimpleNamespace(
     text="56. Protection of separate rights.—Subject to the provisions of this Act, where the "
@@ -67,7 +77,7 @@ def only_claim(answer):
 
 def test_the_first_provision_after_the_block_header_is_parsed():
     sections = [sec for sec, _ in gv._context_passages(CONTEXT)]
-    assert sections == ["21", "13B", "56", ""]  # incl. the first, and case law (no section)
+    assert sections == ["21", "19", "10", "13B", "56", ""]  # incl. the first, and case law (no section)
 
 
 # --- faithful text must not be flagged ------------------------------------------
@@ -105,6 +115,61 @@ def test_a_claim_resting_on_case_law_is_not_flagged_for_lacking_the_section_text
 
 
 # --- real errors are still caught ------------------------------------------------
+
+
+def test_a_qualifier_phrased_differently_from_the_source_is_not_invented():
+    # Regression (live, 18-query eval set): §10 Contract Act's real exception is
+    # "Nothing herein contained shall affect any law... requiring... in writing"
+    # — no literal "unless"/"except". A faithful claim using "unless" to describe
+    # that same exception was flagged as inventing a condition the source lacks.
+    claim = only_claim(
+        "Section 10 of the Contract Act makes agreements binding unless a specific "
+        "law requires them to be in writing."
+    )
+    assert claim.status != gv.CONTRADICTED
+
+
+def test_a_claim_with_no_qualifier_language_anywhere_in_the_source_is_still_caught():
+    # The broadened check only forgives a DIFFERENTLY-WORDED qualifier — an
+    # invented one against a source with no qualifying language at all must
+    # still be caught.
+    # Article 19 (added to this fixture for the multi-citation test below)
+    # states no qualifier of any kind, so an invented one must still be caught.
+    claim = only_claim(
+        "Article 19 protects freedom of speech unless the President declares a "
+        "national holiday."
+    )
+    assert claim.status == gv.CONTRADICTED
+
+
+def test_a_claim_spanning_two_cited_provisions_is_checked_against_both():
+    # Regression (live): a claim about Article 19 qualified by Article 21's
+    # "except ..." was evidenced against whichever provision scored higher
+    # generic word-overlap (Article 19, the longer one) and flagged
+    # CONTRADICTED for "inventing" a qualifier Article 21 actually states.
+    claim = only_claim(
+        "All citizens' freedom of speech, expression, and right to move freely, "
+        "form associations, or carry on any trade, occupation, profession or "
+        "business is subject to lawful procedure, per Article 19 and Article 21."
+    )
+    assert claim.status != gv.CONTRADICTED
+
+
+def test_a_negated_absolute_marker_does_not_assert_an_exceptionless_rule():
+    # "No absolute right exists" AGREES with a qualified provision — the
+    # opposite of "This right is absolute". Regression (live, 18-query eval
+    # set): flagged CONTRADICTED against Article 21's real "except ..." clause
+    # because the claim was correctly agreeing with it.
+    claim = only_claim(
+        "No absolute right exists under Article 21, which is subject to "
+        "procedure established by law."
+    )
+    assert claim.status != gv.CONTRADICTED
+
+
+def test_an_unnegated_absolute_marker_still_asserts_an_exceptionless_rule():
+    claim = only_claim("Article 21 is an absolute right with no exceptions.")
+    assert claim.status == gv.CONTRADICTED
 
 
 def test_an_exceptionless_rule_about_a_qualified_provision_is_a_contradiction():

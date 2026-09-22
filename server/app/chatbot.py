@@ -691,6 +691,12 @@ def _merge_trace(state: ChatState, **entries: Any) -> Dict[str, Any]:
     return {**(state.get("trace") or {}), **entries}
 
 
+def _looks_like_an_explicit_question(text: str) -> bool:
+    """A '?' means the user already wrote out a specific legal question,
+    not a raw situational statement — see _clarification_for."""
+    return "?" in text
+
+
 def _clarification_for(
     result, intent: str, has_document: bool, messages: List[Message], user_input: str
 ) -> Optional[str]:
@@ -700,11 +706,21 @@ def _clarification_for(
     confident answer to a question they did not ask, and cannot tell.
 
     Deliberately narrow so it does not nag: it never fires with an attached
-    document, on long messages, or right after its own previous question, and
-    only when an action intent is among the near-tied contenders."""
+    document, on long messages, right after its own previous question, or on
+    an explicit written-out question — only on a raw situational statement
+    ("my landlord is cheating me"), where there genuinely is no question to
+    answer yet. This last guard is load-bearing, not decorative: measured
+    against the project's own 18-query eval set, embedding-classifier margins
+    of 0.001-0.03 between "explain the law" and "find a lawyer"/"report a
+    crime" are common noise on ordinary legal questions — before this guard,
+    6 of 18 canonical questions ("Can an FIR be quashed by the High Court? On
+    what grounds?") were intercepted and never answered. Every one of those
+    six, like every false trigger found, was an explicit written-out question."""
     if not get_settings().clarify_on_ambiguous or not result.is_ambiguous:
         return None
     if has_document or len(user_input.split()) > _CLARIFY_MAX_WORDS:
+        return None
+    if _looks_like_an_explicit_question(user_input):
         return None
     if (
         messages
