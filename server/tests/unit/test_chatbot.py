@@ -140,13 +140,15 @@ def env(monkeypatch):
 class Rig:
     """One chatbot wired to fakes; records what the workflow asked of them."""
 
-    def __init__(self, monkeypatch, llm, classification, statutes, reports=None, retry_llm=None):
+    def __init__(self, monkeypatch, llm, classification, statutes, reports=None, retry_llm=None,
+                 tiebreak_result=None, tiebreak_raises=None):
         self.llm = llm
         self.retry_llm = retry_llm or llm
         self.statute_calls = []
         self._statutes = list(statutes)
         self._reports = list(reports or [])
         self.verify_calls = 0
+        self.tiebreak_calls = []
 
         async def classify(text, has_document):
             return classification
@@ -165,11 +167,26 @@ class Rig:
         async def fast_text(prompt, timeout):
             return "rewritten statute query"
 
+        # Default (tiebreak_result=None): simulates "the LLM is also unsure" —
+        # preserves the pre-tiebreaker behaviour (falls straight through to the
+        # clarifying question) for every test that isn't specifically about the
+        # tie-breaker. Never makes a real call, so ambiguous-routing tests stay
+        # fast and offline regardless of Ollama/network availability.
+        async def tiebreak(contenders, user_input):
+            self.tiebreak_calls.append((frozenset(contenders), user_input))
+            if tiebreak_raises is not None:
+                raise tiebreak_raises
+            return tiebreak_result, {
+                "tried": True, "seconds": 0.01, "candidates": sorted(contenders),
+                "raw": tiebreak_result, "resolved": tiebreak_result,
+            }
+
         monkeypatch.setattr(cb, "classify_intent_embedding", classify)
         monkeypatch.setattr(cb, "get_llm", lambda: llm)
         monkeypatch.setattr(cb, "get_retry_llm", lambda: self.retry_llm)
         monkeypatch.setattr(cb, "_verify_response_citations", verify)
         monkeypatch.setattr(cb, "_invoke_fast_text", fast_text)
+        monkeypatch.setattr(cb, "_resolve_ambiguity_with_llm", tiebreak)
         monkeypatch.setitem(cb.RAG_TOOL_REGISTRY, "statute_context", statute_tool)
         self.bot = cb.LegalChatbot()
 
@@ -326,6 +343,131 @@ def test_ambiguous_report_vs_law_question(monkeypatch):
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     out = run(cb.classify_intent(_state("someone threatened me")))
     assert out["response"] == CLARIFY_LAW_OR_REPORT
+
+
+def test_tiebreak_never_runs_on_unambiguous_routing(monkeypatch):
+    """The latency guarantee: the fast path (the overwhelming majority of
+    traffic) must stay a pure embedding lookup with zero LLM calls."""
+    rig = Rig(monkeypatch, FakeLLM(), _classification("general_query"), [_statute()])
+    run(cb.classify_intent(_state("Can an FIR be quashed by the High Court?")))
+    assert rig.tiebreak_calls == []
+
+
+def test_tiebreak_never_runs_when_no_action_intent_contends(monkeypatch):
+    """Ambiguous but no find_lawyer/crime_report among the contenders — the
+    existing silent-default behaviour, not something worth an extra LLM call."""
+    ambiguous = _classification("general_query", ["document_analysis"], ambiguous=True, margin=0.01)
+    rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
+    run(cb.classify_intent(_state("my landlord is cheating me")))
+    assert rig.tiebreak_calls == []
+
+
+def test_tiebreak_resolution_skips_the_clarifying_question(monkeypatch):
+    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()], tiebreak_result="find_lawyer")
+    out = run(cb.classify_intent(_state("my landlord is cheating me")))
+    assert out["intent"] == "find_lawyer"
+    assert out.get("clarification") is None
+    assert rig.tiebreak_calls == [
+        (frozenset({"general_query", "find_lawyer"}), "my landlord is cheating me")
+    ]
+    assert out["trace"]["routing"]["tiebreak"]["resolved"] == "find_lawyer"
+    # falls through to the normal flow — tool selection still runs
+    assert out["selected_tools"] == ["lawyer_recommender"]
+
+
+def test_tiebreak_unsure_falls_back_to_the_clarifying_question(monkeypatch):
+    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()], tiebreak_result=None)
+    out = run(cb.classify_intent(_state("my landlord is cheating me")))
+    assert out["intent"] == "clarify"
+    assert out["response"] == CLARIFY_LAW_OR_LAWYER
+    assert len(rig.tiebreak_calls) == 1
+
+
+def test_tiebreak_exception_fails_open_to_the_clarifying_question(monkeypatch):
+    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()], tiebreak_raises=RuntimeError("ollama down"))
+    out = run(cb.classify_intent(_state("my landlord is cheating me")))
+    assert out["intent"] == "clarify"
+    assert out["trace"]["routing"]["tiebreak"]["error"] == "ollama down"
+
+
+class FakeTiebreakLLM(FakeLLM):
+    """A schema-constrained fake: setting `.format` exercises the same
+    invoke_llm_safely branch a real ChatOllama(format=...) instance would."""
+
+    def __init__(self, answer_json):
+        super().__init__((answer_json,))
+        self.format = {"type": "object"}
+
+
+def _resolve(monkeypatch, fake_llm, candidates=("find_lawyer", "general_query"), message="hi"):
+    monkeypatch.setattr(cb, "_get_tiebreak_llm", lambda key: fake_llm)
+    return run(cb._resolve_ambiguity_with_llm(frozenset(candidates), message))
+
+
+def test_resolve_ambiguity_accepts_a_valid_candidate(monkeypatch):
+    resolved, trace = _resolve(monkeypatch, FakeTiebreakLLM('{"intent": "find_lawyer"}'))
+    assert resolved == "find_lawyer"
+    assert trace == {
+        "tried": True, "seconds": trace["seconds"],
+        "candidates": ["find_lawyer", "general_query"],
+        "raw": "find_lawyer", "resolved": "find_lawyer",
+    }
+
+
+def test_resolve_ambiguity_returns_none_when_the_model_is_unsure(monkeypatch):
+    resolved, trace = _resolve(monkeypatch, FakeTiebreakLLM('{"intent": "unsure"}'))
+    assert resolved is None and trace["raw"] == "unsure"
+
+
+def test_resolve_ambiguity_rejects_an_answer_outside_the_offered_candidates(monkeypatch):
+    # Defensive: even if the model somehow returns a label that wasn't in this
+    # call's enum (schema drift, a stale cached instance), it must not be
+    # trusted as a resolution.
+    resolved, _ = _resolve(monkeypatch, FakeTiebreakLLM('{"intent": "crime_report"}'))
+    assert resolved is None
+
+
+def test_resolve_ambiguity_fails_open_on_malformed_json(monkeypatch):
+    resolved, trace = _resolve(monkeypatch, FakeTiebreakLLM("not json at all"))
+    assert resolved is None and trace["tried"] is True
+
+
+def test_resolve_ambiguity_fails_open_on_llm_exception(monkeypatch):
+    class RaisingLLM(FakeLLM):
+        format = {"type": "object"}
+
+        async def ainvoke(self, messages):
+            raise RuntimeError("ollama unreachable")
+
+    resolved, trace = _resolve(monkeypatch, RaisingLLM())
+    assert resolved is None and trace["tried"] is True
+
+
+def test_resolve_ambiguity_disabled_by_config_never_touches_the_llm(monkeypatch):
+    monkeypatch.setenv("ROUTE_TIEBREAK_ENABLED", "false")
+    get_settings.cache_clear()
+    touched = []
+    monkeypatch.setattr(
+        cb, "_get_tiebreak_llm",
+        lambda key: touched.append(key) or FakeTiebreakLLM('{"intent": "find_lawyer"}'),
+    )
+    resolved, trace = run(
+        cb._resolve_ambiguity_with_llm(frozenset({"general_query", "find_lawyer"}), "hi")
+    )
+    assert resolved is None and trace == {"tried": False} and touched == []
+
+
+def test_tiebreak_llm_is_cached_per_candidate_set():
+    a = cb._get_tiebreak_llm(("find_lawyer", "general_query"))
+    b = cb._get_tiebreak_llm(("find_lawyer", "general_query"))
+    c = cb._get_tiebreak_llm(("crime_report", "general_query"))
+    assert a is b and a is not c
+    assert a.format["properties"]["intent"]["enum"] == [
+        "find_lawyer", "general_query", cb.ROUTE_TIEBREAK_UNSURE,
+    ]
 
 
 def test_explicit_written_questions_are_never_clarified(monkeypatch):

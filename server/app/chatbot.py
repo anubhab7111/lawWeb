@@ -4,6 +4,7 @@ This module defines the chatbot workflow using LangGraph for state management an
 """
 
 import asyncio
+import json
 import logging
 import time
 import contextvars
@@ -19,9 +20,11 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
+    FrozenSet,
     List,
     Literal,
     Optional,
+    Tuple,
     TypedDict,
 )
 
@@ -57,6 +60,9 @@ from app.prompts import (
     NON_LEGAL_RESPONSE,
     QUERY_REWRITE_PROMPT,
     REGENERATION_FEEDBACK_BLOCK,
+    ROUTE_TIEBREAK_INTENT_DESCRIPTIONS,
+    ROUTE_TIEBREAK_PROMPT,
+    ROUTE_TIEBREAK_UNSURE,
     STATUTE_CONTEXT_BLOCK,
     STATUTE_QUERY_REWRITE_PROMPT,
     sanitize_untrusted_document,
@@ -697,13 +703,28 @@ def _looks_like_an_explicit_question(text: str) -> bool:
     return "?" in text
 
 
-def _clarification_for(
-    result, intent: str, has_document: bool, messages: List[Message], user_input: str
-) -> Optional[str]:
-    """One clarifying question when the router is genuinely torn between an
-    *action* flow (report a crime / find a lawyer) and another one. Guessing
-    wrong here is worse than for two explanatory flows: the user gets a
-    confident answer to a question they did not ask, and cannot tell.
+def _ambiguous_action_contenders(result) -> FrozenSet[str]:
+    """The near-tied intents worth escalating over — only when an *action*
+    intent (report a crime / find a lawyer) is among them; two explanatory
+    intents tying is not worth interrupting for."""
+    contenders = {result.primary_intent, *result.secondary_intents} - {
+        "non_legal",
+        "document_analysis",
+    }
+    if len(contenders) < 2 or not (contenders & _ACTION_INTENTS):
+        return frozenset()
+    return frozenset(contenders)
+
+
+def _clarification_gate(
+    result, has_document: bool, messages: List[Message], user_input: str
+) -> FrozenSet[str]:
+    """Non-empty iff this turn is genuinely torn between an *action* flow
+    (report a crime / find a lawyer) and another one — worth escalating,
+    first to the LLM tie-breaker (_resolve_ambiguity_with_llm), then, only if
+    that is also unsure, to a clarifying question. Guessing wrong here is
+    worse than for two explanatory flows: the user gets a confident answer to
+    a question they did not ask, and cannot tell.
 
     Deliberately narrow so it does not nag: it never fires with an attached
     document, on long messages, right after its own previous question, or on
@@ -717,28 +738,100 @@ def _clarification_for(
     what grounds?") were intercepted and never answered. Every one of those
     six, like every false trigger found, was an explicit written-out question."""
     if not get_settings().clarify_on_ambiguous or not result.is_ambiguous:
-        return None
+        return frozenset()
     if has_document or len(user_input.split()) > _CLARIFY_MAX_WORDS:
-        return None
+        return frozenset()
     if _looks_like_an_explicit_question(user_input):
-        return None
+        return frozenset()
     if (
         messages
         and messages[-1]["role"] == "assistant"
         and messages[-1]["content"].startswith(CLARIFY_PREFIX)
     ):
-        return None
-    contenders = {result.primary_intent, *result.secondary_intents} - {
-        "non_legal",
-        "document_analysis",
-    }
-    if len(contenders) < 2 or not (contenders & _ACTION_INTENTS):
-        return None
+        return frozenset()
+    return _ambiguous_action_contenders(result)
+
+
+def _clarify_question(contenders: FrozenSet[str]) -> str:
     if contenders == {"general_query", "find_lawyer"}:
         return CLARIFY_LAW_OR_LAWYER
     if contenders == {"general_query", "crime_report"}:
         return CLARIFY_LAW_OR_REPORT
     return CLARIFY_GENERIC
+
+
+def _tiebreak_options(candidates: Tuple[str, ...]) -> str:
+    return "\n".join(
+        f"- {c}: the user {ROUTE_TIEBREAK_INTENT_DESCRIPTIONS[c]}" for c in candidates
+    )
+
+
+@lru_cache()
+def _get_tiebreak_llm(candidates: Tuple[str, ...]) -> ChatOllama:
+    """Schema-constrained tie-breaker for a near-tied route (see
+    _resolve_ambiguity_with_llm) — same pattern as get_grounding_correction_llm():
+    format= is what actually gets qwen3:4b to answer with the label instead of
+    reasoning through it in prose. One tiny cached instance per distinct
+    candidate-set (at most a handful of combinations of the 3 legal intents
+    that can tie), reusing fast_llm_model/num_ctx so Ollama never reloads
+    between this and get_fast_llm()/get_grounding_correction_llm()."""
+    settings = get_settings()
+    schema = {
+        "type": "object",
+        "properties": {
+            "intent": {"type": "string", "enum": list(candidates) + [ROUTE_TIEBREAK_UNSURE]}
+        },
+        "required": ["intent"],
+    }
+    return ChatOllama(
+        model=settings.fast_llm_model,
+        temperature=0,
+        base_url=settings.ollama_base_url,
+        num_ctx=LLM_NUM_CTX,
+        num_predict=64,
+        timeout=15.0,
+        reasoning=False,
+        format=schema,
+    )
+
+
+async def _resolve_ambiguity_with_llm(
+    contenders: FrozenSet[str], user_input: str
+) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Cascade routing, tier 2: one fast, schema-constrained call to resolve a
+    near-tied route before asking the user. Only reached from classify_intent
+    when _clarification_gate already found the turn worth interrupting for —
+    so this never runs on the common, unambiguous case; the fast path stays a
+    pure embedding lookup with zero LLM calls. Returns (resolved_intent,
+    trace); resolved_intent is None when the model is also unsure, returns
+    something outside the offered candidates, or the call fails/times out —
+    the caller then falls back to the existing clarifying question. Must
+    never raise or block routing."""
+    settings = get_settings()
+    if not settings.route_tiebreak_enabled:
+        return None, {"tried": False}
+    key = tuple(sorted(contenders))
+    prompt = ROUTE_TIEBREAK_PROMPT.format(
+        options=_tiebreak_options(key),
+        message=user_input[:500],
+        unsure=ROUTE_TIEBREAK_UNSURE,
+    )
+    t0 = time.monotonic()
+    picked = None
+    try:
+        raw = await asyncio.wait_for(
+            invoke_llm_safely(_get_tiebreak_llm(key), prompt, stream=False),
+            timeout=settings.route_tiebreak_timeout_seconds,
+        )
+        picked = json.loads(raw).get("intent")
+    except Exception as e:
+        logger.warning("Route tie-break failed (%s) — falling back to clarification", e)
+    elapsed = round(time.monotonic() - t0, 2)
+    resolved = picked if picked in key else None
+    return resolved, {
+        "tried": True, "seconds": elapsed, "candidates": list(key),
+        "raw": picked, "resolved": resolved,
+    }
 
 
 async def classify_intent(state: ChatState) -> ChatState:
@@ -827,19 +920,37 @@ async def classify_intent(state: ChatState) -> ChatState:
             "trace": _merge_trace(state, routing=routing_trace),
         }
 
-    question = _clarification_for(result, intent, has_document, messages, user_input)
-    if question:
-        logger.info("Router: ambiguous %s — asking a clarifying question", routing_trace["secondary"])
-        await emit_event("routing", intent="clarify")
-        return {
-            **base,
-            "intent": "clarify",
-            "response": question,
-            "clarification": True,
-            "selected_tools": [],
-            "domain_hint": None,
-            "trace": _merge_trace(state, routing={**routing_trace, "intent": "clarify"}),
-        }
+    contenders = _clarification_gate(result, has_document, messages, user_input)
+    if contenders:
+        # _resolve_ambiguity_with_llm has its own internal try/except and should
+        # never raise — this is defense in depth so an unexpected failure there
+        # degrades to the clarifying question rather than 500ing the whole turn.
+        try:
+            resolved, tiebreak_trace = await _resolve_ambiguity_with_llm(contenders, user_input)
+        except Exception as e:
+            logger.exception("Route tie-break raised unexpectedly (%s)", e)
+            resolved, tiebreak_trace = None, {"tried": True, "error": str(e)}
+        routing_trace["tiebreak"] = tiebreak_trace
+        if resolved:
+            logger.info(
+                "Router: tie-break resolved %s -> %s (%.1fs)",
+                sorted(contenders), resolved, tiebreak_trace.get("seconds", 0.0),
+            )
+            intent = resolved
+            routing_trace["intent"] = intent
+            # falls through to the normal flow below — no clarifying question
+        else:
+            logger.info("Router: ambiguous %s — asking a clarifying question", sorted(contenders))
+            await emit_event("routing", intent="clarify")
+            return {
+                **base,
+                "intent": "clarify",
+                "response": _clarify_question(contenders),
+                "clarification": True,
+                "selected_tools": [],
+                "domain_hint": None,
+                "trace": _merge_trace(state, routing={**routing_trace, "intent": "clarify"}),
+            }
 
     domain_hint = await classify_domain_hint_embedding(user_input)
     entities = _extract_legal_entities(user_input)

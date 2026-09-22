@@ -401,10 +401,64 @@ test that initially didn't reproduce the bug it claimed to, and a "no
 qualifier anywhere" test that initially used a provision that itself had a
 qualifier).
 
+### Follow-up 5: cascade routing — an LLM tie-breaker before the clarifying question
+
+The user asked for the SOTA-routing recommendation from earlier in the
+conversation (cascade routing: cheap embedding router → one LLM tie-breaker
+on ambiguous cases → ask the user only if that's also unsure), scoped
+narrowly by design to keep latency down: it only ever runs on the same
+narrow slice of turns `_clarification_gate` (formerly `_clarification_for`)
+was already about to interrupt for — ambiguous, an action intent
+(`find_lawyer`/`crime_report`) among the near-tied contenders, no document,
+short message, not an explicit "?" question, not right after the router's
+own previous clarifying question. The common case (the large majority of
+turns) never reaches this code at all — it's a pure embedding lookup exactly
+as before, gated behind the same `if contenders:` check that used to go
+straight to the clarifying question.
+
+**Mechanics** (`app/chatbot.py`): `_resolve_ambiguity_with_llm` makes one
+call to `get_fast_llm()`'s model via a per-candidate-set cached,
+schema-constrained `ChatOllama` (`_get_tiebreak_llm`, `format=` enum over the
+2-3 actual contenders plus an explicit `"unsure"` — same pattern as
+`get_grounding_correction_llm()`, and now provably correct: this session's
+earlier fix, treating a `format=`-constrained reply's missing `</think>` as
+normal rather than a give-up, is exactly what makes this call reliable).
+Bounded by `route_tiebreak_timeout_seconds` (12s) and its own internal
+try/except (never raises), plus a defense-in-depth try/except at the call
+site in `classify_intent` in case that contract is ever violated by a future
+edit — both paths fail open to the existing clarifying question, never to an
+error. `route_tiebreak_enabled` (default on) turns it off entirely.
+`routing.tiebreak` in the trace records whether it ran, what the model said,
+whether that was accepted, and how long it took — for production monitoring
+of exactly the cost/benefit tradeoff below.
+
+**Measured live** (real embeddings, real Ollama, routing step only —
+generation is unaffected either way): the unambiguous case — three explicit
+questions, plus 5 of 6 candidate situational statements that turned out not
+to be ambiguous in this embedding space — cost **98-135ms with zero tie-break
+calls**, identical to before this change. The one genuinely ambiguous
+situational statement found ("my employer fired me without notice", margin
+0.016) resolved correctly to `crime_report` in **0.53s**, for a **640ms**
+total routing step — well under a second, and avoiding what a clarifying
+question would have cost instead: a full extra round trip (server response,
+the user reading it, typing again, a second full turn). The "?" guard from
+Follow-up 4 was also confirmed live in the same run: "Can an FIR be quashed
+by the High Court? On what grounds?" still shows `ambiguous=True margin=0.006`
+internally, but `tiebreak=None` — the gate correctly never invokes the LLM
+for an explicit question, exactly as designed.
+
+12 new tests (141 total): the latency guarantee itself (tie-break never
+called when not ambiguous, and never called when no action intent
+contends), resolution accepted, unsure/malformed/out-of-candidate answers
+all rejected as `None`, an LLM exception fails open, the config-disabled
+path never touches the LLM, and per-candidate-set caching. Two of these
+(the ambiguity-gate bypass and the exception-guard) are mutation-checked.
+
 ### Still open
 
 1. **Query-parser false pins** (found in Follow-up 4): a section can be pinned for an off-topic query, producing an artificial confidence=1.0 that no `retrieval_min_confidence` value can filter. Currently caught upstream by intent routing (non_legal queries never reach retrieval), so latent rather than live — worth a look in `legal_query_parser.py`.
-2. **Not exercised against real Ollama:** the checkpointer with a real generation
+2. **Tie-breaker not measured under load:** the 0.53s live number is one sample on an idle GPU; under concurrent traffic sharing the same Ollama instance as answer generation, queued tie-break calls could take longer (still bounded by the 12s timeout, still cheaper than a full clarify round-trip, but worth watching via the new `routing.tiebreak.seconds` trace field in production).
+3. **Not exercised against real Ollama:** the checkpointer with a real generation
    (the real app lifespan *was* booted against Postgres in a test, with the model
    warmup stubbed, and a chat turn against a fake LLM used the real Postgres
    saver), document/lawyer flows, and the browser UI.

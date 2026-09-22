@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     # ("my landlord threatened me") get one clarifying question instead of a
     # silent guess between the law-explainer, crime-report and lawyer flows.
     clarify_on_ambiguous: bool = True
+    # Cascade routing, tier 2 (see app/chatbot.py _resolve_ambiguity_with_llm):
+    # before asking the clarifying question above, try one fast,
+    # schema-constrained LLM call to resolve the near-tied route on its own.
+    # Only reached on the minority of turns already about to interrupt the
+    # user (clarify_on_ambiguous's own gate) — the common, unambiguous case
+    # never pays this cost. Falls back to the clarifying question if the
+    # model is also unsure, fails, or times out.
+    route_tiebreak_enabled: bool = True
+    route_tiebreak_timeout_seconds: float = 12.0
     # Retrieval grading: below this mean reranker score (or fewer than 3
     # provisions) the statute retrieval is treated as weak and retried once
     # with a rewritten, unfiltered query before generating. Set from a

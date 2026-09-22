@@ -518,6 +518,25 @@ CLARIFY_GENERIC = (
     "want the law explained, help reporting an incident, or a lawyer?"
 )
 
+# Cascade routing tier 2 (app.chatbot._resolve_ambiguity_with_llm): one fast,
+# schema-constrained call that tries to resolve a near-tied route before the
+# clarifying question above is asked. Reached only on the minority of turns
+# already headed for that question. {unsure} lets the model abstain honestly
+# instead of coin-flipping a genuinely compound request.
+ROUTE_TIEBREAK_UNSURE = "unsure"
+ROUTE_TIEBREAK_INTENT_DESCRIPTIONS = {
+    "general_query": "wants the LAW EXPLAINED — a question about rights, rules, procedure, or what applies to a situation",
+    "find_lawyer": "wants to FIND OR HIRE A LAWYER",
+    "crime_report": "wants guidance on REPORTING A CRIME or what to do right after an incident (filing an FIR, going to the police)",
+}
+ROUTE_TIEBREAK_PROMPT = """A routing step for an Indian legal chatbot found this message close between two or three intents — most messages like this DO have one clear best fit even when a rough classifier finds them close together. Read it and decide.
+
+{options}
+
+Message: "{message}"
+
+Answer "{unsure}" only if the message genuinely asks for more than one of these at once, or gives no usable signal either way. Otherwise answer with exactly one intent name from the list above."""
+
 # Appended to the grounded prompt on the single regeneration pass, listing the
 # claims the grounding gate could not support from the retrieved provisions.
 REGENERATION_FEEDBACK_BLOCK = """
