@@ -101,30 +101,37 @@ names — so every case citation the model produces is currently unverified,
 including outright-fabricated case names (a well-documented LLM failure
 mode for legal citations).
 
-**Design.**
+**Design.** Inspecting a real sample of `case_law/*.json` while planning
+this task showed `case_name` is clean and consistent for every case
+("`<Party> v. <Party> (<Year>)`"), but `citation` is a comma-joined blob of
+5-50+ alternate reporter citations per case in inconsistent formats (e.g.
+one record mixes "AIR 1980 SUPREME COURT 898" and "(1980) 2 SCC 684" and
+"1980 (2) SCC 684" for the same judgment). Reliably parsing and matching
+formal citation strings against that blob would need its own normalization
+effort, not a bounded zero-cost fix — **Phase 1 scopes B2 to case-name
+matching only**; formal-citation-string verification (AIR/SCC/SCR number
+matching) is deferred as future work, tracked here rather than attempted
+half-reliably.
+
 - New extraction regex (sibling to `_CITE_RE` in `citation_verifier.py`, or
   a new `case_citation_verifier.py` module — prefer the latter to keep
   `citation_verifier.py`'s existing statute-only scope and tests
-  unentangled) recognizing:
-  - Name-form: `<Party> v.? <Party>` / `<Party> vs\.? <Party>` (reuse the
-    capitalization/word-boundary heuristics already proven in
-    `citation_verifier.py`'s sentence-boundary handling to avoid false
-    positives on ordinary "X versus Y" prose).
-  - Formal citation strings: `AIR \d{4} SC \d+`, `\(\d{4}\) \d+ SCC \d+`,
-    and other patterns already present in the corpus's `citation` field
-    (derive the exact regex from a sample of `case_law/*.json`'s
-    `citation` values rather than guessing).
-- New lookup on `CaseLawRAGSystem` (`case_law_rag.py`): `find_case(name=None,
-  citation=None) -> Optional[CaseRecord]`. Match strategy:
-  - Citation string: normalize whitespace/punctuation, exact match against
-    `CaseRecord.citation`.
-  - Case name: normalize (lowercase, strip "v."/"vs."/"versus" variants,
-    collapse whitespace) both the query and every indexed `case_name`;
-    exact match first, then a bounded fuzzy match (e.g. token-Jaccard,
-    reusing the pattern `_issue_overlap_score` already establishes in this
-    same file) above a conservative threshold — false negatives (flagged
-    as unverified when the case is real) are safe, false positives
-    (validating a wrong case) are not, so bias the threshold accordingly.
+  unentangled) recognizing name-form citations: `<Party> v.? <Party>` /
+  `<Party> vs\.? <Party>`, optionally followed by `(<Year>)` (reuse the
+  capitalization/word-boundary heuristics already proven in
+  `citation_verifier.py`'s sentence-boundary handling and
+  `grounding_verifier.py`'s `_ABBREVIATIONS`/`_split_sentences` handling of
+  "v."/"vs." to avoid false positives on ordinary "X versus Y" prose or
+  mis-splitting a case name at its own abbreviation).
+- New lookup on `CaseLawRAGSystem` (`case_law_rag.py`): `find_case(name)
+  -> Optional[CaseRecord]`. Normalize (lowercase, strip "v."/"vs."/"versus"
+  variants and the trailing "(year)", collapse whitespace) both the query
+  and every indexed `case_name`; exact match first, then a bounded fuzzy
+  match (token-Jaccard, reusing the pattern `_issue_overlap_score` already
+  establishes in this same file) above a conservative threshold — false
+  negatives (flagged as unverified when the case is real) are safe, false
+  positives (validating a wrong case) are not, so bias the threshold
+  accordingly.
 - New `verify_case_citations(answer, case_rag) -> CaseCitationReport`
   (mirroring `VerificationReport`'s shape: verified / unverified), called
   from `_verify_response_citations` alongside the existing statute check,
@@ -139,13 +146,12 @@ mode for legal citations).
   exhaustive, same epistemic caveat `unverified` already carries for
   statutes).
 
-**Testing.** Cases: (a) a cited case that exists verbatim in
+**Testing.** Cases: (a) a cited case that exists verbatim (name only) in
 `case_law/*.json` → silent pass; (b) a fabricated case name → footer fires;
-(c) a real case name with a wrong/mismatched formal citation → decide and
-document whether this counts as `unverified` or a new `wrong_citation`
-status (recommend treating it like `wrong_act`'s pattern — right entity,
-inconsistent detail — for symmetry with the statute checker, but this is an
-implementation-time call, not a blocking design decision).
+(c) a real case name written with minor formatting variation (extra
+whitespace, "vs" instead of "v.", missing the "(year)") → still matches
+(exercises the fuzzy-match path) so cosmetic variation doesn't produce a
+false positive footer.
 
 ## Non-goals for Phase 1
 
@@ -156,6 +162,9 @@ implementation-time call, not a blocking design decision).
   only, consistent with `unverified`'s existing epistemic caveat (a
   corpus gap not a confirmed hallucination) and with the "no new latency"
   constraint agreed with the user.
+- No formal-citation-string (AIR/SCC/SCR reporter number) verification —
+  deferred; the `citation` field's format is too heterogeneous across the
+  corpus to match reliably without its own normalization effort (see B2).
 
 ## Phase 2 preview — variables to instrument (not yet approved in detail)
 
