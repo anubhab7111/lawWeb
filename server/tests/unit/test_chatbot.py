@@ -148,6 +148,7 @@ class Rig:
         self._statutes = list(statutes)
         self._reports = list(reports or [])
         self.verify_calls = 0
+        self.citation_only_calls = []
         self.tiebreak_calls = []
 
         async def classify(text, has_document):
@@ -157,8 +158,10 @@ class Rig:
             self.statute_calls.append((query, kwargs))
             return self._statutes.pop(0) if len(self._statutes) > 1 else self._statutes[0]
 
-        async def verify(text, retrieved_sections=None, retrieved_context_text="", llm_invoke=None):
+        async def verify(text, retrieved_sections=None, retrieved_context_text="",
+                          llm_invoke=None, citation_only=False):
             self.verify_calls += 1
+            self.citation_only_calls.append(citation_only)
             if not self._reports:
                 return text, None
             report = self._reports.pop(0) if len(self._reports) > 1 else self._reports[0]
@@ -540,14 +543,23 @@ def test_weak_retrieval_retries_at_most_once(monkeypatch):
     assert result["trace"]["retrieval"]["grade"] == "weak"
 
 
-def test_no_retrieval_streams_disclaimer_first_and_skips_verification(monkeypatch):
+def test_no_retrieval_runs_citation_only_verification_not_full_grounding(monkeypatch):
     empty = _statute(ok=False, chunks=0, conf=0.0)
     rig = Rig(monkeypatch, FakeLLM(["General answer."]), _classification("general_query"), [empty])
     events = run(rig.stream())
     tokens = [e["content"] for e in events if e["type"] == "token"]
     assert tokens[0] == GROUNDING_UNAVAILABLE_DISCLAIMER
     assert events[-1]["response"].startswith(GROUNDING_UNAVAILABLE_DISCLAIMER)
-    assert rig.verify_calls == 0
+    assert rig.verify_calls == 1
+    assert rig.citation_only_calls == [True]
+    assert events[-1]["trace"]["grounding"]["reason"] == "no_retrieval_citation_only"
+
+
+def test_successful_retrieval_runs_full_verification_not_citation_only(monkeypatch):
+    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
+              [_statute()], [_report(1.0)])
+    run(rig.stream())
+    assert rig.citation_only_calls == [False]
 
 
 def test_low_grounding_score_regenerates_once_with_targeted_retrieval(monkeypatch):
@@ -705,6 +717,53 @@ def test_verification_corrections_reach_the_client_before_done(monkeypatch):
     events = run(rig.stream())
     replace = [e for e in events if e["type"] == "replace"]
     assert replace and replace[0]["content"].endswith("*footer*")
+
+
+class _StubUnifiedRag:
+    initialized = True
+
+    def find_section(self, act_hint, section, max_parts=1):
+        if section == "420":
+            return [SimpleNamespace(text="420. Cheating.", act_name="IPC")]
+        return []
+
+
+class _UninitializedRag:
+    initialized = False
+
+    def find_section(self, *a, **k):
+        raise AssertionError("must not be called when uninitialized")
+
+
+def test_citation_only_mode_checks_existence_without_llm_or_grounding(monkeypatch):
+    monkeypatch.setattr(
+        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _StubUnifiedRag()
+    )
+    text, report = run(cb._verify_response_citations(
+        "Under Section 420 of the IPC this is cheating. Section 999 of the IPC also applies.",
+        citation_only=True,
+    ))
+    assert report is None
+    assert "Section 999" in text
+    assert "could not be verified against the indexed corpus" in text
+
+
+def test_citation_only_mode_is_silent_when_every_citation_verifies(monkeypatch):
+    monkeypatch.setattr(
+        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _StubUnifiedRag()
+    )
+    answer = "Under Section 420 of the IPC this is cheating."
+    text, report = run(cb._verify_response_citations(answer, citation_only=True))
+    assert text == answer and report is None
+
+
+def test_citation_only_mode_no_ops_when_rag_uninitialized(monkeypatch):
+    monkeypatch.setattr(
+        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _UninitializedRag()
+    )
+    answer = "Section 420 of the IPC applies."
+    text, report = run(cb._verify_response_citations(answer, citation_only=True))
+    assert text == answer and report is None
 
 
 # --------------------------------------------------------------------------
