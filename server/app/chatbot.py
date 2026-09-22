@@ -1347,9 +1347,24 @@ async def _verify_response_citations(
     retrieved_sections=None,
     retrieved_context_text: str = "",
     llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
+    citation_only: bool = False,
 ) -> tuple:
     """
-    Two-layer post-generation grounding gate:
+    Post-generation grounding gate.
+
+    citation_only=True runs ONLY the deterministic statute-citation-existence
+    check, never the claim-level grounding pass — used by gq_verify when
+    this query's own retrieval failed but generation still produced a real
+    answer. Claim-level grounding needs retrieved context text to judge
+    claims against (none exists on that path), but citation existence is
+    checkable regardless: verify_citations() queries the whole persistent
+    corpus index (rag.find_section()), not what this specific query
+    retrieved. Always returns report=None in this mode — nothing here
+    should ever trigger a regeneration, since there is no better context to
+    retarget retrieval at.
+
+    citation_only=False (default, unchanged from before) runs the full
+    two-layer gate:
 
     1. citation_verifier (unchanged): does every 'Section N of the X Act' /
        'Article N' in the answer exist in the indexed corpus under the cited
@@ -1362,15 +1377,29 @@ async def _verify_response_citations(
 
     Returns (text, report): the answer with advisory footers from both layers
     (silent when everything checks out) and the GroundingReport the caller
-    can act on — or (response_text, None) when the gate was skipped. Never
-    raises — a verifier bug must not break chat.
+    can act on — or (response_text, None) when the gate was skipped,
+    citation_only was requested, or an error occurred. Never raises — a
+    verifier bug must not break chat.
     """
     try:
         from app.tools.grounding_verifier import ground_and_correct, grounding_footer
-        from app.tools.citation_verifier import verification_footer
+        from app.tools.citation_verifier import verify_citations, verification_footer
         from app.tools.unified_legal_rag import get_unified_rag_system
 
         rag = get_unified_rag_system()
+
+        if citation_only:
+            if not rag.initialized:
+                return response_text, None
+            citation_report = verify_citations(response_text, rag, retrieved_sections)
+            if citation_report.checks:
+                logger.info(
+                    "CitationVerify (no-retrieval path): %s/%s citations verified",
+                    len(citation_report.verified),
+                    len(citation_report.checks),
+                )
+            return response_text + verification_footer(citation_report), None
+
         if not rag.initialized:
             return response_text, None
 
@@ -1940,7 +1969,15 @@ def _regeneration_plan(report) -> tuple:
 async def gq_verify(state: ChatState) -> ChatState:
     """Post-generation grounding gate. Corrects unsupported sentences in
     place; if the answer is still poorly supported it loops back once to
-    regenerate with retrieval aimed at the unsupported citations."""
+    regenerate with retrieval aimed at the unsupported citations.
+
+    When this query's retrieval failed (rag_succeeded is False) but
+    generation still produced a real answer, runs a citation-only pass
+    instead of skipping verification altogether — see
+    _verify_response_citations(citation_only=True). No regeneration is
+    ever triggered on that path: there is no better context to retarget
+    retrieval at.
+    """
     settings = get_settings()
     response = state.get("response") or ""
     finished = {
@@ -1948,18 +1985,15 @@ async def gq_verify(state: ChatState) -> ChatState:
         "messages": state["messages"] + [{"role": "assistant", "content": response}],
     }
 
-    # Nothing to verify against: retrieval failed (the disclaimer already says
-    # so) or generation itself failed (the text is a canned apology).
-    if state.get("error") == "generation_failed" or not state.get("rag_succeeded"):
-        reason = (
-            "generation_failed"
-            if state.get("error") == "generation_failed"
-            else "no_retrieval"
-        )
+    # Generation itself failed: the text is a canned apology, nothing to
+    # check against anything.
+    if state.get("error") == "generation_failed":
         return {
             **finished,
-            "trace": _merge_trace(state, grounding={"verified": False, "reason": reason}),
+            "trace": _merge_trace(state, grounding={"verified": False, "reason": "generation_failed"}),
         }
+
+    citation_only = not state.get("rag_succeeded")
 
     await emit_event(
         "status", stage="verifying", label="Checking citations against the statutes…"
@@ -1976,15 +2010,20 @@ async def gq_verify(state: ChatState) -> ChatState:
         state.get("retrieved_sections"),
         retrieved_context_text=state.get("retrieved_context") or "",
         llm_invoke=_grounding_correction_invoke,
+        citation_only=citation_only,
     )
 
     score = report.overall_score if report is not None else None
     # Only an *adjudicated* report may trigger a regeneration. The deterministic
     # word-overlap pass alone flags most fluent paraphrases (grounding_footer
     # already refuses to show those to users for the same reason), and a
-    # regeneration costs another minute or more of GPU time.
+    # regeneration costs another minute or more of GPU time. citation_only is
+    # also checked explicitly (not just relied on via report is None): defense
+    # in depth so a future change to _verify_response_citations's return
+    # contract can't silently reopen regeneration on the no-retrieval path.
     can_regenerate = (
-        settings.grounding_retry_enabled
+        not citation_only
+        and settings.grounding_retry_enabled
         and report is not None
         and report.llm_succeeded
         and report.confirmed_flagged
@@ -2000,6 +2039,8 @@ async def gq_verify(state: ChatState) -> ChatState:
         "flagged": len(report.flagged) if report is not None else 0,
         "regenerated": bool(state.get("regen_count")),
     }
+    if citation_only:
+        grounding_trace["reason"] = "no_retrieval_citation_only"
     if can_regenerate:
         feedback, queries = _regeneration_plan(report)
         logger.info(
