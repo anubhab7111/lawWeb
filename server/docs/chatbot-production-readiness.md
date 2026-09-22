@@ -289,9 +289,122 @@ identical runs) and is therefore never trusted to edit on its own. Thresholds
 corpus. Not done: pronoun-style back-references ("This provision establishes…")
 do not inherit the previous sentence's citation.
 
+### Follow-up 4: running the real 18-query eval set — a routing bug, three gate bugs, thresholds held
+
+The task was to re-tune `_CITED_REVIEW_BELOW`/`_VERBATIM_FRACTION` and
+`retrieval_min_confidence` against the project's own eval set
+(`tests/test_chatbot.py TEST_PROMPTS`, 18 queries — the "18-query eval set"
+this report's B10/A3 sections refer to). Running it live surfaced a
+routing regression before the grounding data was even usable, then three
+more bugs in the grounding gate once it was.
+
+**Clarification was intercepting a third of the project's own eval questions.**
+First run: 6 of 18 canonical questions — including "Can an FIR be quashed by the
+High Court? On what grounds?" — got the clarifying question instead of an
+answer, on embedding-classifier margins as small as 0.001. Every one was an
+explicit written-out question; the feature was designed for a raw situational
+statement ("my landlord is cheating me"), and margins that small between
+"explain the law" and "find a lawyer"/"report a crime" are classifier noise on
+ordinary legal questions, not real ambiguity. Fix: `_clarification_for` now
+never fires on a query containing "?". Re-ran after the fix: 18/18 reached
+`general_query` and produced real answers. One test added, mutation-checked.
+
+**Three grounding-gate bugs, found by reading every flag the corrected gate
+raised against 63 real claims from those 18 answers, against their real
+evidence:**
+
+1. **"Invented condition" only recognised six literal trigger words as
+   qualifiers.** Indian Contract Act §10's real exception — "Nothing herein
+   contained shall affect any law... requiring... in writing" — doesn't contain
+   the word "unless"; a faithful claim paraphrasing it with "unless" was flagged
+   as inventing a condition the source lacks. Fix: the evidence-side check now
+   recognises a wider set of qualifier phrasings ("nothing herein contained",
+   "save as", "without prejudice", …); a claim's exception-word only counts as
+   invented when the source shows no qualifying language of *any* kind.
+2. **A multi-citation sentence was evidenced against whichever cited provision
+   scored higher generic word-overlap, not the one the exception actually
+   depended on.** A claim reading Article 19 together with Article 21's
+   "except..." clause was checked only against Article 19 (longer, shares more
+   vocabulary, states no qualifier itself) and flagged CONTRADICTED for
+   "inventing" a condition Article 21 states. Fix: when a claim cites more than
+   one provision, the joined text of all of them is a candidate in its own
+   right, not just an overlap-score bonus.
+3. **The absolute-language check didn't see negation.** "**No absolute right
+   exists**, because rights are subject to procedure established by law" is
+   *agreeing* with a qualified provision — the opposite of "this right is
+   absolute" — but the check only looked for the word "absolute" anywhere in
+   the sentence. Fix: a negation (no/not/never/without/isn't/…) within two words
+   before the marker cancels it.
+
+Each was reproduced, fixed, and locked in with a test modelled on the real
+sentence; mutation-checked (reverting any one of the three fixes fails its
+test). Net effect on the 18-query corpus: confirmed (rewrite/regenerate-eligible)
+flags **4 → 1**, and that remaining one is itself a true statement the gate
+still can't lexically match (documented limitation, see Follow-up 3). Fault
+recall unchanged (8/10 — both misses are pre-existing hard cases needing the
+adjudicator, not affected by these fixes).
+
+**Threshold sweep — held, not moved.** `assess_grounding`'s thresholds are
+fully deterministic (overlap, verbatim fraction, contradiction, quantity —
+no LLM), so the sweep re-ran the real, unmodified function across a grid by
+mutating its module globals, rather than reimplementing anything:
+
+| `_SUPPORTED_THRESHOLD` | `_PARTIAL_THRESHOLD` | confirmed flags | faults caught |
+|---|---|---|---|
+| 0.20 | 0.10–0.12 | 1 | 7/10 |
+| **0.25 (shipped)** | **0.12 (shipped)** | **1** | **8/10** |
+| 0.30 | 0.10–0.12 | 1 | 8/10 |
+| any | 0.15 | 3 | 8/10 (no gain) |
+
+`_HIGH_RISK_SUPPORTED_THRESHOLD` (0.40–0.50) and `_VERBATIM_FRACTION`
+(0.5–0.7) changed nothing on this corpus — no claim sits near either boundary.
+The shipped defaults already sit at the best point the grid shows: raising
+`_SUPPORTED_THRESHOLD` to 0.25 (from a hypothetical 0.20) gains a fault catch
+at zero precision cost, and raising `_PARTIAL_THRESHOLD` past 0.12 to 0.15
+costs 2 more false positives (both verified true statements — "Article 256
+implies compliance is mandatory, but remedies are not detailed"; "economic
+pressure does not automatically constitute coercion") for no recall gain.
+**No threshold was changed.**
+
+`_CITED_REVIEW_BELOW` (adjudicator call volume, not a correctness gate — see
+Follow-up 3): 38/47/54/55 claims sent for review across the 18 answers at
+0.5/0.6/0.7/0.8. Left at 0.6 (shipped); no data here argues for a different
+value.
+
+**`retrieval_min_confidence` (0.45, set from n=7 in Follow-up 1) — this eval
+set cannot validate the off-topic side, and mostly didn't need to.** All 18
+queries are in-domain by construction, so they can only test the *good*-side
+false-weak rate: 17/18 landed at or above 0.45 (mean 0.65); the one exception
+(a non-compete clause question, conf=0.374) genuinely had thin retrieval and
+was correctly graded weak. Five off-topic queries were added alongside for the
+side this set can't otherwise speak to: 4/5 landed at or below 0.45 as
+expected (0.34–0.448) — but "How do I learn to play the guitar?" scored a
+**perfect 1.0**, because the query parser pinned a section for it (pins score
+1.0 by construction, unrelated to `retrieval_min_confidence`). This is a
+`legal_query_parser.py` false-pin bug, not a threshold problem — no confidence
+cutoff can filter a perfect score — and is out of scope for the grounding gate.
+**`retrieval_min_confidence` is unchanged (0.45)**, and the false-pin issue is
+flagged below for separate attention.
+
+**New finding, not fixed:** the query parser's deterministic section-pinning
+can pin a section for a query with no legal content at all ("guitar"),
+producing artificial confidence=1.0. Worth a look in `legal_query_parser.py`
+before trusting `retrieval_min_confidence` as a complete off-topic filter —
+today that filtering also depends on the primary intent router (which
+correctly classifies "guitar" as `non_legal` upstream of retrieval ever
+running), so this is a latent risk, not a live one.
+
+Tests: 129 in the unit suite (six more since Follow-up 3: one clarification
+regression, five grounding-gate regressions for the three fixes above,
+including two fixture corrections found while writing them — a multi-citation
+test that initially didn't reproduce the bug it claimed to, and a "no
+qualifier anywhere" test that initially used a provision that itself had a
+qualifier).
+
 ### Still open
 
-1. **Not exercised against real Ollama:** the checkpointer with a real generation
+1. **Query-parser false pins** (found in Follow-up 4): a section can be pinned for an off-topic query, producing an artificial confidence=1.0 that no `retrieval_min_confidence` value can filter. Currently caught upstream by intent routing (non_legal queries never reach retrieval), so latent rather than live — worth a look in `legal_query_parser.py`.
+2. **Not exercised against real Ollama:** the checkpointer with a real generation
    (the real app lifespan *was* booted against Postgres in a test, with the model
    warmup stubbed, and a chat turn against a fake LLM used the real Postgres
    saver), document/lawyer flows, and the browser UI.

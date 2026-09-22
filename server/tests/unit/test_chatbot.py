@@ -328,6 +328,22 @@ def test_ambiguous_report_vs_law_question(monkeypatch):
     assert out["response"] == CLARIFY_LAW_OR_REPORT
 
 
+def test_explicit_written_questions_are_never_clarified(monkeypatch):
+    """Regression: live against the project's own 18-query eval set
+    (tests/test_chatbot.py TEST_PROMPTS), 6 of 18 canonical legal questions —
+    all explicit written-out questions — were intercepted and never answered,
+    on embedding-classifier margins as small as 0.001. Every one had a "?"."""
+    ambiguous = _classification("general_query", ["find_lawyer", "crime_report"],
+                                 ambiguous=True, margin=0.006)
+    Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
+    for q in (
+        "Can an FIR be quashed by the High Court? On what grounds?",
+        "Can a criminal case proceed if the complainant withdraws?",
+        "Who is liable if an AI system causes financial loss — developer, deployer, or user?",
+    ):
+        assert run(cb.classify_intent(_state(q)))["intent"] == "general_query", q
+
+
 def test_never_asks_twice_in_a_row(monkeypatch):
     ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])

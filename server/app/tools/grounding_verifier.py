@@ -275,6 +275,26 @@ def _trigger_set(text: str) -> set:
     return {trig for trig in CONTRADICTION_TRIGGERS if re.search(r"\b" + re.escape(trig) + r"\b", t)}
 
 
+# Real statutory drafting expresses the same exception many ways ("Nothing
+# herein contained shall affect any law... requiring a contract to be in
+# writing" is the same idea as "unless required in writing", worded
+# differently). CONTRADICTION_TRIGGERS alone is a literal-word match; used to
+# decide whether a claim "invented" a qualifier, it flagged a claim that
+# faithfully paraphrased a real one just because the provision phrased it
+# differently. This wider list is evidence-side only, and answers a coarser,
+# safer question: does the SOURCE qualify itself at all (regardless of exact
+# wording), not whether it uses the claim's specific word.
+_EVIDENCE_QUALIFIER_MARKERS = CONTRADICTION_TRIGGERS + (
+    "nothing herein", "nothing contained", "save as", "saving clause",
+    "without prejudice", "other than", "excepting", "in the absence of",
+)
+
+
+def _has_qualifier_language(text: str) -> bool:
+    t = text.lower()
+    return any(m in t for m in _EVIDENCE_QUALIFIER_MARKERS)
+
+
 def _has_high_risk(text: str) -> bool:
     t = text.lower()
     return any(re.search(r"\b" + re.escape(w) + r"\b", t) for w in HIGH_RISK_ABSOLUTES)
@@ -292,9 +312,25 @@ _ABSOLUTE_MARKERS = (
 )
 
 
+# A negation within a few words before the marker flips its meaning: "No
+# absolute right exists" ASSERTS a qualified right (agrees with a qualified
+# provision) — the opposite of "This right is absolute" (asserts an
+# exceptionless one). Found live: "**No absolute right exists** under Indian
+# law because... subject to 'procedure established by law'" was flagged
+# CONTRADICTED against Article 21's real "except..." qualifier, because the
+# claim was correctly AGREEING with it.
+_NEGATION_LOOKBACK = re.compile(
+    r"\b(?:no|not|never|isn'?t|aren'?t|doesn'?t|don'?t|without)\b(?:\s+\w+){0,2}\s*$"
+)
+
+
 def _has_absolute(text: str) -> bool:
     t = text.lower()
-    return any(re.search(r"\b" + re.escape(m) + r"\b", t) for m in _ABSOLUTE_MARKERS)
+    for m in _ABSOLUTE_MARKERS:
+        for match in re.finditer(r"\b" + re.escape(m) + r"\b", t):
+            if not _NEGATION_LOOKBACK.search(t[:match.start()]):
+                return True
+    return False
 
 
 def _contradiction_reason(claim: str, evidence: str) -> Optional[str]:
@@ -309,7 +345,10 @@ def _contradiction_reason(claim: str, evidence: str) -> Optional[str]:
         return None
     claim_trig = _trigger_set(claim)
     evidence_trig = _trigger_set(evidence)
-    invented = claim_trig - evidence_trig
+    # A claim's exception-word only counts as "invented" when the source shows
+    # NO qualifying language of any kind — not merely a different word for the
+    # same qualifier the source actually has.
+    invented = claim_trig if claim_trig and not _has_qualifier_language(evidence) else set()
     dropped = evidence_trig - claim_trig
     if invented:
         return (
@@ -388,7 +427,12 @@ _HEDGE_RE = re.compile(
     r"\b(?:retrieved (?:context|provisions?|sources?|evidence|materials?)|"
     r"(?:context|provisions?) (?:does not|do not|lacks?|doesn't) |"
     r"(?:does not|do not|doesn't) (?:specify|define|address|mention|cover|provide)|"
-    r"not (?:specified|defined|covered|addressed) in)",
+    r"not (?:specified|defined|covered|addressed) in|"
+    # "no provisions ... mention/address/cover X" — the same disclosure the
+    # prompt asks for ("I don't have specific references for this aspect"),
+    # phrased as a negated noun instead of "the context does not mention".
+    r"\bno (?:provisions?|case law|explanations?|sections?|articles?|references?)\b"
+    r".{0,60}?\b(?:mention|address|cover|specify|define|state)s?\b)",
     re.IGNORECASE,
 )
 
@@ -499,6 +543,17 @@ def assess_grounding(
         # to a nonexistent section ride on vocabulary shared with its neighbours.
         # An uncited claim may rest on anything that was retrieved.
         candidates = list(dict.fromkeys((cited + case_law_texts) if occs else context_texts))
+        if len(cited) > 1:
+            # A claim may state something that only holds when its cited
+            # provisions are read together (e.g. a right Article 19 defines,
+            # qualified by the "except ..." Article 21 states) — the joined
+            # text is a real candidate, not just an overlap-score bonus. Using
+            # it only for the overlap NUMBER while contradiction/quantity still
+            # ran against whichever single provision scored higher generically
+            # produced false CONTRADICTED flags on faithful multi-citation
+            # claims, evidenced against the wrong (higher-overlap but
+            # unrelated) provision of the two.
+            candidates = ["\n".join(cited)] + candidates
 
         if not candidates:
             status, overlap, evidence = UNGROUNDED, 0.0, ""
@@ -510,12 +565,11 @@ def assess_grounding(
         else:
             scored = [(_word_overlap(stripped, c), c) for c in candidates]
             overlap, best = max(scored, key=lambda pair: pair[0])
-            if len(cited) > 1:  # a claim may span the provisions it cites together
-                overlap = max(overlap, _word_overlap(stripped, "\n".join(cited)))
             evidence = _best_window(stripped, best)
+            verbatim_frac = _verbatim_fraction(stripped, context_blob)
             # Quoted or near-verbatim statute is grounded however it spreads
             # across passages.
-            if _verbatim_fraction(stripped, context_blob) >= _VERBATIM_FRACTION:
+            if verbatim_frac >= _VERBATIM_FRACTION:
                 overlap = max(overlap, 1.0)
             status = _classify_overlap(overlap, high_risk)
             reason = f"~{overlap:.0%} term overlap with the retrieved evidence"
