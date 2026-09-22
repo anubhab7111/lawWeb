@@ -1599,8 +1599,18 @@ async def gq_retrieve(state: ChatState) -> ChatState:
 
     is_multi_offense = _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS) >= 2
 
+    # Measures the wall-clock cost of the pre-retrieval query-parse LLM hop
+    # (see Phase 2, docs/superpowers/specs/2026-09-22-chatbot-agentic-
+    # optimization-design.md) — nobody had numbers on whether this serial
+    # hop, paid on every primary statute query, is worth its latency.
+    query_parse_llm_seconds: List[float] = []
+
     async def _fast_llm_invoke(prompt: str) -> str:
-        return await _invoke_fast_text(prompt, timeout=25.0)
+        t0 = time.monotonic()
+        try:
+            return await _invoke_fast_text(prompt, timeout=25.0)
+        finally:
+            query_parse_llm_seconds.append(round(time.monotonic() - t0, 2))
 
     jobs: Dict[str, Any] = {}
     statute_queries: List[str] = []
@@ -1664,6 +1674,9 @@ async def gq_retrieve(state: ChatState) -> ChatState:
                 **(state.get("trace") or {}).get("retrieval", {}),
                 "queries": statute_queries,
                 "tools": tools,
+                "query_parse_llm_seconds": (
+                    query_parse_llm_seconds[0] if query_parse_llm_seconds else None
+                ),
             },
         ),
     }
@@ -1858,6 +1871,24 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
     return prompt, retrieved_context
 
 
+def _concise_gates(state: ChatState) -> Dict[str, bool]:
+    """The individual conditions behind _prefers_concise, exposed separately
+    so gq_generate can log which gate(s) block the fast path on a given
+    turn — the "concise first" path was designed to fire on simple,
+    well-retrieved questions but nobody had measured how often it actually
+    does on real traffic (see Phase 2, docs/superpowers/specs/
+    2026-09-22-chatbot-agentic-optimization-design.md). Independent of
+    settings.concise_first_enabled, which _prefers_concise checks itself."""
+    settings = get_settings()
+    user_input = state["current_input"]
+    return {
+        "good_retrieval": state.get("retrieval_grade") == "good",
+        "single_part": not bool(state.get("sub_questions")),
+        "short_query": len(user_input.split()) <= settings.concise_first_max_query_words,
+        "not_multi_offense": _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS) < 2,
+    }
+
+
 def _prefers_concise(state: ChatState) -> bool:
     """Whether to answer with the concise prompt on the first attempt.
 
@@ -1870,13 +1901,7 @@ def _prefers_concise(state: ChatState) -> bool:
     settings = get_settings()
     if not settings.concise_first_enabled:
         return False
-    user_input = state["current_input"]
-    return (
-        state.get("retrieval_grade") == "good"
-        and not state.get("sub_questions")
-        and len(user_input.split()) <= settings.concise_first_max_query_words
-        and _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS) < 2
-    )
+    return all(_concise_gates(state).values())
 
 
 def _can_retry_giveup(state: ChatState) -> bool:
@@ -1916,6 +1941,7 @@ async def gq_generate(state: ChatState) -> ChatState:
     attempts = 1
     retried = False
     concise = False
+    concise_gates = _concise_gates(state)
     try:
         retry_possible = get_settings().llm_giveup_retry_enabled
         concise = _prefers_concise(state)
@@ -1960,6 +1986,7 @@ async def gq_generate(state: ChatState) -> ChatState:
                 "attempts": attempts,
                 "giveup_retry": retried,
                 "failed": failed,
+                "concise_gates": concise_gates,
             },
         ),
     }

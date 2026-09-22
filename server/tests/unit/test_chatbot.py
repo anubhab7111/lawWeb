@@ -619,7 +619,11 @@ def test_giveup_with_failing_retry_shows_the_note_once_and_is_not_verified(monke
     assert rig.verify_calls == 0
     assert done["trace"]["grounding"] == {"verified": False, "reason": "generation_failed"}
     assert done["trace"]["generation"] == {
-        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": True
+        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": True,
+        "concise_gates": {
+            "good_retrieval": True, "single_part": True,
+            "short_query": True, "not_multi_offense": True,
+        },
     }
 
 
@@ -635,7 +639,11 @@ def test_giveup_retry_recovers_without_the_user_ever_seeing_the_note(monkeypatch
     assert any(e["type"] == "status" and e["stage"] == "retrying" for e in events)
     assert rig.verify_calls == 1  # the recovered answer is verified like any other
     assert done["trace"]["generation"] == {
-        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": False
+        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": False,
+        "concise_gates": {
+            "good_retrieval": True, "single_part": True,
+            "short_query": True, "not_multi_offense": True,
+        },
     }
 
 
@@ -1099,6 +1107,77 @@ def test_multi_offense_scenario_keeps_the_full_prompt():
     assert cb._prefers_concise(state) is False
     state["current_input"] = "He committed theft"
     assert cb._prefers_concise(state) is True
+
+
+def test_concise_gates_reports_which_condition_blocked_the_fast_path():
+    state = {"current_input": "He committed theft and forgery together",
+             "retrieval_grade": "good", "sub_questions": []}
+    assert cb._concise_gates(state) == {
+        "good_retrieval": True, "single_part": True,
+        "short_query": True, "not_multi_offense": False,
+    }
+    state = {"current_input": "Can an FIR be quashed?",
+             "retrieval_grade": "weak", "sub_questions": ["a?", "b?"]}
+    assert cb._concise_gates(state) == {
+        "good_retrieval": False, "single_part": False,
+        "short_query": True, "not_multi_offense": True,
+    }
+
+
+def test_concise_gates_are_reported_in_the_trace_even_when_disabled(monkeypatch):
+    monkeypatch.setenv("CONCISE_FIRST_ENABLED", "false")
+    get_settings.cache_clear()
+    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
+              [_statute()], [_report(1.0)])
+    events = run(rig.stream())
+    # The gate breakdown is independent of the enable flag — it reflects
+    # whether the query WOULD have qualified, not whether the fast path ran.
+    assert events[-1]["trace"]["generation"]["concise_gates"] == {
+        "good_retrieval": True, "single_part": True,
+        "short_query": True, "not_multi_offense": True,
+    }
+    assert events[-1]["trace"]["generation"]["variant"] == "full"
+
+
+def test_query_parse_llm_timing_is_recorded_in_the_retrieval_trace(monkeypatch):
+    async def slow_parse(prompt: str, timeout: float) -> str:
+        await asyncio.sleep(0.01)
+        return "parsed"
+
+    async def statute_tool(query, **kwargs):
+        fast_llm_invoke = kwargs.get("fast_llm_invoke")
+        if fast_llm_invoke is not None:
+            await fast_llm_invoke("parse this query")
+        return _statute()
+
+    monkeypatch.setattr(cb, "_invoke_fast_text", slow_parse)
+    monkeypatch.setitem(cb.RAG_TOOL_REGISTRY, "statute_context", statute_tool)
+
+    state = {
+        "current_input": "Can an FIR be quashed by the High Court?",
+        "selected_tools": ["statute_context"],
+        "tool_results": {},
+        "messages": [],
+    }
+    result = run(cb.gq_retrieve(state))
+    seconds = result["trace"]["retrieval"]["query_parse_llm_seconds"]
+    assert seconds is not None and seconds >= 0.01
+
+
+def test_query_parse_llm_timing_is_none_when_the_hop_does_not_fire(monkeypatch):
+    async def statute_tool(query, **kwargs):
+        return _statute()
+
+    monkeypatch.setitem(cb.RAG_TOOL_REGISTRY, "statute_context", statute_tool)
+    state = {
+        "current_input": "Can an FIR be quashed by the High Court?",
+        "selected_tools": ["statute_context"],
+        "tool_results": {},
+        "messages": [],
+        "regen_feedback": "some feedback",  # regenerating -> not the primary query
+    }
+    result = run(cb.gq_retrieve(state))
+    assert result["trace"]["retrieval"]["query_parse_llm_seconds"] is None
 
 
 def test_concise_first_that_gives_up_still_retries(monkeypatch):
