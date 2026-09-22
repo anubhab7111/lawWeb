@@ -141,6 +141,53 @@ def _acts_match(a: str, b: str) -> bool:
     return a == b or f" {a} " in f" {b} " or f" {b} " in f" {a} "
 
 
+_CASE_NAME_YEAR_RE = re.compile(r"\(\d{4}\)\s*$")
+_CASE_NAME_VS_RE = re.compile(r"\s+(?:v\.?|vs\.?|versus)\s+", re.IGNORECASE)
+_CASE_NAME_WS_RE = re.compile(r"\s+")
+_CASE_NAME_MATCH_THRESHOLD = 0.7  # false negatives (real case, flagged unverified)
+                                   # are safe; false positives (wrong case validated
+                                   # as real) are not — bias conservative.
+
+
+def normalize_case_name(name: str) -> str:
+    """Canonical case-name key: drops a trailing "(year)", folds v./vs./versus
+    to a single separator, lowercases, collapses whitespace — so "Ghose v.
+    Mugneeram Bangur (1954)" == "ghose vs mugneeram bangur"."""
+    name = _CASE_NAME_YEAR_RE.sub("", name).strip()
+    name = _CASE_NAME_VS_RE.sub(" v ", name)
+    return _CASE_NAME_WS_RE.sub(" ", name).strip().lower()
+
+
+def _case_name_tokens(name: str) -> Set[str]:
+    return {t for t in normalize_case_name(name).split() if t != "v"}
+
+
+def find_case_in_cases(cases: Dict[str, "CaseRecord"], name: str) -> Optional["CaseRecord"]:
+    """Look up an indexed case by name: exact match on the normalized name
+    first, then a bounded fuzzy (token-Jaccard) match above
+    _CASE_NAME_MATCH_THRESHOLD. Returns None (never raises) when nothing
+    clears the bar, including on an empty corpus — never call rag.initialize()
+    here, this must stay a pure lookup with no I/O."""
+    target = normalize_case_name(name)
+    if not target:
+        return None
+    by_norm = {normalize_case_name(c.case_name): c for c in cases.values()}
+    if target in by_norm:
+        return by_norm[target]
+    target_toks = _case_name_tokens(name)
+    if not target_toks:
+        return None
+    best, best_score = None, 0.0
+    for c in cases.values():
+        toks = _case_name_tokens(c.case_name)
+        if not toks:
+            continue
+        score = len(target_toks & toks) / len(target_toks | toks)
+        if score > best_score:
+            best, best_score = c, score
+    return best if best_score >= _CASE_NAME_MATCH_THRESHOLD else None
+
+
 def _statute_overlap_score(
     case_statutes: List[List[str]], boost_keys: Set[Tuple[str, str]]
 ) -> float:
@@ -555,6 +602,13 @@ class CaseLawRAGSystem:
             )
             out.append(result)
         return out
+
+    def find_case(self, name: str) -> Optional[CaseRecord]:
+        """Look up an indexed case by name — see find_case_in_cases(). A pure
+        in-memory lookup, no I/O: callers must check .initialized themselves
+        (this returns None either way on an empty/uninitialized corpus, but
+        callers should not treat that as "verified nothing exists")."""
+        return find_case_in_cases(self._cases, name)
 
 
 _case_law_rag: Optional[CaseLawRAGSystem] = None
