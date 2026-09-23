@@ -29,13 +29,23 @@ class Settings(BaseSettings):
     # BAAI/bge-reranker-v2-m3 on larger hardware for a small quality bump.
     reranker_model: str = "BAAI/bge-reranker-base"
 
-    # Where the reranker runs: "auto" | "cuda" | "cpu". Auto avoids small
-    # (<6GB) GPUs entirely — the VRAM is worth more to Ollama's LLM offload.
+    # Where the reranker runs: "auto" | "cuda" | "cpu". Auto checks *live*
+    # free VRAM against ollama_vram_reserve_gb (not a fixed card-size floor)
+    # so it can use a small GPU when there's genuinely room, and falls back
+    # to CPU when Ollama already holds most of the card.
     reranker_device: str = "auto"
 
     # Where the embedding model runs: "auto" | "cuda" | "cpu".
     # Set EMBEDDINGS_DEVICE=cuda for one-off index rebuilds.
     embeddings_device: str = "auto"
+
+    # VRAM to keep free for Ollama's LLM before "auto" embeddings/reranker
+    # will claim the GPU. Default matches llm_model's footprint (qwen3:4b,
+    # ~2.5GB) plus headroom for its KV cache; raise this if you configure a
+    # bigger LLM. Checked live at call time against torch.cuda.mem_get_info(),
+    # so it adapts to whatever Ollama is actually holding right now instead
+    # of gating on total GPU capacity.
+    ollama_vram_reserve_gb: float = 2.5
 
     # Shared dense embedding model. BGE-M3 is multilingual (100+ languages)
     # and still 1024-dim, so the pgvector columns and FAISS pipeline are
