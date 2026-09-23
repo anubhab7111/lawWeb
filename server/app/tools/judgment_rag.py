@@ -33,7 +33,7 @@ _FTS_TOKEN = re.compile(r"[A-Za-z0-9]{3,}")
 SCHEMA = """
 CREATE TABLE chunks (
     id INTEGER PRIMARY KEY, chunk_id TEXT UNIQUE, doc_id TEXT, year INTEGER,
-    case_title TEXT, citation TEXT, role TEXT, sections_cited TEXT, text TEXT
+    case_title TEXT, citation TEXT, role TEXT, sections_cited TEXT, doc_sections TEXT, text TEXT
 );
 CREATE TABLE chunk_sections (chunk_row INTEGER, section TEXT);
 CREATE INDEX chunk_sections_section ON chunk_sections(section);
@@ -50,6 +50,7 @@ class JudgmentPassage:
     citation: str
     role: str
     sections_cited: List[str]
+    doc_sections: List[str]
     text: str
     score: float = 0.0
     sources: List[str] = field(default_factory=list)
@@ -77,9 +78,9 @@ def insert_chunks(
     for offset, c in enumerate(chunks):
         row = start_row + offset
         con.execute(
-            "INSERT INTO chunks VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?)",
             (row, c["chunk_id"], c["doc_id"], c["year"], c["case_title"], c.get("citation", ""),
-             c["role"], json.dumps(c["sections_cited"]), c["text"]),
+             c["role"], json.dumps(c["sections_cited"]), json.dumps(c.get("doc_sections", [])), c["text"]),
         )
         con.executemany(
             "INSERT INTO chunk_sections VALUES (?,?)", [(row, s) for s in c["sections_cited"]]
@@ -122,10 +123,10 @@ class JudgmentIndex:
         marks = ",".join("?" * len(rows))
         out = {}
         for r in self._db.execute(
-            f"SELECT id, chunk_id, doc_id, year, case_title, citation, role, sections_cited, text "
+            f"SELECT id, chunk_id, doc_id, year, case_title, citation, role, sections_cited, doc_sections, text "
             f"FROM chunks WHERE id IN ({marks})", list(rows)
         ):
-            out[r[0]] = JudgmentPassage(r[1], r[2], r[3], r[4], r[5], r[6], json.loads(r[7]), r[8])
+            out[r[0]] = JudgmentPassage(r[1], r[2], r[3], r[4], r[5], r[6], json.loads(r[7]), json.loads(r[8]), r[9])
         return out
 
     def dense(self, query_vecs: np.ndarray, k: int) -> List[List[tuple]]:
@@ -144,6 +145,48 @@ class JudgmentIndex:
             (match, k),
         ).fetchall()
         return [r[0] for r in rows]
+
+    def section_votes(
+        self,
+        query_vecs: np.ndarray,
+        k: int = 20,
+        power: float = 8.0,
+        normalize: bool = True,
+    ) -> Dict[str, float]:
+        """IPC sections voted by the judgments whose passages best match the query.
+
+        Like the precedent index: each query window's nearest passages vote once
+        per judgment (best passage), weighted by similarity**power, for every IPC
+        section the judgment cites. `normalize` divides by sqrt(#sections cited)
+        so sprawling judgments don't outvote focused ones.
+        """
+        assert self._db is not None or self.available
+        per_window = self.dense(query_vecs, k)
+        rows = sorted({row for hits in per_window for row, _ in hits})
+        if not rows:
+            return {}
+        assert self._db is not None
+        marks = ",".join("?" * len(rows))
+        info = {
+            r[0]: (r[1], json.loads(r[2]))
+            for r in self._db.execute(
+                f"SELECT id, doc_id, doc_sections FROM chunks WHERE id IN ({marks})", rows
+            )
+        }
+        votes: Dict[str, float] = defaultdict(float)
+        for hits in per_window:
+            best: Dict[str, tuple] = {}
+            for row, sim in hits:
+                doc, sections = info[row]
+                if sim > best.get(doc, (-1.0, None))[0]:
+                    best[doc] = (sim, sections)
+            for sim, sections in best.values():
+                weight = max(sim, 0.0) ** power / len(per_window)
+                if normalize and sections:
+                    weight /= len(sections) ** 0.5
+                for section in sections:
+                    votes[section] += weight
+        return dict(votes)
 
     def rows_citing(self, sections: Sequence[str], limit: int = 200) -> List[int]:
         self.load()

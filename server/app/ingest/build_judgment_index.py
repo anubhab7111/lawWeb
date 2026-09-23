@@ -32,7 +32,7 @@ from app.ingest.paths import corpus_path
 from app.tools import judgment_rag as jr
 from app.tools import precedent_rag as pr
 
-MAX_SEQ_LENGTH = 384
+MAX_SEQ_LENGTH = 256
 
 
 def _years() -> List[int]:
@@ -62,12 +62,17 @@ def load_flagged(skip_check: bool) -> Set[str]:
 
 def select_year(year: int, flagged: Set[str]) -> List[Dict]:
     chunks = _read_chunks(year)
-    citing: Dict[str, bool] = {}
+    doc_sections: Dict[str, set] = {}
     for c in chunks:
-        citing[c["doc_id"]] = citing.get(c["doc_id"], False) or any(
-            s.startswith("IPC:") for s in c["sections_cited"]
+        doc_sections.setdefault(c["doc_id"], set()).update(
+            s.removeprefix("IPC:") for s in c["sections_cited"] if s.startswith("IPC:")
         )
-    return [c for c in chunks if citing[c["doc_id"]] and c["doc_id"] not in flagged]
+    selected = []
+    for c in chunks:
+        sections = doc_sections[c["doc_id"]]
+        if sections and c["doc_id"] not in flagged:
+            selected.append({**c, "doc_sections": sorted(sections)})
+    return selected
 
 
 def embed_text(chunk: Dict) -> str:
