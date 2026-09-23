@@ -34,6 +34,44 @@ from app.tools.unified_legal_rag import get_unified_rag_system
 
 _SECTION_REF_RE = re.compile(r"\bsections?\s+(\d{1,4}[A-Z]{0,2})\b", re.IGNORECASE)
 
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\"'])")
+FACT_PATTERN_MIN_CHARS = 600
+FACT_PATTERN_MIN_SENTENCES = 5
+PRECEDENT_PINS = 4
+PRECEDENT_PIN_SCORE = 0.9  # below 1.0: inferred from similar cases, not parsed from the query
+
+
+def split_sentences(text: str) -> List[str]:
+    return [s for s in _SENTENCE_RE.split(text.strip()) if s.strip()]
+
+
+def looks_like_fact_pattern(query: str) -> bool:
+    """A narrative of events (long, many sentences) rather than a legal question."""
+    return (
+        len(query) >= FACT_PATTERN_MIN_CHARS
+        and len(split_sentences(query)) >= FACT_PATTERN_MIN_SENTENCES
+    )
+
+
+async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[str, str]]:
+    """IPC sections cited by the past cases most similar to a fact narrative.
+
+    Empty for ordinary questions, and when the precedent index isn't built —
+    callers get exactly the behaviour they had before the index existed.
+    """
+    if not looks_like_fact_pattern(query):
+        return []
+    from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections
+
+    if not get_precedent_index().available:
+        return []
+    try:
+        voted = await retrieve_precedent_sections(split_sentences(query))
+    except Exception as e:  # a retrieval aid must never break the answer path
+        print(f"[LegalRetrieval] precedent lookup failed: {e}")
+        return []
+    return [("Indian Penal Code", section) for section, _score in voted[:top]]
+
 
 def _related_sections(chunk: LegalChunk, max_refs: int = 3) -> List[str]:
     """
@@ -133,8 +171,12 @@ async def retrieve_statutes(
         parsed = parse_legal_query(query)
 
     # ── Deterministic pins ──────────────────────────────────────
+    precedent = await precedent_pins(query)
+    pin_specs = [(a, s, 1.0) for a, s in parsed.pinned_sections] + [
+        (a, s, PRECEDENT_PIN_SCORE) for a, s in precedent
+    ]
     pinned: List[LegalChunk] = []
-    for act_hint, section in parsed.pinned_sections:
+    for act_hint, section, pin_score in pin_specs:
         for chunk in rag.find_section(act_hint, section):
             pinned.append(
                 LegalChunk(
@@ -147,15 +189,16 @@ async def retrieve_statutes(
                     source_file=chunk.source_file,
                     has_punishment=chunk.has_punishment,
                     domains=list(chunk.domains),
-                    score=1.0,  # deterministically identified as governing law
+                    score=pin_score,  # 1.0: identified in the query; less: inferred from similar cases
                 )
             )
     pinned = _dedupe_by_section(pinned)
 
     # ── Hybrid fill ─────────────────────────────────────────────
-    if parsed.query_type == "section_lookup" and pinned:
+    query_pinned = bool(parsed.pinned_sections) and bool(pinned)
+    if parsed.query_type == "section_lookup" and query_pinned:
         hybrid_k = 0
-    elif parsed.query_type == "comparison" and pinned:
+    elif parsed.query_type == "comparison" and query_pinned:
         hybrid_k = max(0, k - len(pinned))
     else:
         hybrid_k = k if not pinned else max(2, k - len(pinned))
