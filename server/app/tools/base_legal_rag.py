@@ -201,31 +201,39 @@ async def _get_shared_embeddings() -> Any:
 
             device = get_settings().embeddings_device
             if device not in ("cuda", "cpu"):
-                # auto: only claim the GPU when it's big enough to also leave
-                # Ollama room for LLM layer offload. On a ~4GB card, giving
-                # the VRAM to the LLM instead cuts answer latency far more
-                # than GPU query-embedding saves. (Bulk index *building* is a
-                # different workload — see build_offline() below, which runs
-                # before the LLM claims any VRAM and forces GPU regardless.)
+                # auto: claim the GPU only if there's currently enough free
+                # VRAM to load the embedding model *and* still leave
+                # ollama_vram_reserve_gb free for Ollama's LLM. Checked
+                # against live free memory (not total card capacity), so a
+                # small GPU can be used when genuinely uncontended and
+                # skipped once Ollama (or anything else) is already holding
+                # most of it.
                 device = "cpu"
                 try:
                     import torch
 
                     if torch.cuda.is_available():
-                        free_bytes, total_bytes = torch.cuda.mem_get_info()
-                        if total_bytes >= 6 * 1024**3 and free_bytes > 3.5 * 1024**3:
+                        free_bytes, _total_bytes = torch.cuda.mem_get_info()
+                        reserve_bytes = get_settings().ollama_vram_reserve_gb * 1024**3
+                        # BGE-M3 weights plus batch-encode working memory —
+                        # observed to run well over its nominal weight size
+                        # under load, so this is deliberately generous.
+                        embeddings_headroom_bytes = 2.0 * 1024**3
+                        if free_bytes > reserve_bytes + embeddings_headroom_bytes:
                             device = "cuda"
                 except ImportError:
                     pass
                 except Exception as e:
-                    # A genuinely full/contended GPU (e.g. Ollama holding VRAM)
-                    # can make the mem_get_info() probe itself raise a CUDA
-                    # runtime error rather than just report low free memory —
-                    # that must fall back to CPU like any other "GPU unusable"
-                    # case, not crash RAG initialization entirely.
-                    print(f"[rag] CUDA device probe failed ({e}) — using CPU.")
+                    print(f"[rag] CUDA availability check failed ({e}) — using CPU.")
             print(f"[rag] Embeddings device: {device}")
-            _shared_embeddings = _make_bge_embeddings(device)
+            try:
+                _shared_embeddings = _make_bge_embeddings(device)
+            except Exception as e:
+                if device == "cpu":
+                    raise
+                print(f"[rag] Embeddings failed on cuda ({e}) — retrying on cpu.")
+                device = "cpu"
+                _shared_embeddings = _make_bge_embeddings(device)
         return _shared_embeddings
 
 
@@ -253,24 +261,24 @@ async def _get_shared_reranker() -> Optional[Any]:
 
             device = get_settings().reranker_device
             if device not in ("cuda", "cpu"):
+                # auto: same live-free-VRAM policy as the embeddings, with a
+                # smaller headroom since bge-reranker-base is a lighter
+                # model. The load/predict calls below also retry on cpu if
+                # this still contends with Ollama for VRAM.
                 device = "cpu"
                 try:
                     import torch
 
                     if torch.cuda.is_available():
-                        free_bytes, total_bytes = torch.cuda.mem_get_info()
-                        # Same policy as the embeddings: on a small (<6GB)
-                        # card the VRAM is worth more to Ollama's LLM layer
-                        # offload; CPU reranking costs ~1-3s/query.
-                        if (
-                            total_bytes >= 6 * 1024**3
-                            and free_bytes > 2.8 * 1024**3
-                        ):
+                        free_bytes, _total_bytes = torch.cuda.mem_get_info()
+                        reserve_bytes = get_settings().ollama_vram_reserve_gb * 1024**3
+                        reranker_headroom_bytes = 1.0 * 1024**3
+                        if free_bytes > reserve_bytes + reranker_headroom_bytes:
                             device = "cuda"
                 except ImportError:
                     pass
                 except Exception as e:
-                    print(f"[rag] CUDA device probe failed ({e}) — reranker on CPU.")
+                    print(f"[rag] CUDA availability check failed ({e}) — reranker on CPU.")
 
             model_name = get_settings().reranker_model
             loop = asyncio.get_event_loop()

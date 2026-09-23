@@ -23,7 +23,8 @@ touched, so re-running this on every `python run.py` is normally a no-op.
 
 The query-time embedding singleton (app.tools.base_legal_rag._get_shared_
 embeddings) is untouched by this module and keeps its own device logic —
-on small GPUs it stays on CPU so the LLM keeps the VRAM once it loads.
+it also prefers GPU whenever CUDA is available, sharing VRAM with Ollama's
+LLM rather than staying off it (set EMBEDDINGS_DEVICE=cpu to opt back out).
 """
 
 from __future__ import annotations
