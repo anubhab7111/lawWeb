@@ -261,7 +261,8 @@ async def _get_shared_reranker() -> Optional[Any]:
                         free_bytes, total_bytes = torch.cuda.mem_get_info()
                         # Same policy as the embeddings: on a small (<6GB)
                         # card the VRAM is worth more to Ollama's LLM layer
-                        # offload; CPU reranking costs ~1-3s/query.
+                        # offload; CPU reranking costs ~9-12s/query measured
+                        # warm (three cross-encoder passes), still the better trade.
                         if (
                             total_bytes >= 6 * 1024**3
                             and free_bytes > 2.8 * 1024**3
