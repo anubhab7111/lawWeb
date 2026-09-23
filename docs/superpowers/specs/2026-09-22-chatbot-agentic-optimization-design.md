@@ -178,3 +178,71 @@ and whether Ollama reuses the KV cache across `_build_answer_prompt`'s
 prefix given that `conversation_context` currently varies ahead of the
 static instruction template (`chatbot.py:1810-1814`) — needs a live test
 against the running Ollama instance, not an assumption.
+
+## Phase 2 findings (2026-09-23)
+
+Measured live on qwen3:4b / Ollama 0.23.0 (n=6 then n=8 queries, in-memory
+chat state, real RAG stack). **Caveat:** the box was shared with other
+sessions' Ollama/CPU load, which made the first pass ~2x slower than the
+second; only the relative stage composition is trustworthy, not absolutes.
+Small samples — this is directional evidence, not an eval.
+
+**Instrumentation added** (trace only, no behavior change):
+`trace.generation.concise_gates`, `trace.retrieval.query_parse_llm_seconds`,
+`trace.grounding.verify_seconds` and `trace.grounding.adjudication`.
+Regeneration firing was already visible as `trace.grounding.regenerating`.
+
+**Where the time goes** (second pass):
+
+| Query type | Total | Retrieval | Generation | Verify |
+|---|---|---|---|---|
+| Simple (6 of 8) | 28-56s | 8-19s | 17-30s | 0-3s |
+| Multi-part (2 of 8) | 108-138s | 31-51s | 70-86s | 0-6s |
+
+**The four variables:**
+1. *Concise fast path:* fired on 6/6 simple queries; on the 2 multi-part
+   queries the only failing gate was `single_part`. No gate is mis-tuned on
+   this sample. Loosening `single_part` would trade answer depth (a 300-word
+   cap on a 3-part question) for ~3x faster generation — not recommended
+   without a quality eval.
+2. *Query-parse LLM hop:* fires only when the deterministic ontology parse
+   finds no doctrine and no pinned section (4 of 34 ground-truth queries, plus
+   multi-part queries); costs **6-18s** when it does. It is a recall assist,
+   so it should not be removed.
+3. *Regeneration:* 0/14 queries. Not a latency driver on this sample.
+4. *KV-cache prefix reuse:* real (prefix-shared prompts evaluated ~9x faster
+   per token), but prompt evaluation is ~1-3% of a request (generation is
+   the bottleneck), and the bulk of the prompt (retrieved context) is
+   query-specific and cannot be a shared prefix. Not worth reordering the
+   prompt.
+
+**Unplanned finding — retrieval is CPU-reranker bound.** A warm statute
+search is 9-12s, ~98% of it in three CPU cross-encoder passes (main rerank
+~20 pairs, second pass 9-63 short pairs, case-law rerank 15 pairs x ~1300
+chars, ~3s). The comment in `base_legal_rag.py` that CPU reranking costs
+"~1-3s/query" is stale. The reranker cannot move to the GPU (qwen3:4b at
+num_ctx 8192 already occupies ~3.65GB of 4GB).
+
+**Tried and rejected (do not retry without new information):**
+- *int8 dynamic quantization of the reranker:* only ~12% faster
+  (1.17s to 1.03s per batch), scores drift, and `quantize_dynamic` is
+  deprecated. The obvious implementation (`reranker.model = quantize_dynamic(...)`)
+  also breaks `predict` and the caller **silently falls back to un-reranked
+  order**, which makes a retrieval eval look fine while measuring nothing.
+- *Schema-constrained decoding for the doctrine pick:* 0.75s vs 6-18s, but it
+  returns the first enum entries for every query (also with an in-schema
+  "issue" sentence first). The free-text call's thinking does the actual work.
+- *A "verify-stage LLM echo" fix:* two 61s/93s verify outliers in the first
+  pass did not reproduce (adjudication took 1.8-6.3s), and are most likely
+  contention with other sessions. No change made.
+
+**Candidates for follow-up (need their own eval, none implemented):**
+1. Embedding-first doctrine matching with the LLM as fallback: on 6 queries,
+   embedding top-1 matched the LLM's pick in 4/4 cases where it found one
+   (scores 0.56-0.82, ~0.09s vs 6-9s), but the "LLM said none" cases scored
+   0.57-0.58, so no clean threshold exists on this sample. A wrong doctrine
+   pins irrelevant sections, so this needs a proper eval before use.
+2. Fewer/shorter case-law rerank candidates (15 pairs x ~1300 chars is ~3s of
+   every retrieval for a corpus of 78 cases and k=3).
+3. Per-node latency tracing as a standing part of the eval harness, so
+   contention noise can be separated from real regressions.
