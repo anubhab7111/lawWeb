@@ -165,6 +165,80 @@ def process_year(year: int, workers: int, force: bool = False) -> Optional[Dict]
     return summary
 
 
+def keep_year(stem: str, folder_years: List[int]) -> int:
+    """Which year folder keeps a judgment that the bucket lists in several.
+
+    The bucket lists a case under both its decision year and its report year;
+    the filename's leading year is the report year, so that copy wins, else the
+    earliest folder.
+    """
+    report_year = int(stem.removeprefix("S_")[:4])
+    return report_year if report_year in folder_years else min(folder_years)
+
+
+def dedupe_across_years(years: List[int]) -> Dict:
+    """Drop the copies of a judgment that sit in more than one year folder.
+
+    Chunk files are rewritten without the dropped copies, their extraction rows
+    are marked `duplicate`, and every drop is recorded in
+    <corpus>/manifest/sc_cross_year_duplicates.jsonl. Raw PDFs are left alone.
+    Idempotent: rows already marked duplicate are ignored.
+    """
+    root = sc_root()
+    owners: Dict[str, List[int]] = {}
+    tables: Dict[int, pd.DataFrame] = {}
+    for year in years:
+        path = root / "text" / f"year={year}" / "_extraction.parquet"
+        if not path.exists():
+            continue
+        df = pd.read_parquet(path)
+        tables[year] = df
+        for stem in df.loc[df["status"] == "ok", "stem"]:
+            owners.setdefault(stem, []).append(year)
+
+    drops: Dict[int, set] = {}
+    ledger: List[Dict] = []
+    for stem, folders in owners.items():
+        if len(folders) < 2:
+            continue
+        keep = keep_year(stem, folders)
+        for year in folders:
+            if year != keep:
+                drops.setdefault(year, set()).add(stem)
+                ledger.append({"doc_id": f"sc-{stem}", "kept_year": keep, "dropped_year": year})
+
+    for year, stems in drops.items():
+        doc_ids = {f"sc-{s}" for s in stems}
+        chunk_dir = root / "chunks" / f"year={year}"
+        kept = 0
+        tmp = chunk_dir / "chunks.jsonl.gz.tmp"
+        with gzip.open(chunk_dir / "chunks.jsonl.gz", "rt", encoding="utf-8") as src, gzip.open(
+            tmp, "wt", encoding="utf-8"
+        ) as dst:
+            for line in src:
+                if json.loads(line)["doc_id"] not in doc_ids:
+                    dst.write(line)
+                    kept += 1
+        tmp.rename(chunk_dir / "chunks.jsonl.gz")
+
+        df = tables[year]
+        mask = df["stem"].isin(stems)
+        df.loc[mask, "status"] = "duplicate"
+        df.loc[mask, "reason"] = "cross-year duplicate"
+        df.to_parquet(root / "text" / f"year={year}" / "_extraction.parquet", index=False)
+        done = chunk_dir / "_DONE.json"
+        summary = json.loads(done.read_text())
+        summary.update(chunks=kept, cross_year_duplicates=summary.get("cross_year_duplicates", 0) + len(stems))
+        done.write_text(json.dumps(summary, indent=1))
+
+    if ledger:
+        path = corpus_path("manifest", "sc_cross_year_duplicates.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.writelines(json.dumps(row) + "\n" for row in ledger)
+    return {"dropped_docs": len(ledger), "years_rewritten": sorted(drops)}
+
+
 def qa_report(years: List[int], samples: int = 20) -> Dict:
     root = sc_root()
     roles, words, per_doc_cites = Counter(), [], []
@@ -231,6 +305,8 @@ def main() -> None:
             f"quarantined {q or 0}, dup {summary['duplicates']}, invalid chunks {summary['invalid_chunks']} "
             f"({time.time() - started:.0f}s)"
         )
+    dedup = dedupe_across_years(years)
+    print(f"[judgments] cross-year duplicates dropped: {dedup['dropped_docs']} (years rewritten: {len(dedup['years_rewritten'])})")
     report = qa_report(years)
     print("[judgments] QA:", json.dumps(report, indent=1))
 
