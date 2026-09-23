@@ -2043,12 +2043,22 @@ async def gq_verify(state: ChatState) -> ChatState:
         "status", stage="verifying", label="Checking citations against the statutes…"
     )
 
-    async def _grounding_correction_invoke(prompt: str) -> str:
-        raw = await invoke_llm_safely(
-            get_grounding_correction_llm(), prompt, stream=False
-        )
-        return strip_reasoning_tags(raw)
+    adjudication = {"seconds": 0.0, "calls": 0, "prompt_chars": 0, "output_chars": 0}
 
+    async def _grounding_correction_invoke(prompt: str) -> str:
+        t0 = time.monotonic()
+        adjudication["calls"] += 1
+        adjudication["prompt_chars"] += len(prompt)
+        try:
+            out = strip_reasoning_tags(
+                await invoke_llm_safely(get_grounding_correction_llm(), prompt, stream=False)
+            )
+            adjudication["output_chars"] += len(out)
+            return out
+        finally:
+            adjudication["seconds"] += time.monotonic() - t0
+
+    verify_started = time.monotonic()
     final_text, report = await _verify_response_citations(
         response,
         state.get("retrieved_sections"),
@@ -2056,6 +2066,7 @@ async def gq_verify(state: ChatState) -> ChatState:
         llm_invoke=_grounding_correction_invoke,
         citation_only=citation_only,
     )
+    verify_seconds = time.monotonic() - verify_started
 
     score = report.overall_score if report is not None else None
     # Only an *adjudicated* report may trigger a regeneration. The deterministic
@@ -2082,6 +2093,11 @@ async def gq_verify(state: ChatState) -> ChatState:
         "score": score,
         "flagged": len(report.flagged) if report is not None else 0,
         "regenerated": bool(state.get("regen_count")),
+        "verify_seconds": round(verify_seconds, 2),
+        "adjudication": {
+            **adjudication,
+            "seconds": round(adjudication["seconds"], 2),
+        },
     }
     if citation_only:
         grounding_trace["reason"] = "no_retrieval_citation_only"
