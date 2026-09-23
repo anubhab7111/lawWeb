@@ -230,6 +230,11 @@ def main() -> None:
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         list(pool.map(run, years))
 
+    try:
+        (sc_root() / "_downloads").rmdir()  # scratch dir; only removable once empty
+    except OSError:
+        pass
+
     if failures:
         print(f"[sc] {len(failures)} year(s) failed:")
         for year, why in failures:
