@@ -63,6 +63,13 @@ def test_unmounted_sources_never_trigger_a_rebuild(tmp_path):
     assert asyncio.run(system._should_rebuild()) is False
 
 
+def test_empty_leftover_source_dir_counts_as_unmounted(tmp_path):
+    sources = tmp_path / "bare_acts"
+    (sources / "criminal").mkdir(parents=True)
+    system = _system_with_index(tmp_path, {"a.pdf": "1:x"}, sources)
+    assert asyncio.run(system._should_rebuild()) is False
+
+
 def test_changed_sources_still_trigger_a_rebuild(tmp_path):
     sources = tmp_path / "bare_acts"
     sources.mkdir()
