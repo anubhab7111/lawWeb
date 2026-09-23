@@ -3,9 +3,9 @@ Pure logic for the LLM-free IL-TUR retrieval evaluation (eval_iltur_retrieval.py
 turning ~7k-char case facts into retrieval windows, fusing per-window rankings,
 and scoring the fused section ranking against IL-TUR's label set.
 
-Scoring is by section *number* (IL-TUR labels don't name their Act, and IPC/CrPC
-numbers collide): a label counts as found if any retrieved IPC/CrPC provision has
-that number.
+Scoring is by section *number* over IPC provisions: IL-TUR `lsi` labels are IPC
+sections only (each label's statute text matches the IPC provision), so a label
+counts as found if a retrieved IPC provision has that number.
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def aggregate(per_case: Sequence[Dict], gold_sizes: Sequence[int], ks=(1, 3, 5, 
 
 
 def label_coverage(labels: Sequence[str], indexed_numbers: Iterable[str]) -> Dict:
-    """Which IL-TUR label sections have at least one indexed IPC/CrPC chunk."""
+    """Which IL-TUR label sections have at least one indexed IPC chunk."""
     have = {n.upper() for n in indexed_numbers}
     missing = [label for label in labels if label.upper() not in have]
     return {
