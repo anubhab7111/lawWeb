@@ -48,7 +48,13 @@ from app.metrics.iltur_eval import (  # noqa: E402
 )
 from app.metrics.iltur_loader import decode_labels, label_names, sample_iltur_cases  # noqa: E402
 from app.tools.legal_retrieval import retrieve_statutes  # noqa: E402
-from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections  # noqa: E402
+from app.tools.judgment_rag import get_judgment_index  # noqa: E402
+from app.tools.precedent_rag import (  # noqa: E402
+    QUERY_WINDOWS,
+    encode_texts,
+    get_precedent_index,
+    retrieve_precedent_sections,
+)
 from app.tools.unified_legal_rag import get_unified_rag_system  # noqa: E402
 
 KS = (1, 3, 5, 10)
@@ -101,6 +107,19 @@ async def rank_precedent(row, sentences, args):
     return [section for section, _score in voted]
 
 
+async def rank_judgments(sentences, args):
+    from app.tools.base_legal_rag import _get_shared_embeddings
+
+    windows = fact_windows(sentences, window=4, stride=3, max_windows=QUERY_WINDOWS)
+    if not windows:
+        return []
+    vecs = encode_texts(await _get_shared_embeddings(), windows)
+    votes = get_judgment_index().section_votes(
+        vecs, k=args.judgment_k, power=args.judgment_power, normalize=not args.no_judgment_norm
+    )
+    return [sec for sec, _ in sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--split", choices=["test", "dev"], default="test")
@@ -112,7 +131,13 @@ async def main() -> None:
     parser.add_argument("--k-window", type=int, default=10, help="statute retrieval depth per window")
     parser.add_argument("--precedent-k", type=int, default=20, help="neighbour windows per query window")
     parser.add_argument("--precedent-power", type=float, default=8.0, help="similarity exponent for votes")
-    parser.add_argument("--fusion-weights", type=float, nargs=2, default=[1.0, 1.0], metavar=("STATUTE", "PRECEDENT"))
+    parser.add_argument("--judgment-k", type=int, default=20, help="neighbour passages per query window")
+    parser.add_argument("--judgment-power", type=float, default=8.0)
+    parser.add_argument("--no-judgment-norm", action="store_true")
+    parser.add_argument(
+        "--fusion-weights", type=float, nargs=3, default=[1.0, 1.0, 1.0],
+        metavar=("STATUTE", "PRECEDENT", "JUDGMENT"), help="weights for the fused ranking",
+    )
     parser.add_argument("--skip-statutes", action="store_true", help="precedent only (fast; for tuning)")
     parser.add_argument("--tag", default="run")
     args = parser.parse_args()
@@ -120,8 +145,11 @@ async def main() -> None:
     use_precedent = get_precedent_index().available
     if not use_precedent:
         print("[precedent] index not built — evaluating statutes only")
+    use_judgments = get_judgment_index().available
+    if not use_judgments:
+        print("[judgments] index not built — skipping")
     use_statutes = not args.skip_statutes
-    if not use_statutes and not use_precedent:
+    if not use_statutes and not use_precedent and not use_judgments:
         sys.exit("nothing to evaluate")
 
     names = label_names()
@@ -154,10 +182,12 @@ async def main() -> None:
             ranks["statutes"] = await rank_statutes(sentences, args)
         if use_precedent:
             ranks["precedent"] = await rank_precedent(row, sentences, args)
-        if len(ranks) == 2:
-            ranks["fused"] = rrf_fuse(
-                [ranks["statutes"], ranks["precedent"]], weights=args.fusion_weights
-            )
+        if use_judgments:
+            ranks["judgments"] = await rank_judgments(sentences, args)
+        if len(ranks) > 1:
+            order = [s for s in ("statutes", "precedent", "judgments") if s in ranks]
+            weights = dict(zip(("statutes", "precedent", "judgments"), args.fusion_weights))
+            ranks["fused"] = rrf_fuse([ranks[s] for s in order], weights=[weights[s] for s in order])
 
         entry = {"id": row.get("id"), "gold": gold}
         for system, ranked in ranks.items():
