@@ -31,8 +31,8 @@ WINDOW_CASE_FILE = "window_case_idx.npy"
 
 INDEX_WINDOWS = 4  # windows embedded per indexed case
 QUERY_WINDOWS = 8  # windows retrieved per query case
-NEIGHBORS = 30
-VOTE_POWER = 4.0
+NEIGHBORS = 20
+VOTE_POWER = 8.0
 
 
 def encode_texts(embeddings: Any, texts: Sequence[str], batch_size: int = 64) -> np.ndarray:
