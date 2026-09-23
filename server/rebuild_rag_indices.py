@@ -20,6 +20,7 @@ _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
+from app.ingest.paths import case_law_dir
 from app.tools import get_unified_rag_system
 from app.tools.case_law_rag import get_case_law_rag_system
 
@@ -38,6 +39,13 @@ async def rebuild_domain(domain: str):
 
     # 1. Get the system
     system = DOMAINS[domain]()
+
+    # Sources may sit on a removable drive: refuse before deleting the old
+    # index, or an unmounted drive would leave no index at all.
+    source_dir = getattr(system, "_bare_acts_dir", None) or case_law_dir()
+    if not Path(source_dir).is_dir():
+        print(f"  Error: source directory {source_dir} not found (drive mounted?). Aborting.")
+        return
 
     # 2. Identify the FAISS directory
     faiss_dir = _SERVER_DIR / "app" / "data" / "faiss_index" / domain

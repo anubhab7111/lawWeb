@@ -12,7 +12,7 @@ HUGGINGFACE_TOKEN in server/.env before using this module.
 import random
 import re
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from app.config import get_settings
 from app.metrics.ground_truth import GroundTruthEntry
@@ -82,10 +82,35 @@ def iltur_case_to_prompt(row: Dict[str, Any]) -> str:
     return _PROMPT_TEMPLATE.format(facts=facts.strip())
 
 
+@lru_cache(maxsize=1)
+def label_names() -> List[str]:
+    """IL-TUR lsi label names, indexed by the integer class ids the rows carry."""
+    return list(load_iltur_lsi_test_split().features["labels"].feature.names)
+
+
 def _section_number(label: Any) -> str:
-    """"Section 302" / "Section 120B" -> "302" / "120B" (the index matches on numbers)."""
+    """"Section 302" / "Section 120B" / "Section 294(b)" -> "302" / "120B" / "294".
+
+    Sub-clause suffixes are dropped and letter suffixes kept: the index is keyed
+    on the base section number.
+    """
     match = re.search(r"\d+[A-Za-z]{0,2}", str(label))
     return match.group(0).upper() if match else str(label)
+
+
+def decode_labels(
+    labels: Sequence[Any], names: Optional[Sequence[str]] = None
+) -> List[str]:
+    """IL-TUR lsi rows carry ClassLabel ints (35 -> "Section 304"); decode them
+    to deduplicated section numbers. Already-textual labels pass through."""
+    out: List[str] = []
+    for label in labels:
+        if isinstance(label, int) and not isinstance(label, bool):
+            label = (names if names is not None else label_names())[label]
+        number = _section_number(label)
+        if number not in out:
+            out.append(number)
+    return out
 
 
 def iltur_case_to_ground_truth(row: Dict[str, Any], prompt: str) -> GroundTruthEntry:
@@ -99,7 +124,8 @@ def iltur_case_to_ground_truth(row: Dict[str, Any], prompt: str) -> GroundTruthE
     reference answer for.
     """
     statutes = _statute_section_numbers()
-    sections = [statutes[i] for i in row["labels"]]
+    # "Section 294" and "Section 294(b)" are separate labels but one section number
+    sections = list(dict.fromkeys(statutes[i] for i in row["labels"]))
     return GroundTruthEntry(
         query=prompt,
         relevant_ipc_sections=[],

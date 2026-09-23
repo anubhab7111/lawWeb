@@ -27,6 +27,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.ingest.paths import statutes_dir
+
 try:
     from langchain_community.document_loaders import PyPDFLoader
     from langchain_community.vectorstores import FAISS
@@ -502,9 +504,13 @@ class BaseLegalRAGSystem(ABC):
 
     # ── Init ────────────────────────────────────────────────────
 
-    def __init__(self, data_dir: str = "app/data"):
-        self.data_dir = Path(data_dir)
-        self._bare_acts_dir = self.data_dir / "bare_acts" / self.pdf_subdir
+    def __init__(self, data_dir: Optional[str] = None):
+        # data_dir given: everything (indices and source PDFs) lives under it.
+        # Otherwise indices stay in the repo and source PDFs resolve via the
+        # corpus root (app/ingest/paths.py), falling back to the legacy layout.
+        self.data_dir = Path(data_dir or "app/data")
+        self._statutes_dir = Path(data_dir) if data_dir else statutes_dir()
+        self._bare_acts_dir = self._statutes_dir / "bare_acts" / self.pdf_subdir
         # Each domain gets its own FAISS index directory
         self._faiss_dir = self.data_dir / "faiss_index" / self.domain_name
         self._meta_path = self._faiss_dir / "meta.pkl"
@@ -989,6 +995,14 @@ class BaseLegalRAGSystem(ABC):
 
         if meta.get("embedding_model") != get_settings().embedding_model:
             return True
+        if not self._bare_acts_dir.is_dir():
+            # Sources live on a removable drive; a query-serving process must
+            # never try to rebuild just because it isn't mounted.
+            print(
+                f"[{self.domain_name}] Source PDFs unavailable ({self._bare_acts_dir}) "
+                f"— serving the existing index without a staleness check."
+            )
+            return False
         return stored_fingerprint != self._current_pdf_fingerprint()
 
     def _current_pdf_fingerprint(self) -> Dict[str, str]:

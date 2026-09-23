@@ -33,10 +33,11 @@ os.chdir(_SERVER_DIR)
 from bs4 import BeautifulSoup
 
 from app.config import get_settings
+from app.ingest.paths import case_law_dir
 from app.data.case_law_manifest import ManifestEntry, build_manifest
 from app.tools.indian_kanoon import IndianKanoonClient
 
-CASE_LAW_DIR = _SERVER_DIR / "app" / "data" / "case_law"
+CASE_LAW_DIR = case_law_dir()
 
 _CONSTITUTION_BENCH_MIN = 5
 

@@ -2,6 +2,7 @@
 Configuration module for the legal chatbot.
 """
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -46,6 +47,12 @@ class Settings(BaseSettings):
     # so it adapts to whatever Ollama is actually holding right now instead
     # of gating on total GPU capacity.
     ollama_vram_reserve_gb: float = 2.5
+
+    # External drive holding raw/derived corpus data (see app/ingest/paths.py).
+    # Empty = legacy layout with source data inside the repo's app/data.
+    corpus_root: str = Field(
+        "", validation_alias=AliasChoices("LAWWEB_CORPUS_ROOT", "corpus_root")
+    )
 
     # Shared dense embedding model. BGE-M3 is multilingual (100+ languages)
     # and still 1024-dim, so the pgvector columns and FAISS pipeline are
