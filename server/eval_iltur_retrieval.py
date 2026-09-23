@@ -2,16 +2,22 @@
 """
 eval_iltur_retrieval.py — LLM-free retrieval evaluation on IL-TUR `lsi`.
 
-Draws a seeded sample of IL-TUR test cases, splits each case's long facts into
-sentence windows, retrieves statutes per window with the production path
-(`retrieve_statutes`), fuses the per-window rankings (RRF) and scores the fused
-IPC/CrPC section ranking against the case's label set by section number.
-Reports Hit@k, Recall@k, MRR, micro-F1@k, and how many of IL-TUR's 100 label
-sections the index can resolve at all (label coverage).
+Draws a seeded sample of IL-TUR cases and scores three section rankings against
+each case's label set, by section number:
+  statutes   per-window statute retrieval (production `retrieve_statutes`),
+             fused across the case's fact windows with RRF
+  precedent  similar past IL-TUR train+dev cases voting for their sections
+             (app/tools/precedent_rag.py)
+  fused      weighted RRF of the two
+Reports Hit@k, Recall@k, MRR, micro-F1@k, plus label coverage of the index.
+
+Tune on --split dev (each queried dev case is masked out of the precedent
+index); report on --split test, which is never indexed.
 
 Usage (conda env legal_chatbot_env, from server/):
-    python eval_iltur_retrieval.py --tag baseline
-    python eval_iltur_retrieval.py --sample-size 20 --tag smoke     # quick check
+    python eval_iltur_retrieval.py --tag baseline                    # test, all systems
+    python eval_iltur_retrieval.py --split dev --skip-statutes       # fast precedent tuning
+    python eval_iltur_retrieval.py --sample-size 20 --tag smoke
 """
 
 import argparse
@@ -42,9 +48,11 @@ from app.metrics.iltur_eval import (  # noqa: E402
 )
 from app.metrics.iltur_loader import decode_labels, label_names, sample_iltur_cases  # noqa: E402
 from app.tools.legal_retrieval import retrieve_statutes  # noqa: E402
+from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections  # noqa: E402
 from app.tools.unified_legal_rag import get_unified_rag_system  # noqa: E402
 
 KS = (1, 3, 5, 10)
+SAVED_DEPTH = 30
 
 
 def is_ipc_or_crpc(act_name: str) -> bool:
@@ -65,8 +73,7 @@ def git_commit() -> str:
         return "unknown"
 
 
-async def rank_case(row, args):
-    sentences = row["text"] if isinstance(row["text"], list) else [row["text"]]
+async def rank_statutes(sentences, args):
     windows = fact_windows(
         sentences, window=args.window, stride=args.stride, max_windows=args.max_windows
     )
@@ -81,55 +88,90 @@ async def rank_case(row, args):
             if key and key not in ranking:
                 ranking.append(key)
         rankings.append(ranking)
-    return rrf_fuse(rankings), len(windows)
+    return rrf_fuse(rankings)
+
+
+async def rank_precedent(row, sentences, args):
+    exclude = None if args.split == "test" else [str(row["id"])]
+    voted = await retrieve_precedent_sections(
+        sentences, k=args.precedent_k, power=args.precedent_power, exclude_case_ids=exclude
+    )
+    return [section for section, _score in voted]
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("--split", choices=["test", "dev"], default="test")
     parser.add_argument("--sample-size", type=int, default=300)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--window", type=int, default=4, help="sentences per window")
     parser.add_argument("--stride", type=int, default=3)
     parser.add_argument("--max-windows", type=int, default=8)
-    parser.add_argument("--k-window", type=int, default=10, help="retrieval depth per window")
+    parser.add_argument("--k-window", type=int, default=10, help="statute retrieval depth per window")
+    parser.add_argument("--precedent-k", type=int, default=30, help="neighbour windows per query window")
+    parser.add_argument("--precedent-power", type=float, default=4.0, help="similarity exponent for votes")
+    parser.add_argument("--fusion-weights", type=float, nargs=2, default=[1.0, 1.0], metavar=("STATUTE", "PRECEDENT"))
+    parser.add_argument("--skip-statutes", action="store_true", help="precedent only (fast; for tuning)")
     parser.add_argument("--tag", default="run")
     args = parser.parse_args()
 
-    rag = get_unified_rag_system()
-    if not await rag.initialize():
-        sys.exit("FATAL: unified RAG failed to initialize")
+    use_precedent = get_precedent_index().available
+    if not use_precedent:
+        print("[precedent] index not built — evaluating statutes only")
+    use_statutes = not args.skip_statutes
+    if not use_statutes and not use_precedent:
+        sys.exit("nothing to evaluate")
 
     names = label_names()
-    all_labels = decode_labels(list(range(len(names))), names)
-    indexed_numbers = [
-        section_key(c.section_number) for c in rag._chunks.values() if is_ipc_or_crpc(c.act_name)
-    ]
-    coverage = label_coverage(all_labels, indexed_numbers)
-    print(
-        f"[coverage] {coverage['covered']}/{coverage['labels']} IL-TUR label sections "
-        f"resolvable in the index; missing: {coverage['missing']}"
-    )
+    coverage = None
+    if use_statutes:
+        rag = get_unified_rag_system()
+        if not await rag.initialize():
+            sys.exit("FATAL: unified RAG failed to initialize")
+        indexed_numbers = [
+            section_key(c.section_number) for c in rag._chunks.values() if is_ipc_or_crpc(c.act_name)
+        ]
+        coverage = label_coverage(decode_labels(list(range(len(names))), names), indexed_numbers)
+        print(
+            f"[coverage] {coverage['covered']}/{coverage['labels']} IL-TUR label sections "
+            f"resolvable in the index; missing: {coverage['missing']}"
+        )
 
-    rows = sample_iltur_cases(args.sample_size, seed=args.seed)
-    per_case, details, gold_sizes = [], [], []
+    rows = sample_iltur_cases(args.sample_size, seed=args.seed, split=args.split)
+    per_system = {}
+    details = []
+    gold_sizes = []
     started = time.time()
     for i, row in enumerate(rows, start=1):
+        sentences = row["text"] if isinstance(row["text"], list) else [row["text"]]
         gold = decode_labels(row["labels"], names)
-        ranked, n_windows = await rank_case(row, args)
-        metrics = case_metrics(ranked, gold, ks=KS)
-        per_case.append(metrics)
         gold_sizes.append(len(gold))
-        details.append(
-            {"id": row.get("id"), "gold": gold, "windows": n_windows, "top10": ranked[:10], **metrics}
-        )
-        if i % 10 == 0 or i == len(rows):
-            elapsed = time.time() - started
-            print(
-                f"[{i}/{len(rows)}] {elapsed:.0f}s elapsed, "
-                f"hit@5 so far {sum(c['hit@5'] for c in per_case) / i:.3f}"
+
+        ranks = {}
+        if use_statutes:
+            ranks["statutes"] = await rank_statutes(sentences, args)
+        if use_precedent:
+            ranks["precedent"] = await rank_precedent(row, sentences, args)
+        if len(ranks) == 2:
+            ranks["fused"] = rrf_fuse(
+                [ranks["statutes"], ranks["precedent"]], weights=args.fusion_weights
             )
 
-    summary = aggregate(per_case, gold_sizes, ks=KS)
+        entry = {"id": row.get("id"), "gold": gold}
+        for system, ranked in ranks.items():
+            metrics = case_metrics(ranked, gold, ks=KS)
+            per_system.setdefault(system, []).append(metrics)
+            entry[system] = {"top10": ranked[:10], **metrics}
+        entry["saved_rankings"] = {s: r[:SAVED_DEPTH] for s, r in ranks.items() if s != "fused"}
+        details.append(entry)
+
+        if i % 10 == 0 or i == len(rows):
+            progress = " ".join(
+                f"{s}={sum(c['hit@5'] for c in m) / i:.3f}" for s, m in per_system.items()
+            )
+            print(f"[{i}/{len(rows)}] {time.time() - started:.0f}s  hit@5: {progress}")
+
+    summary = {s: aggregate(m, gold_sizes, ks=KS) for s, m in per_system.items()}
     report = {
         "tag": args.tag,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -140,18 +182,20 @@ async def main() -> None:
         "cases": details,
     }
 
-    print("\n" + "=" * 60)
-    print(f" IL-TUR retrieval ({args.tag}) — n={summary['n']} seed={args.seed}")
-    print("=" * 60)
-    for k in KS:
+    n = len(rows)
+    print("\n" + "=" * 72)
+    print(f" IL-TUR retrieval ({args.tag}) — {args.split} n={n} seed={args.seed}")
+    print("=" * 72)
+    print(f"  {'system':<10}" + "".join(f"hit@{k:<3}" for k in KS) + "  MRR    F1@5   recall@10")
+    for system, agg in summary.items():
         print(
-            f"  @{k:<2} hit {summary[f'hit@{k}']:.3f}  recall {summary[f'recall@{k}']:.3f}"
-            f"  micro-F1 {summary[f'micro_f1@{k}']:.3f}"
+            f"  {system:<10}"
+            + "".join(f"{agg[f'hit@{k}']:<7.3f}" for k in KS)
+            + f"  {agg['mrr']:<6.3f} {agg['micro_f1@5']:<6.3f} {agg['recall@10']:.3f}"
         )
-    print(f"  MRR {summary['mrr']:.3f}")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name = f"iltur_retrieval_{args.tag}_{stamp}.json"
+    name = f"iltur_retrieval_{args.tag}_{args.split}_{stamp}.json"
     out_dirs = [_SERVER_DIR / "results"]
     if corpus_available():
         out_dirs.append(corpus_path("builds", "eval"))

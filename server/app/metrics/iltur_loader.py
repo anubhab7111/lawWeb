@@ -52,26 +52,39 @@ def _load_iltur_lsi():
     return ds
 
 
-def load_iltur_lsi_test_split():
-    return _load_iltur_lsi()["test"]
-
-
 @lru_cache(maxsize=1)
 def _statute_section_numbers() -> List[str]:
     """Row i of the `statutes` split is the statute that label index i refers to."""
     return [_section_number(row["id"]) for row in _load_iltur_lsi()["statutes"]]
 
 
-def sample_iltur_cases(n: int = 20, seed: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Randomly sample n rows from the IL-TUR lsi test split.
+def load_iltur_lsi_split(split: str = "test"):
+    """One IL-TUR `lsi` split (train / dev / test / statutes)."""
+    ds = _load_iltur_lsi()
+    if split not in ds:
+        raise RuntimeError(
+            f"IL-TUR '{DATASET_CONFIG}' config has no '{split}' split "
+            f"(found: {list(ds.keys())})."
+        )
+    return ds[split]
+
+
+def load_iltur_lsi_test_split():
+    return load_iltur_lsi_split("test")
+
+
+def sample_iltur_cases(
+    n: int = 20, seed: Optional[int] = None, split: str = "test"
+) -> List[Dict[str, Any]]:
+    """Randomly sample n rows from an IL-TUR lsi split (default: test).
 
     seed=None (default) draws a fresh random sample every call. Pass a seed
     for a reproducible sample across runs.
     """
-    test_split = load_iltur_lsi_test_split()
+    rows = load_iltur_lsi_split(split)
     rng = random.Random(seed)
-    indices = rng.sample(range(len(test_split)), min(n, len(test_split)))
-    return [test_split[i] for i in indices]
+    indices = rng.sample(range(len(rows)), min(n, len(rows)))
+    return [rows[i] for i in indices]
 
 
 def iltur_case_to_prompt(row: Dict[str, Any]) -> str:

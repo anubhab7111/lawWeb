@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 _ENTITY_RE = re.compile(r"<ENTITY>")
 _LEADING_PARA_RE = re.compile(r"^\s*\d+\s*[.)]\s*")
@@ -51,12 +51,18 @@ def fact_windows(
     return [" ".join(cleaned[s : s + window]) for s in starts]
 
 
-def rrf_fuse(rankings: Iterable[Sequence[str]], k: int = RRF_K) -> List[str]:
-    """Reciprocal-rank fusion of per-window section rankings."""
+def rrf_fuse(
+    rankings: Iterable[Sequence[str]],
+    k: int = RRF_K,
+    weights: Optional[Sequence[float]] = None,
+) -> List[str]:
+    """Reciprocal-rank fusion of rankings (per-window, or per-system when
+    combining statute and precedent evidence), optionally weighted."""
     scores: Dict[str, float] = defaultdict(float)
-    for ranking in rankings:
+    for i, ranking in enumerate(rankings):
+        weight = weights[i] if weights is not None else 1.0
         for rank, item in enumerate(ranking, start=1):
-            scores[item] += 1.0 / (k + rank)
+            scores[item] += weight / (k + rank)
     return [item for item, _ in sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
