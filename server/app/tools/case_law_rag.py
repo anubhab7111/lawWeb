@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from app.ingest.paths import case_law_dir
 from app.tools.base_legal_rag import (
     file_fingerprint,
     _bm25_tokenize,
@@ -34,7 +35,7 @@ from app.tools.base_legal_rag import (
     _sigmoid,
 )
 
-CASE_LAW_DIR = Path(__file__).resolve().parent.parent / "data" / "case_law"
+CASE_LAW_DIR = case_law_dir()
 FAISS_DIR = Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "case_law"
 
 # Composite reranking weights — must sum to 1.0. Semantic similarity still
@@ -309,6 +310,12 @@ class CaseLawRAGSystem:
 
         if meta.get("embedding_model") != get_settings().embedding_model:
             return True
+        if not CASE_LAW_DIR.is_dir():
+            print(
+                f"[case_law] Source cases unavailable ({CASE_LAW_DIR}) — "
+                f"serving the existing index without a staleness check."
+            )
+            return False
         return stored_fingerprint != self._current_case_fingerprint()
 
     @staticmethod

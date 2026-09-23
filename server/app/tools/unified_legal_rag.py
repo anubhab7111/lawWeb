@@ -100,7 +100,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
     # window chunking instead of the section parser.
     PROSE_DIRS = ("notifications", "explanatory", "mappings", "rules", "guides")
 
-    def __init__(self, data_dir: str = "app/data"):
+    def __init__(self, data_dir: Optional[str] = None):
         super().__init__(data_dir=data_dir)
         self._domain_parsers: Dict[str, BaseLegalRAGSystem] = {}
 
@@ -131,9 +131,9 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
                 continue  # skip files not inside a domain subdirectory
             located.append((pdf, rel.parts[0]))
 
-        # Prose corpora live beside bare_acts/ under data_dir
+        # Prose corpora live beside bare_acts/ under the statutes dir
         for domain in self.PROSE_DIRS:
-            prose_dir = self.data_dir / domain
+            prose_dir = self._statutes_dir / domain
             if prose_dir.exists():
                 for pdf in sorted(prose_dir.rglob("*.pdf")):
                     located.append((pdf, domain))
@@ -253,7 +253,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
     def _current_pdf_fingerprint(self) -> Dict[str, str]:
         fingerprint = super()._current_pdf_fingerprint()
         for domain in self.PROSE_DIRS:
-            prose_dir = self.data_dir / domain
+            prose_dir = self._statutes_dir / domain
             if prose_dir.exists():
                 for pdf in prose_dir.rglob("*.pdf"):
                     fingerprint[f"{domain}/{pdf.relative_to(prose_dir)}"] = (

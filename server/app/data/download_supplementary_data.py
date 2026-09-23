@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import io
 import logging
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,7 +49,10 @@ from pathlib import Path
 import httpx
 from pypdf import PdfReader
 
-BASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from app.ingest.paths import statutes_dir  # noqa: E402
+
+BASE_DIR = statutes_dir()
 
 HEADERS = {
     "User-Agent": (

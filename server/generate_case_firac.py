@@ -34,9 +34,10 @@ os.chdir(_SERVER_DIR)
 from langchain_ollama import ChatOllama
 
 from app.config import get_settings
+from app.ingest.paths import case_law_dir
 from app.tools.case_firac_extractor import extract_case_firac
 
-CASE_LAW_DIR = _SERVER_DIR / "app" / "data" / "case_law"
+CASE_LAW_DIR = case_law_dir()
 
 
 def _build_llm() -> ChatOllama:
