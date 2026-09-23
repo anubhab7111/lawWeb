@@ -11,6 +11,7 @@ HUGGINGFACE_TOKEN in server/.env before using this module.
 
 import random
 import re
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from app.config import get_settings
@@ -25,8 +26,9 @@ _PROMPT_TEMPLATE = (
 )
 
 
-def load_iltur_lsi_test_split():
-    """Download (or use the cached copy of) the IL-TUR `lsi` test split."""
+@lru_cache(maxsize=1)
+def _load_iltur_lsi():
+    """Download (or use the cached copy of) the IL-TUR `lsi` DatasetDict."""
     try:
         from datasets import load_dataset
     except ImportError as e:
@@ -41,12 +43,23 @@ def load_iltur_lsi_test_split():
             "accept its license on HuggingFace and set HUGGINGFACE_TOKEN in server/.env."
         ) from e
 
-    if "test" not in ds:
-        raise RuntimeError(
-            f"IL-TUR '{DATASET_CONFIG}' config has no 'test' split "
-            f"(found: {list(ds.keys())})."
-        )
-    return ds["test"]
+    for split in ("test", "statutes"):
+        if split not in ds:
+            raise RuntimeError(
+                f"IL-TUR '{DATASET_CONFIG}' config has no '{split}' split "
+                f"(found: {list(ds.keys())})."
+            )
+    return ds
+
+
+def load_iltur_lsi_test_split():
+    return _load_iltur_lsi()["test"]
+
+
+@lru_cache(maxsize=1)
+def _statute_section_numbers() -> List[str]:
+    """Row i of the `statutes` split is the statute that label index i refers to."""
+    return [_section_number(row["id"]) for row in _load_iltur_lsi()["statutes"]]
 
 
 def sample_iltur_cases(n: int = 20, seed: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -70,7 +83,7 @@ def iltur_case_to_prompt(row: Dict[str, Any]) -> str:
 
 
 def _section_number(label: Any) -> str:
-    """"IPC_302" / "Section 302" / 302 -> "302" (the index matches on numbers)."""
+    """"Section 302" / "Section 120B" -> "302" / "120B" (the index matches on numbers)."""
     match = re.search(r"\d+[A-Za-z]{0,2}", str(label))
     return match.group(0).upper() if match else str(label)
 
@@ -85,7 +98,8 @@ def iltur_case_to_ground_truth(row: Dict[str, Any], prompt: str) -> GroundTruthE
     ground truth, same as any other query MetricsEvaluator can't find a
     reference answer for.
     """
-    sections = [_section_number(s) for s in row["labels"]]
+    statutes = _statute_section_numbers()
+    sections = [statutes[i] for i in row["labels"]]
     return GroundTruthEntry(
         query=prompt,
         relevant_ipc_sections=[],
