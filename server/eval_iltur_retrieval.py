@@ -55,9 +55,11 @@ KS = (1, 3, 5, 10)
 SAVED_DEPTH = 30
 
 
-def is_ipc_or_crpc(act_name: str) -> bool:
+def is_ipc(act_name: str) -> bool:
+    """IL-TUR lsi labels are IPC sections only (verified: every label's statute
+    text matches the IPC provision), so only IPC chunks can score."""
     name = act_name.lower()
-    return "penal code" in name or "criminal procedure" in name
+    return "penal code" in name and "bharatiya" not in name
 
 
 def section_key(section_number: str) -> str:
@@ -82,7 +84,7 @@ async def rank_statutes(sentences, args):
         result, _parsed = await retrieve_statutes(window, k=args.k_window)
         ranking = []
         for chunk in result.chunks:
-            if not is_ipc_or_crpc(chunk.act_name):
+            if not is_ipc(chunk.act_name):
                 continue
             key = section_key(chunk.section_number)
             if key and key not in ranking:
@@ -129,7 +131,7 @@ async def main() -> None:
         if not await rag.initialize():
             sys.exit("FATAL: unified RAG failed to initialize")
         indexed_numbers = [
-            section_key(c.section_number) for c in rag._chunks.values() if is_ipc_or_crpc(c.act_name)
+            section_key(c.section_number) for c in rag._chunks.values() if is_ipc(c.act_name)
         ]
         coverage = label_coverage(decode_labels(list(range(len(names))), names), indexed_numbers)
         print(
