@@ -203,10 +203,11 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     # Free-tier model; check https://openrouter.ai/models?max_price=0 for the
     # current catalog since free model availability rotates. openai/gpt-oss-20b:free
-    # was retired (now 404s, paid-only) as of 2026-08-31; switched to
-    # minimax/minimax-m2.7:free, verified against the actual RAG-triad judge
-    # prompt to return clean single-line JSON with no reasoning-preamble leakage.
-    openrouter_model: str = "minimax/minimax-m2.7:free"
+    # was retired (now 404s, paid-only) as of 2026-08-31, and minimax-m2.7:free
+    # has since dropped off the free list too. nemotron-3-super-120b was checked
+    # (2026-09-23) against the RAG-triad judge prompt: it parsed cleanly and
+    # scored a grounded answer 1.0 vs an irrelevant one 0.0 on faithfulness.
+    openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     # OpenRouter free models: 20 req/min, 50 req/day (1000/day once the
     # account has $10+ in lifetime credit purchases). Bump via env var
