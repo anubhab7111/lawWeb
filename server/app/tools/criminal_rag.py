@@ -325,6 +325,16 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         "prevention_of_money_laundering_act_pmla_2002",
     }
 
+    # The penal codes are still filtered at answer time (retrieve_sections), but
+    # their non-chargeable sections must be *indexed*: general provisions and
+    # definitions (IPC 34 common intention, 149, 107/109 abetment, 299/300,
+    # 375) are what case-fact statute identification cites most, and are
+    # otherwise unretrievable. has_punishment stays on each chunk.
+    INDEX_ALL_SECTIONS = {
+        "indian_penal_code_1860",
+        "bharatiya_nyaya_sanhita_bns_2023",
+    }
+
     @property
     def domain_name(self) -> str:
         return "criminal"
@@ -352,7 +362,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         base_chunks = super()._parse_legal_sections(full_text, source_file)
 
         stem = Path(source_file).stem.lower()
-        if stem not in self.PUNISHMENT_FILTERED_ACTS:
+        if stem not in self.PUNISHMENT_FILTERED_ACTS or stem in self.INDEX_ALL_SECTIONS:
             return base_chunks
 
         # Apply criminal-specific filter: only index sections with punishment

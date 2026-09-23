@@ -898,8 +898,9 @@ class BaseLegalRAGSystem(ABC):
         # Match  "  10.  What agreements are contracts"  style headers.
         # \s* (not \s+) after the number: some Acts (e.g. BNS 2023) run the
         # subsection straight on, e.g. "103.(1) Whoever commits murder...".
-        # An optional "N[" prefix is tolerated: amended sections are often
-        # annotated with a footnote-bracket marker, e.g. "3[226. Power of...".
+        # An optional "N[" or "N*[" prefix is tolerated: amended sections are
+        # often annotated with a footnote-bracket marker, e.g. "3[226. Power
+        # of..." or "6*[366A. Procuration of minor girl".
         # The title may also terminate at end-of-line: several bare-act PDFs
         # (e.g. Consumer Protection Act 2019) run the section body straight
         # on and the first sentence wraps before any period, which otherwise
@@ -907,7 +908,7 @@ class BaseLegalRAGSystem(ABC):
         # too as a result, but the chunk-id dedup below already prefers the
         # longest clean candidate, so the body wins over the TOC entry.
         header_pattern = re.compile(
-            r"\n\s*(?:\d+\[)?(\d{1,3}[A-Z]{0,2})\.\s*([^.\n\u2014]{3,}?)(?:[.\u2014]|(?=\n))\s*",
+            r"\n\s*(?:\d+\*?\[)?(\d{1,3}[A-Z]{0,2})\.\s*([^.\n\u2014]{3,}?)(?:[.\u2014]|(?=\n))\s*",
             re.MULTILINE,
         )
         matches = list(header_pattern.finditer(search_text))
