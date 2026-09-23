@@ -995,9 +995,10 @@ class BaseLegalRAGSystem(ABC):
 
         if meta.get("embedding_model") != get_settings().embedding_model:
             return True
-        if not self._bare_acts_dir.is_dir():
+        if not any(self._bare_acts_dir.rglob("*.pdf")):
             # Sources live on a removable drive; a query-serving process must
-            # never try to rebuild just because it isn't mounted.
+            # never try to rebuild just because it isn't mounted (an empty
+            # leftover directory counts as unmounted too).
             print(
                 f"[{self.domain_name}] Source PDFs unavailable ({self._bare_acts_dir}) "
                 f"— serving the existing index without a staleness check."

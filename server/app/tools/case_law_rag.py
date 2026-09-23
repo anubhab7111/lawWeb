@@ -310,7 +310,7 @@ class CaseLawRAGSystem:
 
         if meta.get("embedding_model") != get_settings().embedding_model:
             return True
-        if not CASE_LAW_DIR.is_dir():
+        if not any(CASE_LAW_DIR.glob("*.json")):
             print(
                 f"[case_law] Source cases unavailable ({CASE_LAW_DIR}) — "
                 f"serving the existing index without a staleness check."
