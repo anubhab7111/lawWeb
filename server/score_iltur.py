@@ -12,6 +12,12 @@ Systems:
   precedent   similar past IL-TUR train+dev cases vote for their labels
               (dev cases are masked out of the index when scoring dev)
 
+Robustness variants of precedent (written as their own systems):
+  --memory train        mask every dev case: train-only memory, like the paper's
+                        baselines, which learned from the train split alone
+  --exclude-overlap F   also mask, per case, every indexed case sharing at least a
+                        fraction F of its 10-word shingles (near-duplicate facts)
+
 Usage (from server/):
     EMBEDDINGS_DEVICE=cuda python score_iltur.py precedent --split dev
     EMBEDDINGS_DEVICE=cuda python score_iltur.py precedent --split test
@@ -72,7 +78,7 @@ def gold_labels(split: str) -> Dict[str, List[str]]:
 class PrecedentScorer:
     """Batched precedent voting over exact label names."""
 
-    def __init__(self, split: str, device: str):
+    def __init__(self, split: str, device: str, memory: str = "all", overlap=None):
         from app.tools.base_legal_rag import _make_bge_embeddings
 
         self.index = pr.get_precedent_index()
@@ -86,6 +92,12 @@ class PrecedentScorer:
         self.case_labels = [id_to_names[cid] for cid in self.index.case_ids]
         self.lookup = {cid: i for i, cid in enumerate(self.index.case_ids)}
         self.mask_self = split != "test"
+        self.always_masked = set()
+        if memory == "train":
+            dev_ids = pd.read_parquet(lsi_dir() / "dev.parquet", columns=["id"])["id"].astype(str)
+            self.always_masked = {self.lookup[c] for c in dev_ids if c in self.lookup}
+        # per-case masks: case id -> indexed case ids sharing too much text
+        self.overlap = {cid: {self.lookup[o] for o in others if o in self.lookup} for cid, others in (overlap or {}).items()}
         emb = _make_bge_embeddings(device)
         emb.client.max_seq_length = 256
         if device == "cuda":
@@ -99,15 +111,40 @@ class PrecedentScorer:
             windows.extend(w)
             owner.extend([i] * len(w))
         vecs = pr.encode_texts(self.emb, windows, batch_size=128)
-        extra = k if self.mask_self else 0
+        extra = (k if self.mask_self else 0) + (3 * k if self.always_masked or self.overlap else 0)
         sims, cases = self.index.search(vecs, k, extra=extra)
         owner = np.asarray(owner)
         out = {}
         for i, cid in enumerate(rows["id"]):
             sel = owner == i
-            exclude = {self.lookup[cid]} if self.mask_self and cid in self.lookup else None
-            out[cid] = pr.vote_labels(sims[sel], cases[sel], self.case_labels, exclude, power) if sel.any() else {}
+            exclude = set(self.always_masked) | self.overlap.get(cid, set())
+            if self.mask_self and cid in self.lookup:
+                exclude.add(self.lookup[cid])
+            out[cid] = pr.vote_labels(sims[sel], cases[sel], self.case_labels, exclude or None, power) if sel.any() else {}
         return out
+
+
+def overlap_map(split: str, fraction: float) -> Dict[str, List[str]]:
+    """case id -> train/dev case ids sharing >= fraction of its 10-word shingles (cached)."""
+    from app.ingest.decontaminate import TestShingles, contaminated_cases, tokenize
+
+    path = corpus_path("builds", "scores", f"overlap_{split}_{fraction}.pkl")
+    if path.exists():
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    memory = pd.concat([pd.read_parquet(lsi_dir() / f"{s}.parquet", columns=["id", "sentences"]) for s in ("train", "dev")])
+    index = TestShingles.from_texts({str(r.id): " ".join(r.sentences) for r in memory.itertuples()})
+    out = {}
+    for r in load_split(split).itertuples():
+        toks = tokenize(" ".join(r.sentences))
+        need = max(1, int(fraction * max(len(toks) - 9, 1)))
+        hits = contaminated_cases(index, toks, min_shingles=need)
+        hits.pop(str(r.id), None)
+        if hits:
+            out[str(r.id)] = list(hits)
+    with open(path, "wb") as f:
+        pickle.dump(out, f)
+    return out
 
 
 def main() -> None:
@@ -116,14 +153,24 @@ def main() -> None:
     parser.add_argument("--split", choices=["train", "dev", "test"], required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--limit", type=int, help="first N cases only (smoke test)")
+    parser.add_argument("--memory", choices=["all", "train"], default="all")
+    parser.add_argument("--exclude-overlap", type=float)
     args = parser.parse_args()
+    system = args.system
+    if args.memory == "train":
+        system += "_trainmem"
+    if args.exclude_overlap:
+        system += f"_strict{int(args.exclude_overlap * 100)}"
 
     df = load_split(args.split)
     if args.limit:
         df = df.head(args.limit)
-    out_dir = shard_dir(args.system, args.split)
+    out_dir = shard_dir(system, args.split)
     out_dir.mkdir(parents=True, exist_ok=True)
-    scorer = PrecedentScorer(args.split, args.device)
+    overlap = overlap_map(args.split, args.exclude_overlap) if args.exclude_overlap else None
+    if overlap is not None:
+        print(f"[{system}/{args.split}] {len(overlap)} cases have near-duplicate indexed cases (masked)", flush=True)
+    scorer = PrecedentScorer(args.split, args.device, memory=args.memory, overlap=overlap)
 
     started = time.time()
     n_shards = (len(df) + SHARD - 1) // SHARD
@@ -137,8 +184,8 @@ def main() -> None:
         with open(tmp, "wb") as f:
             pickle.dump(scores, f)
         tmp.rename(path)
-        print(f"[{args.system}/{args.split}] shard {s + 1}/{n_shards} ({time.time() - started:.0f}s)", flush=True)
-    print(f"[{args.system}/{args.split}] done: {len(load_scores(args.system, args.split))} cases")
+        print(f"[{system}/{args.split}] shard {s + 1}/{n_shards} ({time.time() - started:.0f}s)", flush=True)
+    print(f"[{system}/{args.split}] done: {len(load_scores(system, args.split))} cases")
 
 
 if __name__ == "__main__":
