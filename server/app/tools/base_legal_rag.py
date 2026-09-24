@@ -157,6 +157,45 @@ def _schedule_boundary(full_text: str) -> Optional[int]:
     return m.start() if m else None
 
 
+RERANK_TEXT_CHARS = 1800
+_BLEND_K = 10
+
+
+def _rerank_text(chunk: "LegalChunk") -> str:
+    sec = chunk.section_number
+    label = sec if sec.lower().startswith(("article", "part")) else f"Section {sec}"
+    return f"{chunk.act_name}, {label}: {chunk.title}. {chunk.text[:RERANK_TEXT_CHARS]}"
+
+
+def get_settings_blend() -> float:
+    from app.config import get_settings
+
+    return get_settings().rerank_blend
+
+
+def blend_rerank_order(
+    scored: List[Tuple[str, float]], fused_order: List[str], weight: float
+) -> List[Tuple[str, float]]:
+    """Order reranked candidates by a weighted reciprocal-rank blend of the
+    cross-encoder's order and the fused retrieval order.
+
+    weight 1.0 = pure cross-encoder order; 0.0 = fused order. A cross-encoder is
+    strong at the top but can bury a candidate both retrievers agreed on; the blend
+    keeps that evidence. Scores stay the cross-encoder's relative ones (used for
+    filtering); only the order changes.
+    """
+    by_rerank = sorted(scored, key=lambda pair: pair[1], reverse=True)
+    if weight >= 1.0:
+        return by_rerank
+    rerank_rank = {cid: r for r, (cid, _s) in enumerate(by_rerank)}
+    fused_rank = {cid: r for r, cid in enumerate(fused_order)}
+    blended = {
+        cid: weight / (_BLEND_K + rerank_rank[cid]) + (1 - weight) / (_BLEND_K + fused_rank.get(cid, len(fused_order)))
+        for cid, _s in scored
+    }
+    return sorted(scored, key=lambda pair: blended[pair[0]], reverse=True)
+
+
 def _is_noise_match(title: str, raw: str) -> bool:
     """True if a candidate section/article match looks like a footnote or a
     Schedule paragraph rather than genuine section/article body text."""
@@ -778,10 +817,9 @@ class BaseLegalRAGSystem(ABC):
         reranker = await _get_shared_reranker() if use_reranker else None
         if reranker is not None:
             try:
-                pairs = [
-                    (rerank_query, self._chunks[cid].text[:2000])
-                    for cid in candidates
-                ]
+                # Same header the embedder sees: without it a section body like
+                # "whoever does X shall be punished..." doesn't say which law it is.
+                pairs = [(rerank_query, _rerank_text(self._chunks[cid])) for cid in candidates]
                 logits = await loop.run_in_executor(
                     None, lambda: reranker.predict(pairs, batch_size=16)
                 )
@@ -797,7 +835,7 @@ class BaseLegalRAGSystem(ABC):
                         for cid, prob in zip(candidates, raw)
                         if prob >= RERANK_GARBAGE_FLOOR
                     ]
-                    scored.sort(key=lambda pair: pair[1], reverse=True)
+                    scored = blend_rerank_order(scored, candidates, get_settings_blend())
                 # else: nothing plausibly relevant — fall back to fused order
             except Exception as e:
                 print(f"[{self.domain_name}] Rerank failed ({e}) — using fused order.")
