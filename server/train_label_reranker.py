@@ -41,6 +41,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_
 
 from app.ingest.iltur_export import lsi_dir  # noqa: E402
 from app.ingest.paths import corpus_path  # noqa: E402
+from app.ingest.thermal import ThermalGuard  # noqa: E402
 from app.metrics.iltur_loader import label_names  # noqa: E402
 from app.tools import label_reranker as lr  # noqa: E402
 from app.tools.statute_classifier import clean_facts  # noqa: E402
@@ -148,6 +149,7 @@ def main() -> None:
         print(f"[reranker] resumed at epoch {state['epoch'] + 1} micro-batch {state['micro']}", flush=True)
 
     model.train()
+    guard = ThermalGuard()
     started = time.time()
     for epoch in range(state["epoch"], args.epochs):
         for m, i in enumerate(range(0, len(pairs), args.micro)):
@@ -159,6 +161,7 @@ def main() -> None:
             with torch.autocast("cuda", dtype=torch.float16, enabled=device == "cuda"):
                 logits = model(**enc).logits.float().squeeze(-1)
             scaler.scale(loss_fn(logits, y) / args.accum).backward()
+            guard.step()
             if (m + 1) % args.accum == 0:
                 scaler.unscale_(optim)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

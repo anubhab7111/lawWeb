@@ -51,6 +51,7 @@ import pandas as pd  # noqa: E402
 
 from app.ingest.iltur_export import lsi_dir  # noqa: E402
 from app.ingest.paths import corpus_path  # noqa: E402
+from app.ingest.thermal import ThermalGuard  # noqa: E402
 from app.metrics.iltur_eval import fact_windows  # noqa: E402
 from app.metrics.iltur_loader import label_names  # noqa: E402
 from app.tools import precedent_rag as pr  # noqa: E402
@@ -248,6 +249,7 @@ def main() -> None:
     else:
         scorer = PrecedentScorer(args.split, args.device, memory=args.memory, overlap=overlap)
 
+    guard = ThermalGuard()
     started = time.time()
     n_shards = (len(df) + SHARD - 1) // SHARD
     for s in range(n_shards):
@@ -260,6 +262,7 @@ def main() -> None:
         with open(tmp, "wb") as f:
             pickle.dump(scores, f)
         tmp.rename(path)
+        guard.step()
         print(f"[{system}/{args.split}] shard {s + 1}/{n_shards} ({time.time() - started:.0f}s)", flush=True)
     print(f"[{system}/{args.split}] done: {len(load_scores(system, args.split))} cases")
 
