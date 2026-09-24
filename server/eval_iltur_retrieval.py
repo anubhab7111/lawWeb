@@ -10,7 +10,11 @@ label 482 is CrPC 482 quashing, 438 anticipatory bail), so scoring is by number:
   precedent  similar past IL-TUR train+dev cases voting for their sections
              (app/tools/precedent_rag.py)
   fused      weighted RRF of the two (statutes 0.25, precedent 1.0: tuned on dev)
-Reports Hit@k, Recall@k, MRR, micro-F1@k, plus label coverage of the index.
+  popularity no-input baseline: always the most frequent labels
+Reports Hit@k, MRR, nDCG@k, MAP, macro-F1@k (the metric IL-TUR's lsi task is scored
+with) and 95% bootstrap intervals. Hit@k and MRR are lenient here (about 4 gold labels
+per case, and one label in a third of them), so read every system against the
+popularity row: a system that doesn't beat it adds nothing.
 
 Tune on --split dev (each queried dev case is masked out of the precedent index);
 report on --split test, which is
@@ -43,8 +47,11 @@ load_dotenv(_SERVER_DIR / ".env")
 from app.ingest.paths import corpus_available, corpus_path  # noqa: E402
 from app.metrics.iltur_eval import (  # noqa: E402
     aggregate,
+    bootstrap_ci,
     case_metrics,
     label_coverage,
+    macro_f1,
+    popularity_ranking,
     rrf_fuse,
 )
 from app.metrics.iltur_loader import decode_labels, label_names, sample_iltur_cases  # noqa: E402
@@ -105,6 +112,7 @@ async def main() -> None:
     use_precedent = get_precedent_index().available
     if not use_precedent:
         print("[precedent] index not built — evaluating statutes only")
+    popularity = popularity_ranking(get_precedent_index().load_labels()) if use_precedent else []
     use_statutes = not args.skip_statutes
     if not use_statutes and not use_precedent:
         sys.exit("nothing to evaluate")
@@ -126,8 +134,10 @@ async def main() -> None:
 
     rows = sample_iltur_cases(args.sample_size, seed=args.seed, split=args.split)
     per_system = {}
+    all_ranked = {}
     details = []
     gold_sizes = []
+    golds = []
     started = time.time()
     for i, row in enumerate(rows, start=1):
         sentences = row["text"] if isinstance(row["text"], list) else [row["text"]]
@@ -135,11 +145,14 @@ async def main() -> None:
         gold_sizes.append(len(gold))
 
         ranks = {}
+        golds.append(gold)
         if use_statutes:
             ranks["statutes"] = await rank_statutes(sentences)
         if use_precedent:
             ranks["precedent"] = await rank_precedent(row, sentences, args)
-        if len(ranks) == 2:
+        if popularity:
+            ranks["popularity"] = popularity
+        if len(ranks) == 3:
             ranks["fused"] = rrf_fuse(
                 [ranks["statutes"], ranks["precedent"]], weights=args.fusion_weights
             )
@@ -149,6 +162,7 @@ async def main() -> None:
             metrics = case_metrics(ranked, gold, ks=KS)
             per_system.setdefault(system, []).append(metrics)
             entry[system] = {"top10": ranked[:10], **metrics}
+            all_ranked.setdefault(system, []).append(ranked)
         entry["saved_rankings"] = {s: r[:SAVED_DEPTH] for s, r in ranks.items() if s != "fused"}
         details.append(entry)
 
@@ -159,6 +173,11 @@ async def main() -> None:
             print(f"[{i}/{len(rows)}] {time.time() - started:.0f}s  hit@5: {progress}")
 
     summary = {s: aggregate(m, gold_sizes, ks=KS) for s, m in per_system.items()}
+    for system, agg in summary.items():
+        agg["macro_f1@3"] = macro_f1(all_ranked[system], golds, 3)
+        agg["macro_f1@5"] = macro_f1(all_ranked[system], golds, 5)
+        agg["hit@5_ci"] = bootstrap_ci([c["hit@5"] for c in per_system[system]])
+        agg["mrr_ci"] = bootstrap_ci([c["rr"] for c in per_system[system]])
     report = {
         "tag": args.tag,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -173,13 +192,14 @@ async def main() -> None:
     print("\n" + "=" * 72)
     print(f" IL-TUR retrieval ({args.tag}) — {args.split} n={n} seed={args.seed}")
     print("=" * 72)
-    print(f"  {'system':<10}" + "".join(f"hit@{k:<3}" for k in KS) + "  MRR    F1@5   recall@10")
+    print(f"  {'system':<11}hit@1   hit@5 [95% CI]      hit@10  MRR [95% CI]        nDCG@5  MAP    macroF1@5")
     for system, agg in summary.items():
+        h, m = agg["hit@5_ci"], agg["mrr_ci"]
         print(
-            f"  {system:<10}"
-            + "".join(f"{agg[f'hit@{k}']:<7.3f}" for k in KS)
-            + f"  {agg['mrr']:<6.3f} {agg['micro_f1@5']:<6.3f} {agg['recall@10']:.3f}"
+            f"  {system:<11}{agg['hit@1']:<8.3f}{agg['hit@5']:.3f} [{h[0]:.3f},{h[1]:.3f}]  {agg['hit@10']:<7.3f}"
+            f"{agg['mrr']:.3f} [{m[0]:.3f},{m[1]:.3f}]  {agg['ndcg@5']:<7.3f}{agg['map']:<7.3f}{agg['macro_f1@5']:.3f}"
         )
+    print("  (popularity = no-input baseline; a system must beat it to add value)")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     name = f"iltur_retrieval_{args.tag}_{args.split}_{stamp}.json"

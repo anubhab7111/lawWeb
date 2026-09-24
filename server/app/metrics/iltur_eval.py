@@ -10,6 +10,8 @@ counts as found if a retrieved IPC provision has that number.
 
 from __future__ import annotations
 
+import math
+import random
 import re
 from collections import defaultdict
 from typing import Dict, Iterable, List, Optional, Sequence
@@ -79,7 +81,64 @@ def case_metrics(ranked: Sequence[str], gold: Sequence[str], ks=(1, 3, 5, 10)) -
     out["rr"] = next(
         (1.0 / r for r, item in enumerate(ranked, start=1) if item in gold_set), 0.0
     )
+    for k in ks:
+        out[f"ndcg@{k}"] = ndcg_at_k(ranked, gold_set, k)
+    out["ap"] = average_precision(ranked, gold_set)
     return out
+
+
+def ndcg_at_k(ranked: Sequence[str], gold: Iterable[str], k: int) -> float:
+    """Binary-relevance nDCG@k: rewards putting gold labels early, not just anywhere."""
+    gold_set = set(gold)
+    dcg = sum(1.0 / math.log2(i + 1) for i, r in enumerate(ranked[:k], start=1) if r in gold_set)
+    ideal = sum(1.0 / math.log2(i + 1) for i in range(1, min(len(gold_set), k) + 1))
+    return dcg / ideal if ideal else 0.0
+
+
+def average_precision(ranked: Sequence[str], gold: Iterable[str]) -> float:
+    gold_set = set(gold)
+    found, total = 0, 0.0
+    for i, r in enumerate(ranked, start=1):
+        if r in gold_set:
+            found += 1
+            total += found / i
+    return total / len(gold_set) if gold_set else 0.0
+
+
+def macro_f1(rankings: Sequence[Sequence[str]], golds: Sequence[Sequence[str]], k: int) -> float:
+    """Macro-F1 over labels when each case predicts its top-k set — the metric
+    IL-TUR's lsi task is scored with (there from a classifier's label sets), which
+    weights every label equally, so a system that only predicts popular labels
+    scores near zero."""
+    tp: dict = defaultdict(int)
+    fp: dict = defaultdict(int)
+    fn: dict = defaultdict(int)
+    for ranked, gold in zip(rankings, golds):
+        pred, gold_set = set(ranked[:k]), set(gold)
+        for label in pred | gold_set:
+            tp[label] += label in pred and label in gold_set
+            fp[label] += label in pred and label not in gold_set
+            fn[label] += label not in pred and label in gold_set
+    labels = set(tp) | set(fp) | set(fn)
+    f1 = [2 * tp[l] / (2 * tp[l] + fp[l] + fn[l]) if (2 * tp[l] + fp[l] + fn[l]) else 0.0 for l in labels]
+    return sum(f1) / len(f1) if f1 else 0.0
+
+
+def bootstrap_ci(values: Sequence[float], n: int = 2000, seed: int = 1):
+    """95% percentile-bootstrap interval of the mean."""
+    rng = random.Random(seed)
+    means = sorted(sum(rng.choices(values, k=len(values))) / len(values) for _ in range(n))
+    return means[int(0.025 * n)], means[int(0.975 * n) - 1]
+
+
+def popularity_ranking(case_labels: Iterable[Sequence[str]], depth: int = 30) -> List[str]:
+    """Labels ordered by how many cases carry them: the no-input baseline any system
+    has to beat before its retrieval can be said to add anything."""
+    counts: dict = defaultdict(int)
+    for labels in case_labels:
+        for label in set(labels):
+            counts[label] += 1
+    return [l for l, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))][:depth]
 
 
 def aggregate(per_case: Sequence[Dict], gold_sizes: Sequence[int], ks=(1, 3, 5, 10)):
@@ -99,6 +158,8 @@ def aggregate(per_case: Sequence[Dict], gold_sizes: Sequence[int], ks=(1, 3, 5, 
         agg[f"micro_f1@{k}"] = (
             2 * precision * recall / (precision + recall) if precision + recall else 0.0
         )
+        agg[f"ndcg@{k}"] = sum(c[f"ndcg@{k}"] for c in per_case) / n
+    agg["map"] = sum(c["ap"] for c in per_case) / n
     return agg
 
 

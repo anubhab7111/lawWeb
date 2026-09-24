@@ -115,6 +115,11 @@ class PrecedentIndex:
         self._index = faiss.read_index(str(self.dir / INDEX_FILE), faiss.IO_FLAG_MMAP)
         self._window_case = np.load(self.dir / WINDOW_CASE_FILE, mmap_mode="r")
 
+    def load_labels(self) -> List[List[str]]:
+        """Label set of every indexed case (train+dev)."""
+        self.load()
+        return self.meta["case_labels"]
+
     @property
     def case_ids(self) -> List[str]:
         self.load()
