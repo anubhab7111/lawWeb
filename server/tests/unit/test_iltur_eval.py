@@ -1,5 +1,10 @@
 from app.metrics.iltur_eval import (
     aggregate,
+    average_precision,
+    bootstrap_ci,
+    macro_f1,
+    ndcg_at_k,
+    popularity_ranking,
     case_metrics,
     clean_fact_sentence,
     fact_windows,
@@ -57,3 +62,29 @@ def test_case_metrics_and_aggregate():
 def test_label_coverage():
     cov = label_coverage(["302", "34", "149"], ["302", "34A", "34"])
     assert cov["covered"] == 2 and cov["missing"] == ["149"]
+
+
+def test_ndcg_rewards_early_placement():
+    assert ndcg_at_k(["a", "x"], ["a"], 2) == 1.0
+    assert 0 < ndcg_at_k(["x", "a"], ["a"], 2) < 1.0
+    assert ndcg_at_k(["x", "y"], ["a"], 2) == 0.0
+
+
+def test_average_precision():
+    assert average_precision(["a", "b"], ["a", "b"]) == 1.0
+    assert abs(average_precision(["x", "a"], ["a", "b"]) - (0.5 / 2)) < 1e-9
+
+
+def test_macro_f1_punishes_only_predicting_popular_labels():
+    golds = [["34"], ["34"], ["34"], ["482"]]
+    always_popular = [["34"]] * 4
+    perfect = [["34"], ["34"], ["34"], ["482"]]
+    assert macro_f1(perfect, golds, 1) == 1.0
+    # micro-style accuracy would be 75%, but the rare label is never found
+    assert macro_f1(always_popular, golds, 1) < 0.5
+
+
+def test_popularity_ranking_and_bootstrap_ci():
+    assert popularity_ranking([["34", "302"], ["34"], ["302", "34"], ["420"]])[:2] == ["34", "302"]
+    lo, hi = bootstrap_ci([1.0] * 50 + [0.0] * 50)
+    assert lo < 0.5 < hi and hi - lo < 0.25
