@@ -132,6 +132,37 @@ async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[st
     return [label_to_pin(f"Section {section}") for section, _score in voted[:top]]
 
 
+_CITATION_CODES = {"Indian Penal Code": "IPC", "Code of Criminal Procedure": "CrPC"}
+
+
+async def retrieve_judgment_passages(
+    query: str, statute_chunks: List[LegalChunk], k: int = 8
+) -> list:
+    """Supreme Court passages for the question, boosted toward passages that cite
+    the provisions already retrieved. [] when the judgment index isn't built."""
+    from app.tools.judgment_rag import get_judgment_index
+    from app.tools.precedent_rag import encode_texts
+
+    index = get_judgment_index()
+    if not index.available:
+        return []
+    from app.tools.base_legal_rag import _get_shared_embeddings
+
+    boost = [
+        f"{_CITATION_CODES[c.act_name]}:{c.section_number}"
+        for c in statute_chunks
+        if c.act_name in _CITATION_CODES
+    ]
+    import asyncio
+
+    embeddings = await _get_shared_embeddings()
+    loop = asyncio.get_event_loop()
+    vecs = await loop.run_in_executor(None, lambda: encode_texts(embeddings, [query]))
+    return await loop.run_in_executor(
+        None, lambda: index.retrieve(query, vecs, k=k, boost_sections=boost)
+    )
+
+
 def _related_sections(chunk: LegalChunk, max_refs: int = 3) -> List[str]:
     """
     Sections related to a provision within the SAME act: numeric neighbours

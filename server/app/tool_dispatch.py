@@ -208,6 +208,49 @@ def _format_case_law(cases, max_chars: int = 4000, per_case_chars: int = 1200) -
     return "\n\n".join(parts)
 
 
+def _format_passage(p, max_chars: int = 900) -> str:
+    when = p.citation or str(p.year)
+    return f"• **{p.case_title}** ({when}) — Supreme Court of India\n{p.text[:max_chars]}"
+
+
+async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000) -> str:
+    """Landmark cases and judgment passages ranked together by the cross-encoder,
+    so the prompt gets the most relevant authority whichever index found it.
+    Falls back to landmark cases first when no reranker is available."""
+    from app.tools.base_legal_rag import _get_shared_reranker
+    from app.tools.unified_rerank import Candidate, rerank
+
+    candidates = [
+        Candidate("case_law", c.case_id, c.summary or c.text[:1500], header=c.case_name, payload=c)
+        for c in cases
+    ] + [
+        Candidate("judgment", p.chunk_id, p.text, header=p.case_title, payload=p)
+        for p in passages
+    ]
+    reranker = await _get_shared_reranker()
+    if reranker is not None:
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        predict = lambda pairs: reranker.predict(pairs, batch_size=16)  # noqa: E731
+        ranked = await loop.run_in_executor(
+            None,
+            lambda: rerank(query, candidates, predict, top_k=6, min_relative=0.25,
+                           per_source_cap={"judgment": 4, "case_law": 3}),
+        )
+    else:
+        ranked = candidates[:6]
+
+    parts, used = [], 0
+    for c in ranked:
+        entry = _format_case_law([c.payload]) if c.source == "case_law" else _format_passage(c.payload)
+        if used + len(entry) > max_chars and parts:
+            break
+        parts.append(entry)
+        used += len(entry)
+    return "\n\n".join(parts)
+
+
 def _budget_context(chunks, max_chars: int = 12000, per_chunk_chars: int = 2500) -> str:
     """
     Format retrieved statute chunks for the prompt in rerank order, filling
@@ -247,7 +290,11 @@ async def invoke_statute_context(
     prompt framing).
     """
     try:
-        from app.tools.legal_retrieval import retrieve_case_law, retrieve_statutes
+        from app.tools.legal_retrieval import (
+            retrieve_case_law,
+            retrieve_judgment_passages,
+            retrieve_statutes,
+        )
 
         context, parsed = await retrieve_statutes(
             query,
@@ -272,16 +319,20 @@ async def invoke_statute_context(
         )
 
         case_text = ""
+        cases, passages = [], []
         try:
             cases = await retrieve_case_law(query, parsed, context.chunks)
-            if cases:
-                case_text = _format_case_law(cases)
-                logger.info(
-                    f"Case law: {len(cases)} judgments retrieved: "
-                    f"{[c.case_name for c in cases]}"
-                )
         except Exception as e:
             logger.warning(f"Case law lookup error: {e}")
+        try:
+            passages = await retrieve_judgment_passages(query, context.chunks)
+        except Exception as e:
+            logger.warning(f"Judgment passage lookup error: {e}")
+        if cases or passages:
+            case_text = await _reranked_case_law_text(query, cases, passages)
+            logger.info(
+                f"Case law: {len(cases)} landmark cases + {len(passages)} judgment passages retrieved"
+            )
 
         retrieved_sections = {
             c.section_number.replace("Article", "").replace("§", "").strip().upper()
