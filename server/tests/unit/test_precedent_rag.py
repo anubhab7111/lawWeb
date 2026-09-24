@@ -56,5 +56,12 @@ def test_index_round_trip_and_case_exclusion(tmp_path):
     assert all(label != "302" for label, _ in masked)
 
 
+def test_case_index_works_on_a_freshly_constructed_index(tmp_path):
+    # exclusion is resolved before any search, i.e. before the index was loaded
+    _tiny_index(tmp_path)
+    fresh = pr.PrecedentIndex(tmp_path)
+    assert fresh.case_index(["c1"]) == {1}
+
+
 def test_unbuilt_index_is_unavailable(tmp_path):
     assert not pr.PrecedentIndex(tmp_path).available

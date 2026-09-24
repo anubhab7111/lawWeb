@@ -117,6 +117,7 @@ class PrecedentIndex:
 
     @property
     def case_ids(self) -> List[str]:
+        self.load()
         return self.meta["case_ids"]
 
     def case_index(self, case_ids: Iterable[str]) -> Set[int]:
