@@ -47,9 +47,9 @@ def smoothed_temp(samples: int = 3, gap: float = 0.5) -> Optional[float]:
 
 
 class ThermalGuard:
-    def __init__(self, duty: Optional[float] = None, pause_at: float = 92.0, resume_at: float = 82.0,
+    def __init__(self, duty: Optional[float] = None, pause_at: float = 92.0, resume_at: float = 80.0,
                  threads: Optional[int] = None, check_every: float = 15.0):
-        self.duty = duty if duty is not None else float(os.environ.get("GPU_DUTY", "0.75"))
+        self.duty = duty if duty is not None else float(os.environ.get("GPU_DUTY", "0.5"))
         self.pause_at, self.resume_at = pause_at, resume_at
         self._last = time.time()
         self._checked = time.time()
