@@ -127,18 +127,18 @@ def contaminated_cases(
     return {index.case_ids[c]: n for c, n in counts.items() if n >= min_shingles}
 
 
-def build_test_index() -> TestShingles:
-    cache = corpus_path("builds", "decontam", "iltur_test_shingles.npz")
+def build_test_index(split: str = "test") -> TestShingles:
+    cache = corpus_path("builds", "decontam", f"iltur_{split}_shingles.npz")
     if cache.exists():
         return TestShingles.load(cache)
-    df = pd.read_parquet(lsi_dir() / "test.parquet", columns=["id", "sentences"])
+    df = pd.read_parquet(lsi_dir() / f"{split}.parquet", columns=["id", "sentences"])
     index = TestShingles.from_texts({str(r.id): " ".join(r.sentences) for r in df.itertuples()})
     index.save(cache)
     return index
 
 
-def scan_years(years: Iterable[int], min_shingles: int = MIN_SHINGLES) -> Dict:
-    index = build_test_index()
+def scan_years(years: Iterable[int], min_shingles: int = MIN_SHINGLES, split: str = "test") -> Dict:
+    index = build_test_index(split)
     root = corpus_path("judgments", "sc", "clean")
     flagged: Dict[str, Dict] = {}
     scanned = 0
@@ -156,14 +156,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--years", type=int, nargs="*")
     parser.add_argument("--min-shingles", type=int, default=MIN_SHINGLES)
+    parser.add_argument(
+        "--split", default="test", choices=["test", "dev"],
+        help="dev: also exclude a tuning set's source judgments, so tuned parameters can't exploit them",
+    )
     args = parser.parse_args()
 
     root = corpus_path("judgments", "sc", "clean")
     years = args.years or sorted(int(p.name.split("=")[1]) for p in root.glob("year=*"))
-    report = scan_years(years, args.min_shingles)
+    report = scan_years(years, args.min_shingles, args.split)
     out = corpus_path("builds", "decontam")
     out.mkdir(parents=True, exist_ok=True)
-    (out / "sc_flagged.json").write_text(json.dumps(report, indent=1))
+    name = "sc_flagged.json" if args.split == "test" else f"sc_flagged_{args.split}.json"
+    (out / name).write_text(json.dumps(report, indent=1))
     sizes = sorted(max(v.values()) for v in report["flagged_docs"].values())
     print(
         f"[decontam] scanned {report['scanned']} judgments; flagged {len(sizes)} "
