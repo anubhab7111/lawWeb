@@ -2,17 +2,21 @@
 """
 eval_iltur_retrieval.py — LLM-free retrieval evaluation on IL-TUR `lsi`.
 
-Draws a seeded sample of IL-TUR cases and scores three section rankings against
-each case's label set, by section number:
-  statutes   per-window statute retrieval (production `retrieve_statutes`),
-             fused across the case's fact windows with RRF
+Draws a seeded sample of IL-TUR cases and scores section rankings against each
+case's label set. Labels are bare section numbers (their cases mix IPC and CrPC:
+label 482 is CrPC 482 quashing, 438 anticipatory bail), so scoring is by number:
+  statutes   windowed statute retrieval combined across the narrative
+             (app/tools/fact_statutes.py)
   precedent  similar past IL-TUR train+dev cases voting for their sections
              (app/tools/precedent_rag.py)
-  fused      weighted RRF of the two
+  judgments  Supreme Court passages similar to the facts voting for the sections
+             their judgments cite (app/tools/judgment_rag.py)
+  fused      weighted RRF of the available rankings
 Reports Hit@k, Recall@k, MRR, micro-F1@k, plus label coverage of the index.
 
-Tune on --split dev (each queried dev case is masked out of the precedent
-index); report on --split test, which is never indexed.
+Tune on --split dev (each queried dev case is masked out of the precedent index,
+and judgments overlapping dev cases are excluded); report on --split test, which is
+never indexed and whose overlapping judgments are already excluded.
 
 Usage (conda env legal_chatbot_env, from server/):
     python eval_iltur_retrieval.py --tag baseline                    # test, all systems
@@ -47,7 +51,7 @@ from app.metrics.iltur_eval import (  # noqa: E402
     rrf_fuse,
 )
 from app.metrics.iltur_loader import decode_labels, label_names, sample_iltur_cases  # noqa: E402
-from app.tools.legal_retrieval import retrieve_statutes  # noqa: E402
+from app.tools.fact_statutes import rank_sections_from_facts  # noqa: E402
 from app.tools.judgment_rag import get_judgment_index  # noqa: E402
 from app.tools.precedent_rag import (  # noqa: E402
     QUERY_WINDOWS,
@@ -59,13 +63,21 @@ from app.tools.unified_legal_rag import get_unified_rag_system  # noqa: E402
 
 KS = (1, 3, 5, 10)
 SAVED_DEPTH = 30
+DEV_FLAGGED: set = set()
 
 
-def is_ipc(act_name: str) -> bool:
-    """IL-TUR lsi labels are IPC sections only (verified: every label's statute
-    text matches the IPC provision), so only IPC chunks can score."""
+def load_dev_flagged() -> set:
+    """Judgments overlapping a dev case; excluded when tuning on dev."""
+    if not corpus_available():
+        return set()
+    path = corpus_path("builds", "decontam", "sc_flagged_dev.json")
+    return set(json.loads(path.read_text())["flagged_docs"]) if path.exists() else set()
+
+
+def is_numbered_act(act_name: str) -> bool:
+    """IPC or CrPC: the Acts whose section numbers IL-TUR labels can denote."""
     name = act_name.lower()
-    return "penal code" in name and "bharatiya" not in name
+    return ("penal code" in name or "criminal procedure" in name) and "bharatiya" not in name
 
 
 def section_key(section_number: str) -> str:
@@ -81,22 +93,8 @@ def git_commit() -> str:
         return "unknown"
 
 
-async def rank_statutes(sentences, args):
-    windows = fact_windows(
-        sentences, window=args.window, stride=args.stride, max_windows=args.max_windows
-    )
-    rankings = []
-    for window in windows:
-        result, _parsed = await retrieve_statutes(window, k=args.k_window)
-        ranking = []
-        for chunk in result.chunks:
-            if not is_ipc(chunk.act_name):
-                continue
-            key = section_key(chunk.section_number)
-            if key and key not in ranking:
-                ranking.append(key)
-        rankings.append(ranking)
-    return rrf_fuse(rankings)
+async def rank_statutes(sentences):
+    return [number for number, _score in await rank_sections_from_facts(sentences)]
 
 
 async def rank_precedent(row, sentences, args):
@@ -115,7 +113,8 @@ async def rank_judgments(sentences, args):
         return []
     vecs = encode_texts(await _get_shared_embeddings(), windows)
     votes = get_judgment_index().section_votes(
-        vecs, k=args.judgment_k, power=args.judgment_power, normalize=not args.no_judgment_norm
+        vecs, k=args.judgment_k, power=args.judgment_power, normalize=not args.no_judgment_norm,
+        exclude_docs=DEV_FLAGGED if args.split == "dev" else None,
     )
     return [sec for sec, _ in sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))]
 
@@ -125,10 +124,6 @@ async def main() -> None:
     parser.add_argument("--split", choices=["test", "dev"], default="test")
     parser.add_argument("--sample-size", type=int, default=300)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--window", type=int, default=4, help="sentences per window")
-    parser.add_argument("--stride", type=int, default=3)
-    parser.add_argument("--max-windows", type=int, default=8)
-    parser.add_argument("--k-window", type=int, default=10, help="statute retrieval depth per window")
     parser.add_argument("--precedent-k", type=int, default=20, help="neighbour windows per query window")
     parser.add_argument("--precedent-power", type=float, default=8.0, help="similarity exponent for votes")
     parser.add_argument("--judgment-k", type=int, default=20, help="neighbour passages per query window")
@@ -145,6 +140,8 @@ async def main() -> None:
     use_precedent = get_precedent_index().available
     if not use_precedent:
         print("[precedent] index not built — evaluating statutes only")
+    if args.split == "dev":
+        DEV_FLAGGED.update(load_dev_flagged())
     use_judgments = get_judgment_index().available
     if not use_judgments:
         print("[judgments] index not built — skipping")
@@ -159,7 +156,7 @@ async def main() -> None:
         if not await rag.initialize():
             sys.exit("FATAL: unified RAG failed to initialize")
         indexed_numbers = [
-            section_key(c.section_number) for c in rag._chunks.values() if is_ipc(c.act_name)
+            section_key(c.section_number) for c in rag._chunks.values() if is_numbered_act(c.act_name)
         ]
         coverage = label_coverage(decode_labels(list(range(len(names))), names), indexed_numbers)
         print(
@@ -179,7 +176,7 @@ async def main() -> None:
 
         ranks = {}
         if use_statutes:
-            ranks["statutes"] = await rank_statutes(sentences, args)
+            ranks["statutes"] = await rank_statutes(sentences)
         if use_precedent:
             ranks["precedent"] = await rank_precedent(row, sentences, args)
         if use_judgments:

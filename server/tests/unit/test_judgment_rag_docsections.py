@@ -48,3 +48,7 @@ def test_section_votes_count_a_judgment_once_and_normalise_by_breadth(tmp_path):
     assert abs(raw["302"] - 1.0) < 1e-3
     normed = idx.section_votes(query, k=3, power=1.0, normalize=True)
     assert abs(normed["302"] - 1.0 / 2**0.5) < 1e-3
+
+    # a judgment overlapping a tuning case is excluded from voting entirely
+    excluded = idx.section_votes(query, k=3, power=1.0, normalize=False, exclude_docs={"sc-a"})
+    assert "302" not in excluded and "34" not in excluded and "420" in excluded
