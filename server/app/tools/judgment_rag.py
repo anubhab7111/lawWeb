@@ -152,6 +152,7 @@ class JudgmentIndex:
         k: int = 20,
         power: float = 8.0,
         normalize: bool = True,
+        exclude_docs: Optional[set] = None,
     ) -> Dict[str, float]:
         """IPC sections voted by the judgments whose passages best match the query.
 
@@ -178,6 +179,8 @@ class JudgmentIndex:
             best: Dict[str, tuple] = {}
             for row, sim in hits:
                 doc, sections = info[row]
+                if exclude_docs and doc in exclude_docs:
+                    continue
                 if sim > best.get(doc, (-1.0, None))[0]:
                     best[doc] = (sim, sections)
             for sim, sections in best.values():
