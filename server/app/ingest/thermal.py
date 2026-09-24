@@ -66,15 +66,17 @@ class ThermalGuard:
     def step(self) -> None:
         now = time.time()
         worked = now - self._last
-        if 0 < self.duty < 1:
-            time.sleep(worked * (1 - self.duty) / self.duty)
-        if time.time() - self._checked >= self.check_every:
-            self._checked = time.time()
-            temp = smoothed_temp()
+        # Read the temperature straight after the work burst, not after idling:
+        # the package cools within seconds, so a post-idle reading hides the peak.
+        if now - self._checked >= self.check_every:
+            self._checked = now
+            temp = smoothed_temp(gap=0.1)
             if temp is not None and temp >= self.pause_at:
                 t0 = time.time()
                 print(f"[thermal] CPU package {temp:.0f}°C — pausing until {self.resume_at:.0f}°C", flush=True)
                 while (temp := smoothed_temp()) is not None and temp > self.resume_at:
                     time.sleep(5)
                 self.paused_seconds += time.time() - t0
+        if 0 < self.duty < 1:
+            time.sleep(worked * (1 - self.duty) / self.duty)
         self._last = time.time()

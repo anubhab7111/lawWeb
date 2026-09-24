@@ -152,8 +152,8 @@ def phase_embed(years: List[int], device: str) -> None:
         if missing:
             texts = [embed_text(c) for c in missing]
             parts = []
-            for i in range(0, len(texts), 512):
-                parts.append(pr.encode_texts(embeddings, texts[i : i + 512], batch_size=32).astype(np.float16))
+            for i in range(0, len(texts), 128):  # short bursts, so the duty cycle lowers average power
+                parts.append(pr.encode_texts(embeddings, texts[i : i + 128], batch_size=32).astype(np.float16))
                 guard.step()
             fresh = np.concatenate(parts)
             cached.update({c["chunk_id"]: v for c, v in zip(missing, fresh)})
