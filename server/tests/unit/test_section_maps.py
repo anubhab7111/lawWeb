@@ -1,4 +1,4 @@
-from app.ingest.ipc_bns_map import base_section, build_maps, rows_to_pairs
+from app.ingest.section_maps import base_section, build_maps, rows_to_pairs
 
 
 def test_base_section_drops_subclauses_and_rejects_non_sections():
@@ -22,5 +22,5 @@ def test_rows_to_pairs_skips_headers_and_unmapped_rows():
 
 def test_maps_are_bidirectional_and_keep_one_to_many():
     maps = build_maps([("2", "1"), ("3", "1"), ("302", "103")])
-    assert maps["ipc_to_bns"]["302"] == ["103"]
-    assert maps["bns_to_ipc"]["1"] == ["2", "3"]
+    assert maps["old_to_new"]["302"] == ["103"]
+    assert maps["new_to_old"]["1"] == ["2", "3"]
