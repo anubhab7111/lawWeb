@@ -36,6 +36,7 @@ from typing import Dict, List, Optional, Set
 import numpy as np
 
 from app.ingest.paths import corpus_path
+from app.ingest.thermal import ThermalGuard
 from app.tools import judgment_rag as jr
 from app.tools import precedent_rag as pr
 
@@ -145,10 +146,16 @@ def phase_embed(years: List[int], device: str) -> None:
     embeddings.client.max_seq_length = MAX_SEQ_LENGTH
     if device == "cuda":
         embeddings.client.half()
+    guard = ThermalGuard()
     started = time.time()
     for done, (year, (chunks, cached, missing)) in enumerate(pending.items(), start=1):
         if missing:
-            fresh = pr.encode_texts(embeddings, [embed_text(c) for c in missing], batch_size=32).astype(np.float16)
+            texts = [embed_text(c) for c in missing]
+            parts = []
+            for i in range(0, len(texts), 512):
+                parts.append(pr.encode_texts(embeddings, texts[i : i + 512], batch_size=32).astype(np.float16))
+                guard.step()
+            fresh = np.concatenate(parts)
             cached.update({c["chunk_id"]: v for c, v in zip(missing, fresh)})
         vecs = np.stack([cached[c["chunk_id"]] for c in chunks]) if chunks else np.empty((0, 1024), dtype=np.float16)
         _save_vectors(emb / f"year={year}.npz", [c["chunk_id"] for c in chunks], vecs)

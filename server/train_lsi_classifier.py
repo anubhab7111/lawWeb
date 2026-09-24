@@ -40,6 +40,7 @@ from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warm
 
 from app.ingest.iltur_export import lsi_dir  # noqa: E402
 from app.ingest.paths import corpus_path  # noqa: E402
+from app.ingest.thermal import ThermalGuard  # noqa: E402
 from app.metrics import iltur_official as io  # noqa: E402
 from app.metrics.iltur_loader import label_names  # noqa: E402
 from app.tools import statute_classifier as sc  # noqa: E402
@@ -195,6 +196,7 @@ def main() -> None:
         print(f"[classifier] resumed at epoch {state['epoch']} micro-batch {state['micro']}")
 
     model.train()
+    guard = ThermalGuard()
     started = time.time()
     for epoch in range(state["epoch"], args.epochs):
         seen_docs = 0
@@ -206,6 +208,7 @@ def main() -> None:
                 logits = model(ids.to(device), mask.to(device), owner.to(device), n)
             loss = loss_fn(logits.float(), targets(train, idx).to(device)) / args.accum
             scaler.scale(loss).backward()
+            guard.step()
             seen_docs += len(idx)
             if (m + 1) % args.accum == 0:
                 scaler.unscale_(optim)
