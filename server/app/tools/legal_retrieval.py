@@ -154,6 +154,10 @@ async def retrieve_statutes(
     k: int = 8,
     domains_hint: Optional[List[str]] = None,
     llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
+    acts: Optional[List[str]] = None,
+    min_score: Optional[float] = None,
+    candidate_pool: int = 30,
+    rerank_pool: int = 20,
 ) -> Tuple[LegalContext, ParsedLegalQuery]:
     """
     Understanding-first statute retrieval over the unified hybrid index.
@@ -212,6 +216,10 @@ async def retrieve_statutes(
             search_query,
             k=hybrid_k,
             domains=domains_hint or (parsed.domains or None),
+            acts=acts,
+            candidate_pool=candidate_pool,
+            rerank_pool=rerank_pool,
+            **({} if min_score is None else {"min_score": min_score}),
         )
         hybrid_chunks = _drop_prose(context.chunks)
 
@@ -230,7 +238,13 @@ async def retrieve_statutes(
             f"broadening retrieval."
         )
         context = await rag.retrieve(
-            search_query, k=max(k, 12), domains=None, min_score=0.1
+            search_query,
+            k=max(k, 12),
+            domains=None,
+            min_score=0.1 if min_score is None else min_score,
+            acts=acts,
+            candidate_pool=candidate_pool,
+            rerank_pool=rerank_pool,
         )
         merged = _dedupe_by_section(merged + _drop_prose(context.chunks))
 
