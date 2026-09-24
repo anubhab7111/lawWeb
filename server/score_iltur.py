@@ -113,7 +113,7 @@ class PrecedentScorer:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("system", choices=["precedent"])
-    parser.add_argument("--split", choices=["dev", "test"], required=True)
+    parser.add_argument("--split", choices=["train", "dev", "test"], required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--limit", type=int, help="first N cases only (smoke test)")
     args = parser.parse_args()
