@@ -1,6 +1,14 @@
 import asyncio
 
+import pytest
+
 from app.tools import legal_retrieval as lr
+
+
+@pytest.fixture(autouse=True)
+def no_classifier(monkeypatch):
+    """Precedent-path tests run as if the statute classifier weren't exported."""
+    monkeypatch.setattr(lr, "_get_classifier", lambda: None)
 
 NARRATIVE = " ".join(
     [
@@ -47,6 +55,27 @@ def test_precedent_pins_map_votes_to_ipc_and_cap_the_count(monkeypatch):
     monkeypatch.setattr("app.tools.precedent_rag.retrieve_precedent_sections", fake_votes)
     pins = asyncio.run(lr.precedent_pins(NARRATIVE, top=3))
     assert pins == [("Indian Penal Code", "304B"), ("Indian Penal Code", "498A"), ("Indian Penal Code", "34")]
+
+
+def test_classifier_decides_when_exported(monkeypatch):
+    class FakeClassifier:
+        def predict(self, sentences):
+            return {"Section 304B": 0.9, "Section 482": 0.7, "Section 4": 0.8, "Section 313": 0.45, "Section 302": 0.1}
+
+        def decide(self, probs, max_labels=6):
+            return [(l, p) for l, p in sorted(probs.items(), key=lambda kv: -kv[1]) if p >= 0.4][:max_labels]
+
+    monkeypatch.setattr(lr, "_get_classifier", lambda: FakeClassifier())
+    pins = asyncio.run(lr.precedent_pins(NARRATIVE))
+    # 482 is pinned as the CrPC provision judgments mean by it, not IPC 482; the
+    # jurisdiction label (4) and a label below 0.5 (313) are not pinned in chat
+    assert pins == [("Indian Penal Code", "304B"), ("Code of Criminal Procedure", "482")]
+
+
+def test_label_to_pin_uses_the_act_judgments_cite():
+    assert lr.label_to_pin("Section 302") == ("Indian Penal Code", "302")
+    assert lr.label_to_pin("Section 438") == ("Code of Criminal Procedure", "438")
+    assert lr.label_to_pin("Section 294(b)") == ("Indian Penal Code", "294")
 
 
 def test_a_failing_precedent_lookup_never_breaks_retrieval(monkeypatch):
