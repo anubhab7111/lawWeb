@@ -134,10 +134,10 @@ class JudgmentIndex:
         sims, ids = self._index.search(np.ascontiguousarray(query_vecs, dtype=np.float32), k)
         return [[(int(i), float(s)) for i, s in zip(row_i, row_s) if i >= 0] for row_i, row_s in zip(ids, sims)]
 
-    def lexical(self, query: str, k: int) -> List[int]:
+    def lexical(self, query: str, k: int, max_terms: int = 24) -> List[int]:
         self.load()
         assert self._db is not None
-        match = fts_query(query)
+        match = fts_query(query, max_terms)
         if not match:
             return []
         rows = self._db.execute(
@@ -187,6 +187,27 @@ class JudgmentIndex:
                 for section in sections:
                     votes[section] += weight
         return dict(votes)
+
+    def row_info(self, rows: Sequence[int]) -> Dict[int, tuple]:
+        """row -> (doc_id, doc_sections, chunk_sections, role, chunk ordinal), no text."""
+        self.load()
+        assert self._db is not None
+        out: Dict[int, tuple] = {}
+        rows = list(rows)
+        for i in range(0, len(rows), 500):
+            batch = rows[i : i + 500]
+            marks = ",".join("?" * len(batch))
+            for r in self._db.execute(
+                f"SELECT id, doc_id, doc_sections, sections_cited, role, chunk_id FROM chunks "
+                f"WHERE id IN ({marks})", batch
+            ):
+                out[r[0]] = (r[1], json.loads(r[2]), json.loads(r[3]), r[4], int(r[5].rsplit("#", 1)[1]))
+        return out
+
+    def doc_chunk_counts(self) -> Dict[str, int]:
+        self.load()
+        assert self._db is not None
+        return dict(self._db.execute("SELECT doc_id, COUNT(*) FROM chunks GROUP BY doc_id"))
 
     def rows_citing(self, sections: Sequence[str], limit: int = 200) -> List[int]:
         self.load()
