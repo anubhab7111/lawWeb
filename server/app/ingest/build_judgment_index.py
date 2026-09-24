@@ -3,9 +3,12 @@
 Build the judgment retrieval index (app/tools/judgment_rag.py) from the chunked
 Supreme Court corpus.
 
-Selection: all chunks of judgments that cite at least one IPC section and were not
-flagged by decontamination (app/ingest/decontaminate.py) — the criminal-law
-corpus IL-TUR statute identification draws on. The decontamination report is
+Selection: all chunks of judgments that cite at least one IPC or CrPC section and
+were not flagged by decontamination (app/ingest/decontaminate.py) — the
+criminal-law corpus IL-TUR statute identification draws on. IL-TUR labels are bare
+section numbers whose cases mix both codes (label 482 is overwhelmingly CrPC 482
+quashing petitions; 438 is anticipatory bail), so a judgment's vote set is the
+bare numbers of both its IPC and CrPC citations. The decontamination report is
 required; there is no way to build without it short of --skip-decontam-check.
 
 Three resumable phases, year by year (memory stays small):
@@ -22,6 +25,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -33,6 +37,7 @@ from app.tools import judgment_rag as jr
 from app.tools import precedent_rag as pr
 
 MAX_SEQ_LENGTH = 256
+NUMBERED_ACTS = ("IPC:", "CrPC:")
 
 
 def _years() -> List[int]:
@@ -65,7 +70,7 @@ def select_year(year: int, flagged: Set[str]) -> List[Dict]:
     doc_sections: Dict[str, set] = {}
     for c in chunks:
         doc_sections.setdefault(c["doc_id"], set()).update(
-            s.removeprefix("IPC:") for s in c["sections_cited"] if s.startswith("IPC:")
+            s.split(":", 1)[1] for s in c["sections_cited"] if s.startswith(NUMBERED_ACTS)
         )
     selected = []
     for c in chunks:
@@ -97,32 +102,71 @@ def phase_select(years: List[int], flagged: Set[str]) -> Dict[int, int]:
     return counts
 
 
+def _read_selected(sel: Path, year: int) -> List[Dict]:
+    with gzip.open(sel / f"year={year}.jsonl.gz", "rt", encoding="utf-8") as f:
+        return [json.loads(line) for line in f]
+
+
+def _load_vectors(path: Path) -> Dict[str, np.ndarray]:
+    if not path.exists():
+        return {}
+    data = np.load(path, allow_pickle=False)
+    return dict(zip((str(i) for i in data["ids"]), data["vecs"]))
+
+
+def _save_vectors(path: Path, ids: List[str], vecs: np.ndarray) -> None:
+    tmp = path.with_name(path.stem + ".tmp.npz")
+    np.savez(tmp, ids=np.array(ids), vecs=vecs)
+    tmp.rename(path)
+
+
+def migrate_embeddings(years: List[int]) -> None:
+    """One-time: year=YYYY.npy (positional, tied to that year's selection) ->
+    year=YYYY.npz keyed by chunk id, so a changed selection reuses old vectors.
+    Must run before the selection is regenerated."""
+    sel = corpus_path("builds", "judgments", "selected")
+    emb = corpus_path("builds", "judgments", "emb")
+    for year in years:
+        old = emb / f"year={year}.npy"
+        if not old.exists():
+            continue
+        chunks = _read_selected(sel, year) if (sel / f"year={year}.jsonl.gz").exists() else []
+        vecs = np.load(old)
+        if len(chunks) == len(vecs):
+            _save_vectors(emb / f"year={year}.npz", [c["chunk_id"] for c in chunks], vecs)
+        old.unlink()
+
+
 def phase_embed(years: List[int], device: str) -> None:
+    """Embed only chunks without a cached vector; vectors are cached per chunk id."""
     from app.tools.base_legal_rag import _make_bge_embeddings
 
     sel = corpus_path("builds", "judgments", "selected")
     emb = corpus_path("builds", "judgments", "emb")
     emb.mkdir(parents=True, exist_ok=True)
-    todo = [y for y in years if not (emb / f"year={y}.npy").exists()]
-    if not todo:
+
+    pending = {}
+    for year in years:
+        chunks = _read_selected(sel, year)
+        cached = _load_vectors(emb / f"year={year}.npz")
+        missing = [c for c in chunks if c["chunk_id"] not in cached]
+        if missing or not (emb / f"year={year}.npz").exists():
+            pending[year] = (chunks, cached, missing)
+    if not pending:
         return
+
     embeddings = _make_bge_embeddings(device)
     embeddings.client.max_seq_length = MAX_SEQ_LENGTH
     if device == "cuda":
         embeddings.client.half()
     started = time.time()
-    for done, year in enumerate(todo, start=1):
-        with gzip.open(sel / f"year={year}.jsonl.gz", "rt", encoding="utf-8") as f:
-            texts = [embed_text(json.loads(line)) for line in f]
-        vecs = (
-            pr.encode_texts(embeddings, texts, batch_size=32).astype(np.float16)
-            if texts
-            else np.empty((0, 1024), dtype=np.float16)
-        )
-        tmp = emb / f"year={year}.tmp.npy"
-        np.save(tmp, vecs)
-        tmp.rename(emb / f"year={year}.npy")
-        print(f"[judgment-index] embedded {year}: {len(texts)} chunks ({done}/{len(todo)}, {time.time() - started:.0f}s)")
+    for done, (year, (chunks, cached, missing)) in enumerate(pending.items(), start=1):
+        if missing:
+            fresh = pr.encode_texts(embeddings, [embed_text(c) for c in missing], batch_size=32).astype(np.float16)
+            cached.update({c["chunk_id"]: v for c, v in zip(missing, fresh)})
+        vecs = np.stack([cached[c["chunk_id"]] for c in chunks]) if chunks else np.empty((0, 1024), dtype=np.float16)
+        _save_vectors(emb / f"year={year}.npz", [c["chunk_id"] for c in chunks], vecs)
+        print(f"[judgment-index] {year}: {len(missing)} new / {len(chunks)} chunks embedded ({done}/{len(pending)}, {time.time() - started:.0f}s)")
 
 
 def phase_assemble(years: List[int], out_dir: Optional[Path] = None) -> None:
@@ -139,12 +183,11 @@ def phase_assemble(years: List[int], out_dir: Optional[Path] = None) -> None:
     row = 0
     docs: Set[str] = set()
     for year in years:
-        vecs = np.load(emb / f"year={year}.npy")
-        if not len(vecs):
+        chunks = _read_selected(sel, year)
+        if not chunks:
             continue
-        with gzip.open(sel / f"year={year}.jsonl.gz", "rt", encoding="utf-8") as f:
-            chunks = [json.loads(line) for line in f]
-        assert len(chunks) == len(vecs), f"{year}: {len(chunks)} chunks vs {len(vecs)} vectors"
+        cached = _load_vectors(emb / f"year={year}.npz")
+        vecs = np.stack([cached[c["chunk_id"]] for c in chunks])
         if index is None:
             index = faiss.IndexScalarQuantizer(
                 vecs.shape[1], faiss.ScalarQuantizer.QT_fp16, faiss.METRIC_INNER_PRODUCT
@@ -165,7 +208,7 @@ def phase_assemble(years: List[int], out_dir: Optional[Path] = None) -> None:
                 "chunks": row,
                 "docs": len(docs),
                 "years": [years[0], years[-1]],
-                "source": "Supreme Court of India judgments (IPC-citing, decontaminated)",
+                "source": "Supreme Court of India judgments (IPC/CrPC-citing, decontaminated)",
             }
         )
     )
@@ -178,12 +221,16 @@ def main() -> None:
     parser.add_argument("--years", type=int, nargs="*")
     parser.add_argument("--skip-decontam-check", action="store_true")
     parser.add_argument("--select-only", action="store_true")
+    parser.add_argument("--reselect", action="store_true", help="discard the cached selection (after changing the criteria)")
     parser.add_argument("--out-dir", type=Path, help="write the index elsewhere (smoke tests)")
     args = parser.parse_args()
 
     years = args.years or _years()
     flagged = load_flagged(args.skip_decontam_check)
     print(f"[judgment-index] {len(years)} processed years; {len(flagged)} judgments flagged as contaminated")
+    migrate_embeddings(years)
+    if args.reselect:
+        shutil.rmtree(corpus_path("builds", "judgments", "selected"), ignore_errors=True)
     phase_select(years, flagged)
     if args.select_only:
         return
