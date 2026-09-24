@@ -12,6 +12,12 @@ Systems:
   precedent   similar past IL-TUR train+dev cases vote for their labels
               (dev cases are masked out of the index when scoring dev)
 
+  judgments   Supreme Court passages similar to the facts vote for the sections
+              their judgments cite; judgments overlapping the scored split's IL-TUR
+              cases (decontaminate.py) are masked here, never removed from the index
+  reranker    the fine-tuned statute cross-encoder rescores the top candidates
+              proposed by precedent and the classifier (needs their scores)
+
 Robustness variants of precedent (written as their own systems):
   --memory train        mask every dev case: train-only memory, like the paper's
                         baselines, which learned from the train split alone
@@ -24,6 +30,7 @@ Usage (from server/):
 """
 
 import argparse
+import json
 import os
 import pickle
 import sys
@@ -124,6 +131,69 @@ class PrecedentScorer:
         return out
 
 
+class JudgmentScorer:
+    """Judgment-passage voting, with IL-TUR-overlapping judgments masked."""
+
+    def __init__(self, split: str, device: str, k: int = 50, power: float = 8.0):
+        from app.tools.base_legal_rag import _make_bge_embeddings
+        from app.tools.judgment_rag import get_judgment_index
+
+        self.index = get_judgment_index()
+        self.index.load()
+        report = corpus_path("builds", "decontam", "sc_flagged.json" if split == "test" else f"sc_flagged_{split}.json")
+        self.masked = set(json.loads(report.read_text())["flagged_docs"]) if report.exists() else set()
+        if split in ("test", "dev") and not report.exists():
+            raise SystemExit(f"{report} missing: run app.ingest.decontaminate --split {split} first")
+        self.vocab = set(label_names())
+        self.k, self.power = k, power
+        emb = _make_bge_embeddings(device)
+        emb.client.max_seq_length = 256
+        if device == "cuda":
+            emb.client.half()
+        self.emb = emb
+
+    def score(self, rows: pd.DataFrame) -> Dict[str, Dict[str, float]]:
+        out = {}
+        for cid, sentences in zip(rows["id"], rows["sentences"]):
+            windows = fact_windows(list(sentences), window=4, stride=3, max_windows=pr.QUERY_WINDOWS)
+            if not windows:
+                out[cid] = {}
+                continue
+            votes = self.index.section_votes(
+                pr.encode_texts(self.emb, windows, batch_size=64), k=self.k, power=self.power,
+                normalize=False, exclude_docs=self.masked,
+            )
+            out[cid] = {f"Section {n}": v for n, v in votes.items() if f"Section {n}" in self.vocab}
+        return out
+
+
+class RerankerScorer:
+    """Fine-tuned cross-encoder over the top candidates of other systems."""
+
+    def __init__(self, split: str, device: str, model: str, sources=("precedent", "classifier"), top: int = 12):
+        from app.tools.label_reranker import LabelReranker
+        from app.tools.statute_classifier import clean_facts
+
+        self.reranker = LabelReranker(str(model), device=device)
+        self.clean = clean_facts
+        self.sources = [load_scores(src, split) for src in sources]
+        self.top = top
+
+    def candidates(self, cid: str) -> List[str]:
+        out: List[str] = []
+        for scores in self.sources:
+            for label, _ in sorted(scores.get(cid, {}).items(), key=lambda kv: -kv[1])[: self.top]:
+                if label not in out:
+                    out.append(label)
+        return out
+
+    def score(self, rows: pd.DataFrame) -> Dict[str, Dict[str, float]]:
+        return {
+            cid: self.reranker.score(self.clean(list(sentences)), self.candidates(cid))
+            for cid, sentences in zip(rows["id"], rows["sentences"])
+        }
+
+
 def overlap_map(split: str, fraction: float) -> Dict[str, List[str]]:
     """case id -> train/dev case ids sharing >= fraction of its 10-word shingles (cached)."""
     from app.ingest.decontaminate import TestShingles, contaminated_cases, tokenize
@@ -149,7 +219,8 @@ def overlap_map(split: str, fraction: float) -> Dict[str, List[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("system", choices=["precedent"])
+    parser.add_argument("system", choices=["precedent", "judgments", "reranker"])
+    parser.add_argument("--reranker-model", help="reranker: fine-tuned model dir")
     parser.add_argument("--split", choices=["train", "dev", "test"], required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--limit", type=int, help="first N cases only (smoke test)")
@@ -170,7 +241,12 @@ def main() -> None:
     overlap = overlap_map(args.split, args.exclude_overlap) if args.exclude_overlap else None
     if overlap is not None:
         print(f"[{system}/{args.split}] {len(overlap)} cases have near-duplicate indexed cases (masked)", flush=True)
-    scorer = PrecedentScorer(args.split, args.device, memory=args.memory, overlap=overlap)
+    if args.system == "judgments":
+        scorer = JudgmentScorer(args.split, args.device)
+    elif args.system == "reranker":
+        scorer = RerankerScorer(args.split, args.device, args.reranker_model or corpus_path("builds", "reranker", "v1"))
+    else:
+        scorer = PrecedentScorer(args.split, args.device, memory=args.memory, overlap=overlap)
 
     started = time.time()
     n_shards = (len(df) + SHARD - 1) // SHARD
