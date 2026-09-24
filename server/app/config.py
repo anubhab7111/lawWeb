@@ -24,14 +24,13 @@ class Settings(BaseSettings):
     # block closed by </think>; False for models that answer directly.
     llm_thinking: bool = True
 
-    # Cross-encoder used to rerank fused BM25+dense candidates. Ranking
-    # quality is what matters (scores are used relatively); the base model
-    # keeps ~1.2GB of RAM free for the Ollama LLM on 16GB machines. Swap in
-    # BAAI/bge-reranker-v2-m3 on larger hardware for a small quality bump.
-    # v2-m3 (multilingual, 568M): on a no-pins retrieval eval it lifted hit@5
-    # 0.559 -> 0.735 over the base model's pure-rerank order (with rerank_blend
-    # 0.7). It is ~3x slower on CPU; set RERANKER_MODEL=BAAI/bge-reranker-base for speed.
-    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    # Cross-encoder used to rerank fused BM25+dense candidates (scores are used
+    # relatively). On CPU the base model (~5s per 20 candidates); when the reranker
+    # gets a GPU, the stronger multilingual v2-m3 (~3x the CPU cost of base).
+    # No-pins retrieval eval, with rerank_blend 0.5: base hit@5 0.676 / MRR 0.539,
+    # v2-m3 0.676 / 0.569 (the old pure-rerank base order: 0.559 / 0.464).
+    reranker_model: str = "BAAI/bge-reranker-base"
+    reranker_model_gpu: str = "BAAI/bge-reranker-v2-m3"
 
     # Where the reranker runs: "auto" | "cuda" | "cpu". Auto checks *live*
     # free VRAM against ollama_vram_reserve_gb (not a fixed card-size floor)
@@ -42,7 +41,7 @@ class Settings(BaseSettings):
     # Final order = weighted reciprocal-rank blend of the cross-encoder order and
     # the fused BM25+dense order (1.0 = cross-encoder only). Tuned on the
     # no-pins retrieval eval, where pure cross-encoder order lost recall.
-    rerank_blend: float = 0.7
+    rerank_blend: float = 0.5
 
     # Where the embedding model runs: "auto" | "cuda" | "cpu".
     # Set EMBEDDINGS_DEVICE=cuda for one-off index rebuilds.

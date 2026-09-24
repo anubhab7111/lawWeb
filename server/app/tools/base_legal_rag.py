@@ -283,6 +283,12 @@ _shared_reranker_failed: bool = False
 _shared_reranker_lock = asyncio.Lock()
 
 
+# (query, chunk id) -> cross-encoder probability. A request that retries with a
+# broader search (confidence gate) re-sees most candidates; they are scored once.
+_RERANK_CACHE: Dict[Tuple[str, str], float] = {}
+_RERANK_CACHE_MAX = 4096
+
+
 async def _get_shared_reranker() -> Optional[Any]:
     """
     Shared cross-encoder reranker (same singleton pattern as the embeddings).
@@ -321,7 +327,8 @@ async def _get_shared_reranker() -> Optional[Any]:
                 except Exception as e:
                     print(f"[rag] CUDA availability check failed ({e}) — reranker on CPU.")
 
-            model_name = get_settings().reranker_model
+            settings = get_settings()
+            model_name = settings.reranker_model_gpu if device == "cuda" else settings.reranker_model
             loop = asyncio.get_event_loop()
             try:
                 _shared_reranker = await loop.run_in_executor(
@@ -333,6 +340,7 @@ async def _get_shared_reranker() -> Optional[Any]:
                     raise
                 print(f"[rag] Reranker failed on cuda ({e}) — retrying on cpu.")
                 device = "cpu"
+                model_name = settings.reranker_model
                 _shared_reranker = await loop.run_in_executor(
                     None,
                     lambda: CrossEncoder(model_name, device=device, max_length=512),
@@ -819,15 +827,21 @@ class BaseLegalRAGSystem(ABC):
             try:
                 # Same header the embedder sees: without it a section body like
                 # "whoever does X shall be punished..." doesn't say which law it is.
-                pairs = [(rerank_query, _rerank_text(self._chunks[cid])) for cid in candidates]
-                logits = await loop.run_in_executor(
-                    None, lambda: reranker.predict(pairs, batch_size=16)
-                )
-                raw = [float(s) for s in logits]
-                # Some sentence-transformers versions already apply sigmoid to
-                # single-label cross-encoders; only normalize raw logits.
-                if any(s < 0.0 or s > 1.0 for s in raw):
-                    raw = [_sigmoid(s) for s in raw]
+                todo = [cid for cid in candidates if (rerank_query, cid) not in _RERANK_CACHE]
+                if todo:
+                    pairs = [(rerank_query, _rerank_text(self._chunks[cid])) for cid in todo]
+                    logits = await loop.run_in_executor(
+                        None, lambda: reranker.predict(pairs, batch_size=16)
+                    )
+                    fresh = [float(s) for s in logits]
+                    # Some sentence-transformers versions already apply sigmoid to
+                    # single-label cross-encoders; only normalize raw logits.
+                    if any(s < 0.0 or s > 1.0 for s in fresh):
+                        fresh = [_sigmoid(s) for s in fresh]
+                    if len(_RERANK_CACHE) > _RERANK_CACHE_MAX:
+                        _RERANK_CACHE.clear()
+                    _RERANK_CACHE.update({(rerank_query, cid): s for cid, s in zip(todo, fresh)})
+                raw = [_RERANK_CACHE[(rerank_query, cid)] for cid in candidates]
                 top = max(raw) if raw else 0.0
                 if top >= RERANK_GARBAGE_FLOOR:
                     scored = [
