@@ -77,7 +77,10 @@ async def build_statutes(rows, args):
         windows = fact_windows(row["text"], window=4, stride=3, max_windows=args.max_windows)
         per_window = []
         for window in windows:
-            result, _ = await retrieve_statutes(window, k=args.statute_depth)
+            result, _ = await retrieve_statutes(
+                window, k=args.statute_depth, acts=args.acts or None, min_score=args.min_score,
+                candidate_pool=args.candidate_pool, rerank_pool=args.rerank_pool,
+            )
             per_window.append(
                 [(c.act_name, c.section_number.replace("Article", "").strip().upper(), round(c.score, 4)) for c in result.chunks]
             )
@@ -98,6 +101,11 @@ async def main() -> None:
     parser.add_argument("--depth", type=int, default=100, help="dense neighbours per window")
     parser.add_argument("--lex-depth", type=int, default=50)
     parser.add_argument("--statute-depth", type=int, default=40)
+    parser.add_argument("--acts", nargs="*", help="scope statute retrieval to these exact act names")
+    parser.add_argument("--min-score", type=float, default=None)
+    parser.add_argument("--candidate-pool", type=int, default=30)
+    parser.add_argument("--rerank-pool", type=int, default=20)
+    parser.add_argument("--statutes-part", default="statutes", help="cache part name (one per configuration)")
     parser.add_argument("--skip-statutes", action="store_true")
     parser.add_argument("--skip-judgments", action="store_true")
     args = parser.parse_args()
@@ -114,7 +122,7 @@ async def main() -> None:
             pickle.dump(await build_judgments(rows, args), f)
         print("judgments cache written", flush=True)
     if not args.skip_statutes:
-        with open(cache_path(args.tag, "statutes"), "wb") as f:
+        with open(cache_path(args.tag, args.statutes_part), "wb") as f:
             pickle.dump(await build_statutes(rows, args), f)
         print("statutes cache written", flush=True)
 

@@ -615,6 +615,9 @@ class BaseLegalRAGSystem(ABC):
         min_score: float = 0.25,
         domains: Optional[List[str]] = None,
         use_reranker: bool = True,
+        acts: Optional[List[str]] = None,
+        candidate_pool: int = 30,
+        rerank_pool: int = 20,
     ) -> LegalContext:
         """
         Hybrid retrieval: dense (FAISS) + sparse (BM25) candidates fused with
@@ -628,6 +631,12 @@ class BaseLegalRAGSystem(ABC):
             domains:      Optional domain filter (e.g. ["criminal"]); matches
                           any of a chunk's domains.
             use_reranker: Disable to skip the cross-encoder stage.
+            acts:         Optional exact act names (e.g. ["Indian Penal Code"]);
+                          candidates outside them are never considered, so a
+                          search scoped to one Act isn't crowded out by its
+                          namesakes in other Acts (IPC vs BNS vs CrPC).
+            candidate_pool / rerank_pool: candidates taken from each retriever /
+                          passed to the cross-encoder. Deeper pools raise recall.
 
         Returns:
             LegalContext with matched chunks sorted by score.
@@ -646,6 +655,9 @@ class BaseLegalRAGSystem(ABC):
                 min_score=min_score,
                 domains=domains,
                 use_reranker=use_reranker,
+                acts=acts,
+                candidate_pool=candidate_pool,
+                rerank_pool=rerank_pool,
             )
 
             avg_conf = sum(c.score for c in chunks) / len(chunks) if chunks else 0.0
@@ -673,6 +685,7 @@ class BaseLegalRAGSystem(ABC):
         use_reranker: bool = True,
         candidate_pool: int = 30,
         rerank_pool: int = 20,
+        acts: Optional[List[str]] = None,
     ) -> List[LegalChunk]:
         """
         Shared hybrid pipeline: dense + BM25 → RRF fusion → cross-encoder
@@ -683,6 +696,7 @@ class BaseLegalRAGSystem(ABC):
         """
         loop = asyncio.get_event_loop()
         domain_set = set(domains) if domains else None
+        act_set = set(acts) if acts else None
 
         def _md_domains(md: Dict[str, Any]) -> List[str]:
             raw = md.get("domains") or md.get("domain") or ""
@@ -690,11 +704,13 @@ class BaseLegalRAGSystem(ABC):
 
         # ── Dense candidates ────────────────────────────────────
         search_kwargs: Dict[str, Any] = {"k": candidate_pool}
-        if domain_set:
-            # FAISS post-filters, so overfetch before the filter is applied.
-            search_kwargs["fetch_k"] = candidate_pool * 5
-            search_kwargs["filter"] = lambda md: bool(
-                set(_md_domains(md)) & domain_set
+        if domain_set or act_set:
+            # FAISS post-filters, so overfetch before the filter is applied; one
+            # Act is a few percent of the index, so scoping by Act needs more.
+            search_kwargs["fetch_k"] = candidate_pool * (60 if act_set else 5)
+            search_kwargs["filter"] = lambda md: (
+                (not domain_set or bool(set(_md_domains(md)) & domain_set))
+                and (not act_set or md.get("act_name") in act_set)
             )
         dense_results = await loop.run_in_executor(
             None,
@@ -730,6 +746,8 @@ class BaseLegalRAGSystem(ABC):
                     if domain_set and (
                         not chunk or not (set(chunk.domain_list()) & domain_set)
                     ):
+                        continue
+                    if act_set and (not chunk or chunk.act_name not in act_set):
                         continue
                     sparse_rank[cid] = rank
                     rank += 1
