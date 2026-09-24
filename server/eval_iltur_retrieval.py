@@ -9,14 +9,12 @@ label 482 is CrPC 482 quashing, 438 anticipatory bail), so scoring is by number:
              (app/tools/fact_statutes.py)
   precedent  similar past IL-TUR train+dev cases voting for their sections
              (app/tools/precedent_rag.py)
-  judgments  Supreme Court passages similar to the facts voting for the sections
-             their judgments cite (app/tools/judgment_rag.py)
-  fused      weighted RRF of the available rankings
+  fused      weighted RRF of the two (statutes 0.25, precedent 1.0: tuned on dev)
 Reports Hit@k, Recall@k, MRR, micro-F1@k, plus label coverage of the index.
 
-Tune on --split dev (each queried dev case is masked out of the precedent index,
-and judgments overlapping dev cases are excluded); report on --split test, which is
-never indexed and whose overlapping judgments are already excluded.
+Tune on --split dev (each queried dev case is masked out of the precedent index);
+report on --split test, which is
+never indexed.
 
 Usage (conda env legal_chatbot_env, from server/):
     python eval_iltur_retrieval.py --tag baseline                    # test, all systems
@@ -46,32 +44,16 @@ from app.ingest.paths import corpus_available, corpus_path  # noqa: E402
 from app.metrics.iltur_eval import (  # noqa: E402
     aggregate,
     case_metrics,
-    fact_windows,
     label_coverage,
     rrf_fuse,
 )
 from app.metrics.iltur_loader import decode_labels, label_names, sample_iltur_cases  # noqa: E402
 from app.tools.fact_statutes import rank_sections_from_facts  # noqa: E402
-from app.tools.judgment_rag import get_judgment_index  # noqa: E402
-from app.tools.precedent_rag import (  # noqa: E402
-    QUERY_WINDOWS,
-    encode_texts,
-    get_precedent_index,
-    retrieve_precedent_sections,
-)
+from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections  # noqa: E402
 from app.tools.unified_legal_rag import get_unified_rag_system  # noqa: E402
 
 KS = (1, 3, 5, 10)
 SAVED_DEPTH = 30
-DEV_FLAGGED: set = set()
-
-
-def load_dev_flagged() -> set:
-    """Judgments overlapping a dev case; excluded when tuning on dev."""
-    if not corpus_available():
-        return set()
-    path = corpus_path("builds", "decontam", "sc_flagged_dev.json")
-    return set(json.loads(path.read_text())["flagged_docs"]) if path.exists() else set()
 
 
 def is_numbered_act(act_name: str) -> bool:
@@ -105,20 +87,6 @@ async def rank_precedent(row, sentences, args):
     return [section for section, _score in voted]
 
 
-async def rank_judgments(sentences, args):
-    from app.tools.base_legal_rag import _get_shared_embeddings
-
-    windows = fact_windows(sentences, window=4, stride=3, max_windows=QUERY_WINDOWS)
-    if not windows:
-        return []
-    vecs = encode_texts(await _get_shared_embeddings(), windows)
-    votes = get_judgment_index().section_votes(
-        vecs, k=args.judgment_k, power=args.judgment_power, normalize=not args.no_judgment_norm,
-        exclude_docs=DEV_FLAGGED if args.split == "dev" else None,
-    )
-    return [sec for sec, _ in sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))]
-
-
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--split", choices=["test", "dev"], default="test")
@@ -126,12 +94,9 @@ async def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--precedent-k", type=int, default=20, help="neighbour windows per query window")
     parser.add_argument("--precedent-power", type=float, default=8.0, help="similarity exponent for votes")
-    parser.add_argument("--judgment-k", type=int, default=20, help="neighbour passages per query window")
-    parser.add_argument("--judgment-power", type=float, default=8.0)
-    parser.add_argument("--no-judgment-norm", action="store_true")
     parser.add_argument(
-        "--fusion-weights", type=float, nargs=3, default=[1.0, 1.0, 1.0],
-        metavar=("STATUTE", "PRECEDENT", "JUDGMENT"), help="weights for the fused ranking",
+        "--fusion-weights", type=float, nargs=2, default=[0.25, 1.0],
+        metavar=("STATUTE", "PRECEDENT"), help="weights for the fused ranking",
     )
     parser.add_argument("--skip-statutes", action="store_true", help="precedent only (fast; for tuning)")
     parser.add_argument("--tag", default="run")
@@ -140,13 +105,8 @@ async def main() -> None:
     use_precedent = get_precedent_index().available
     if not use_precedent:
         print("[precedent] index not built — evaluating statutes only")
-    if args.split == "dev":
-        DEV_FLAGGED.update(load_dev_flagged())
-    use_judgments = get_judgment_index().available
-    if not use_judgments:
-        print("[judgments] index not built — skipping")
     use_statutes = not args.skip_statutes
-    if not use_statutes and not use_precedent and not use_judgments:
+    if not use_statutes and not use_precedent:
         sys.exit("nothing to evaluate")
 
     names = label_names()
@@ -179,12 +139,10 @@ async def main() -> None:
             ranks["statutes"] = await rank_statutes(sentences)
         if use_precedent:
             ranks["precedent"] = await rank_precedent(row, sentences, args)
-        if use_judgments:
-            ranks["judgments"] = await rank_judgments(sentences, args)
-        if len(ranks) > 1:
-            order = [s for s in ("statutes", "precedent", "judgments") if s in ranks]
-            weights = dict(zip(("statutes", "precedent", "judgments"), args.fusion_weights))
-            ranks["fused"] = rrf_fuse([ranks[s] for s in order], weights=[weights[s] for s in order])
+        if len(ranks) == 2:
+            ranks["fused"] = rrf_fuse(
+                [ranks["statutes"], ranks["precedent"]], weights=args.fusion_weights
+            )
 
         entry = {"id": row.get("id"), "gold": gold}
         for system, ranked in ranks.items():
