@@ -59,6 +59,47 @@ class ChunkedStatuteClassifier(nn.Module):
         return self.head(self.drop(pooled))
 
 
+SERVING_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "statute_classifier"
+
+
+class StatuteClassifier:
+    """Serving wrapper: facts -> {label: probability}, plus per-label thresholds
+    fitted on IL-TUR dev (the decision rule behind the 38.35 test macro-F1)."""
+
+    def __init__(self, model_dir=SERVING_DIR, device: str = "cpu", max_chunks: int = 2):
+        import json
+
+        from transformers import AutoConfig, AutoModel, AutoTokenizer
+
+        meta = json.loads((model_dir / "meta.json").read_text())
+        self.labels: List[str] = meta["labels"]
+        self.thresholds = dict(zip(self.labels, meta["thresholds"]))
+        self.tokenizer = AutoTokenizer.from_pretrained(meta["base_model"])
+        encoder = AutoModel.from_config(AutoConfig.from_pretrained(meta["base_model"]))
+        self.model = ChunkedStatuteClassifier(encoder, len(self.labels))
+        self.model.load_state_dict(torch.load(model_dir / "model.pt", map_location="cpu"))
+        self.model.to(device).eval()
+        self.device, self.max_chunks = device, max_chunks
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @torch.no_grad()
+    def predict(self, sentences: Sequence[str]) -> dict:
+        chunks = chunk_ids(self.tokenizer, clean_facts(sentences), self.max_chunks)
+        ids, mask, owner, n = collate([chunks], self.tokenizer.pad_token_id)
+        logits = self.model(ids.to(self.device), mask.to(self.device), owner.to(self.device), n)
+        probs = torch.sigmoid(logits.float())[0].cpu().tolist()
+        return dict(zip(self.labels, probs))
+
+    def decide(self, probs: dict, max_labels: int = 6) -> List[tuple]:
+        """Labels clearing their dev-fitted threshold, best first (at least one)."""
+        ranked = sorted(probs.items(), key=lambda kv: -kv[1])
+        chosen = [(l, p) for l, p in ranked if p >= self.thresholds.get(l, 0.5)]
+        return (chosen or ranked[:1])[:max_labels]
+
+
 def collate(batch_chunks: Sequence[List[List[int]]], pad_id: int):
     """Flatten per-document chunk lists into padded tensors + owner index."""
     flat, owner = [], []

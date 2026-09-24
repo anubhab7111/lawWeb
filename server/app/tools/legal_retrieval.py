@@ -37,7 +37,12 @@ _SECTION_REF_RE = re.compile(r"\bsections?\s+(\d{1,4}[A-Z]{0,2})\b", re.IGNORECA
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\"'])")
 FACT_PATTERN_MIN_CHARS = 600
 FACT_PATTERN_MIN_SENTENCES = 5
-PRECEDENT_PINS = 4
+PRECEDENT_PINS = 3
+# Chat pins favour precision over the benchmark's recall-leaning rule: an answer
+# built on a wrong provision is worse than one missing a marginal one. Jurisdiction
+# and definition labels (IPC/CrPC 2-5, 13) never help an answer.
+CHAT_PIN_MIN_PROB = 0.5
+CHAT_UNPINNED_LABELS = {"Section 2", "Section 3", "Section 4", "Section 5", "Section 13"}
 PRECEDENT_PIN_SCORE = 0.9  # below 1.0: inferred from similar cases, not parsed from the query
 
 
@@ -53,24 +58,78 @@ def looks_like_fact_pattern(query: str) -> bool:
     )
 
 
-async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[str, str]]:
-    """IPC sections cited by the past cases most similar to a fact narrative.
+_ACT_NAMES = {"IPC": "Indian Penal Code", "CrPC": "Code of Criminal Procedure"}
+_label_acts: Optional[dict] = None
+_classifier = None
+_classifier_failed = False
 
-    Empty for ordinary questions, and when the precedent index isn't built —
-    callers get exactly the behaviour they had before the index existed.
+
+def label_to_pin(label: str) -> Tuple[str, str]:
+    """"Section 482" -> ("Code of Criminal Procedure", "482"): IL-TUR labels are
+    bare numbers; the Act is the one Supreme Court judgments cite that number as
+    (app/data/iltur_label_acts.json)."""
+    global _label_acts
+    if _label_acts is None:
+        import json
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent.parent / "data" / "iltur_label_acts.json"
+        _label_acts = json.loads(path.read_text()) if path.exists() else {}
+    number = re.sub(r"\(.*\)", "", label.replace("Section ", "")).strip()
+    act = _label_acts.get(label, {}).get("act", "IPC")
+    return _ACT_NAMES[act], number
+
+
+def _get_classifier():
+    """Lazily load the statute classifier; None if it isn't exported."""
+    global _classifier, _classifier_failed
+    if _classifier is None and not _classifier_failed:
+        from app.tools.statute_classifier import SERVING_DIR, StatuteClassifier
+
+        if not (SERVING_DIR / "model.pt").exists():
+            _classifier_failed = True
+            return None
+        try:
+            _classifier = StatuteClassifier(SERVING_DIR, device="cpu")
+        except Exception as e:
+            print(f"[LegalRetrieval] statute classifier unavailable: {e}")
+            _classifier_failed = True
+    return _classifier
+
+
+async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[str, str]]:
+    """Sections a long fact narrative most likely engages.
+
+    The statute classifier (38.35 macro-F1 on IL-TUR test) decides, keeping labels
+    above their dev-fitted thresholds; without it, the most similar past cases vote
+    (precedent index). Empty for ordinary questions and when neither is available,
+    so callers get exactly the behaviour they had before either existed.
     """
     if not looks_like_fact_pattern(query):
         return []
-    from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections
-
-    if not get_precedent_index().available:
-        return []
+    sentences = split_sentences(query)
     try:
-        voted = await retrieve_precedent_sections(split_sentences(query))
+        classifier = _get_classifier()
+        if classifier is not None:
+            import asyncio
+
+            probs = await asyncio.get_event_loop().run_in_executor(None, classifier.predict, sentences)
+            chosen = [
+                label
+                for label, p in classifier.decide(probs, max_labels=len(probs))
+                if p >= CHAT_PIN_MIN_PROB and label not in CHAT_UNPINNED_LABELS
+            ]
+            return [label_to_pin(label) for label in chosen[:top]]
+
+        from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections
+
+        if not get_precedent_index().available:
+            return []
+        voted = await retrieve_precedent_sections(sentences)
     except Exception as e:  # a retrieval aid must never break the answer path
-        print(f"[LegalRetrieval] precedent lookup failed: {e}")
+        print(f"[LegalRetrieval] fact-pattern pin lookup failed: {e}")
         return []
-    return [("Indian Penal Code", section) for section, _score in voted[:top]]
+    return [label_to_pin(f"Section {section}") for section, _score in voted[:top]]
 
 
 def _related_sections(chunk: LegalChunk, max_refs: int = 3) -> List[str]:

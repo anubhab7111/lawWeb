@@ -1,0 +1,502 @@
+{
+"Section 107": {
+"act": "IPC",
+"crpc": 153,
+"ipc": 235
+},
+"Section 109": {
+"act": "IPC",
+"crpc": 16,
+"ipc": 650
+},
+"Section 114": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 269
+},
+"Section 120": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 161
+},
+"Section 120B": {
+"act": "IPC",
+"crpc": 3,
+"ipc": 2726
+},
+"Section 13": {
+"act": "IPC",
+"crpc": 12,
+"ipc": 14
+},
+"Section 143": {
+"act": "IPC",
+"crpc": 3,
+"ipc": 283
+},
+"Section 147": {
+"act": "IPC",
+"crpc": 2,
+"ipc": 1101
+},
+"Section 148": {
+"act": "IPC",
+"crpc": 7,
+"ipc": 1826
+},
+"Section 149": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 3594
+},
+"Section 155": {
+"act": "CrPC",
+"crpc": 76,
+"ipc": 2
+},
+"Section 156": {
+"act": "CrPC",
+"crpc": 691,
+"ipc": 2
+},
+"Section 161": {
+"act": "CrPC",
+"crpc": 1692,
+"ipc": 570
+},
+"Section 164": {
+"act": "CrPC",
+"crpc": 1138,
+"ipc": 32
+},
+"Section 173": {
+"act": "CrPC",
+"crpc": 1299,
+"ipc": 3
+},
+"Section 174A": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 13
+},
+"Section 186": {
+"act": "IPC",
+"crpc": 11,
+"ipc": 130
+},
+"Section 188": {
+"act": "IPC",
+"crpc": 71,
+"ipc": 120
+},
+"Section 190": {
+"act": "CrPC",
+"crpc": 380,
+"ipc": 3
+},
+"Section 193": {
+"act": "IPC",
+"crpc": 137,
+"ipc": 567
+},
+"Section 2": {
+"act": "CrPC",
+"crpc": 250,
+"ipc": 15
+},
+"Section 200": {
+"act": "CrPC",
+"crpc": 465,
+"ipc": 18
+},
+"Section 201": {
+"act": "IPC",
+"crpc": 22,
+"ipc": 1567
+},
+"Section 228": {
+"act": "IPC",
+"crpc": 112,
+"ipc": 193
+},
+"Section 229A": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 5
+},
+"Section 279": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 174
+},
+"Section 294": {
+"act": "IPC",
+"crpc": 35,
+"ipc": 187
+},
+"Section 294(b)": {
+"act": "IPC",
+"crpc": 35,
+"ipc": 187
+},
+"Section 299": {
+"act": "IPC",
+"crpc": 67,
+"ipc": 238
+},
+"Section 3": {
+"act": "IPC",
+"crpc": 16,
+"ipc": 28
+},
+"Section 300": {
+"act": "IPC",
+"crpc": 166,
+"ipc": 1279
+},
+"Section 302": {
+"act": "IPC",
+"crpc": 39,
+"ipc": 11614
+},
+"Section 304": {
+"act": "IPC",
+"crpc": 39,
+"ipc": 679
+},
+"Section 304A": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 454
+},
+"Section 304B": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 990
+},
+"Section 306": {
+"act": "IPC",
+"crpc": 149,
+"ipc": 1231
+},
+"Section 307": {
+"act": "IPC",
+"crpc": 86,
+"ipc": 2612
+},
+"Section 308": {
+"act": "IPC",
+"crpc": 26,
+"ipc": 96
+},
+"Section 313": {
+"act": "CrPC",
+"crpc": 2790,
+"ipc": 32
+},
+"Section 320": {
+"act": "CrPC",
+"crpc": 239,
+"ipc": 41
+},
+"Section 323": {
+"act": "IPC",
+"crpc": 12,
+"ipc": 1641
+},
+"Section 324": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 1249
+},
+"Section 325": {
+"act": "IPC",
+"crpc": 4,
+"ipc": 472
+},
+"Section 326": {
+"act": "IPC",
+"crpc": 12,
+"ipc": 884
+},
+"Section 332": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 93
+},
+"Section 336": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 71
+},
+"Section 337": {
+"act": "IPC",
+"crpc": 41,
+"ipc": 138
+},
+"Section 338": {
+"act": "IPC",
+"crpc": 7,
+"ipc": 146
+},
+"Section 34": {
+"act": "IPC",
+"crpc": 2,
+"ipc": 6198
+},
+"Section 341": {
+"act": "IPC",
+"crpc": 23,
+"ipc": 448
+},
+"Section 342": {
+"act": "IPC",
+"crpc": 268,
+"ipc": 366
+},
+"Section 353": {
+"act": "IPC",
+"crpc": 16,
+"ipc": 201
+},
+"Section 354": {
+"act": "IPC",
+"crpc": 258,
+"ipc": 335
+},
+"Section 363": {
+"act": "IPC",
+"crpc": 8,
+"ipc": 316
+},
+"Section 364": {
+"act": "IPC",
+"crpc": 13,
+"ipc": 465
+},
+"Section 365": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 189
+},
+"Section 366": {
+"act": "IPC",
+"crpc": 167,
+"ipc": 323
+},
+"Section 366A": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 56
+},
+"Section 375": {
+"act": "IPC",
+"crpc": 6,
+"ipc": 266
+},
+"Section 376": {
+"act": "IPC",
+"crpc": 11,
+"ipc": 1950
+},
+"Section 376(2)": {
+"act": "IPC",
+"crpc": 11,
+"ipc": 1950
+},
+"Section 379": {
+"act": "IPC",
+"crpc": 79,
+"ipc": 311
+},
+"Section 380": {
+"act": "IPC",
+"crpc": 3,
+"ipc": 191
+},
+"Section 384": {
+"act": "IPC",
+"crpc": 33,
+"ipc": 152
+},
+"Section 389": {
+"act": "CrPC",
+"crpc": 219,
+"ipc": 26
+},
+"Section 392": {
+"act": "IPC",
+"crpc": 29,
+"ipc": 304
+},
+"Section 394": {
+"act": "IPC",
+"crpc": 38,
+"ipc": 150
+},
+"Section 395": {
+"act": "IPC",
+"crpc": 9,
+"ipc": 266
+},
+"Section 397": {
+"act": "IPC",
+"crpc": 375,
+"ipc": 322
+},
+"Section 4": {
+"act": "CrPC",
+"crpc": 129,
+"ipc": 37
+},
+"Section 406": {
+"act": "IPC",
+"crpc": 208,
+"ipc": 1021
+},
+"Section 409": {
+"act": "IPC",
+"crpc": 6,
+"ipc": 895
+},
+"Section 411": {
+"act": "IPC",
+"crpc": 3,
+"ipc": 259
+},
+"Section 415": {
+"act": "IPC",
+"crpc": 9,
+"ipc": 173
+},
+"Section 417": {
+"act": "IPC",
+"crpc": 163,
+"ipc": 127
+},
+"Section 419": {
+"act": "IPC",
+"crpc": 8,
+"ipc": 169
+},
+"Section 420": {
+"act": "IPC",
+"crpc": 9,
+"ipc": 2245
+},
+"Section 427": {
+"act": "IPC",
+"crpc": 80,
+"ipc": 331
+},
+"Section 436": {
+"act": "IPC",
+"crpc": 35,
+"ipc": 228
+},
+"Section 437": {
+"act": "CrPC",
+"crpc": 202,
+"ipc": 1
+},
+"Section 438": {
+"act": "CrPC",
+"crpc": 664,
+"ipc": 10
+},
+"Section 447": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 193
+},
+"Section 448": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 150
+},
+"Section 450": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 96
+},
+"Section 452": {
+"act": "IPC",
+"crpc": 14,
+"ipc": 320
+},
+"Section 457": {
+"act": "IPC",
+"crpc": 44,
+"ipc": 59
+},
+"Section 465": {
+"act": "IPC",
+"crpc": 133,
+"ipc": 263
+},
+"Section 467": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 702
+},
+"Section 468": {
+"act": "IPC",
+"crpc": 156,
+"ipc": 851
+},
+"Section 471": {
+"act": "IPC",
+"crpc": 5,
+"ipc": 931
+},
+"Section 482": {
+"act": "CrPC",
+"crpc": 4353,
+"ipc": 17
+},
+"Section 494": {
+"act": "IPC",
+"crpc": 43,
+"ipc": 235
+},
+"Section 498": {
+"act": "IPC",
+"crpc": 17,
+"ipc": 59
+},
+"Section 498A": {
+"act": "IPC",
+"crpc": 3,
+"ipc": 2093
+},
+"Section 5": {
+"act": "CrPC",
+"crpc": 96,
+"ipc": 19
+},
+"Section 500": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 249
+},
+"Section 504": {
+"act": "IPC",
+"crpc": 6,
+"ipc": 586
+},
+"Section 506": {
+"act": "IPC",
+"crpc": 4,
+"ipc": 1164
+},
+"Section 509": {
+"act": "IPC",
+"crpc": 1,
+"ipc": 102
+},
+"Section 511": {
+"act": "IPC",
+"crpc": 0,
+"ipc": 223
+}
+}
