@@ -157,7 +157,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             # overlap — without an Act-specific prefix, e.g. Constitution
             # Article 21 and Human Rights Act Section 21 collide under the
             # same chunk_id and one silently shadows the other.
-            act_prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())[:6]
+            act_prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())
             chunk_id = f"CON_{act_prefix}_{art_num}"
 
             # Only the Constitution itself has "Articles"; the other statutes
