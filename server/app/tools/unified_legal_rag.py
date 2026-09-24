@@ -233,7 +233,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
         if len(text) < 100:
             return []
         code = self.DOMAIN_CODES.get(domain, domain[:3].upper())
-        prefix = re.sub(r"[^A-Z0-9]", "", title.upper())[:6]
+        prefix = re.sub(r"[^A-Z0-9]", "", title.upper())
         # "part N", not a bare number: these are window indices, and must
         # neither read like statutory citations in prompts nor collide with
         # real section numbers during evaluation.

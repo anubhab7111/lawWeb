@@ -948,7 +948,10 @@ class BaseLegalRAGSystem(ABC):
 
             punishment = _extract_punishment(raw)
             # Derive a prefix from the act's stem for unique chunk IDs
-            prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())[:6]
+            # The FULL act name, not a truncated prefix: "Indian Penal Code" and
+            # "Indian Evidence Act" (or the three Bharatiya acts) share their first
+            # six letters, and colliding chunk ids silently overwrite each other.
+            prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())
             chunk_id = f"{self.domain_name.upper()[:3]}_{prefix}_{sec_num}"
 
             chunks.append(
