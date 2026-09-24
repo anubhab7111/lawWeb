@@ -9,7 +9,9 @@ self-masked) — plus a few random statutes. Evaluation reranks the candidates
 precedent proposes for dev cases (gold is never injected) and reports how much the
 reranked order improves over precedent's own.
 
-Fits a 4GB GPU (fp16 autocast, gradient checkpointing, gradient accumulation).
+Fits a 4GB GPU: fp16 autocast, gradient checkpointing, gradient accumulation, and
+the 250k-token word-embedding matrix frozen (its gradients and AdamW state would
+not fit). Checkpoints every --ckpt-every micro-batches; a killed run resumes.
 The model is saved to <corpus>/builds/reranker/<tag>/.
 
 Usage (from server/, Ollama idle):
@@ -107,8 +109,9 @@ def main() -> None:
     parser.add_argument("--hard-k", type=int, default=12)
     parser.add_argument("--random", type=int, default=2)
     parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--micro", type=int, default=8)
-    parser.add_argument("--accum", type=int, default=4)
+    parser.add_argument("--micro", type=int, default=4)
+    parser.add_argument("--accum", type=int, default=8)
+    parser.add_argument("--ckpt-every", type=int, default=1000)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--bench", action="store_true")
     parser.add_argument("--tag", default="v1")
@@ -118,7 +121,9 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(args.base)
     model = AutoModelForSequenceClassification.from_pretrained(args.base, num_labels=1).to(device)
     model.gradient_checkpointing_enable()
+    model.get_input_embeddings().weight.requires_grad_(False)
     out = corpus_path("builds", "reranker", args.tag)
+    ckpt = corpus_path("builds", "reranker", f"{args.tag}.ckpt.pt")
 
     base_eval = evaluate(model, tokenizer, device, n_cases=150 if args.bench else 600)
     print(f"[reranker] before fine-tuning (dev): {base_eval}", flush=True)
@@ -126,16 +131,28 @@ def main() -> None:
     pairs = build_pairs(tokenizer, "train", args.cases if not args.bench else 400, args.hard_k, args.random, seed=0)
     pos = sum(p[2] for p in pairs)
     print(f"[reranker] {len(pairs)} training pairs ({pos:.0f} positive)", flush=True)
-    optim = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    optim = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=0.01)
     steps = len(pairs) // (args.micro * args.accum) * args.epochs
     sched = get_linear_schedule_with_warmup(optim, int(0.05 * steps), max(steps, 1))
     scaler = torch.amp.GradScaler("cuda", enabled=device == "cuda")
     loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor((len(pairs) - pos) / max(pos, 1)).sqrt().to(device))
 
+    state = {"epoch": 0, "micro": 0}
+    if ckpt.exists() and not args.bench:
+        saved = torch.load(ckpt, map_location=device)
+        model.load_state_dict(saved["model"])
+        optim.load_state_dict(saved["optim"])
+        sched.load_state_dict(saved["sched"])
+        scaler.load_state_dict(saved["scaler"])
+        state = saved["state"]
+        print(f"[reranker] resumed at epoch {state['epoch'] + 1} micro-batch {state['micro']}", flush=True)
+
     model.train()
     started = time.time()
-    for epoch in range(args.epochs):
+    for epoch in range(state["epoch"], args.epochs):
         for m, i in enumerate(range(0, len(pairs), args.micro)):
+            if m < state["micro"]:
+                continue
             batch = pairs[i : i + args.micro]
             enc = lr.encode_pairs(tokenizer, [b[0] for b in batch], [b[1] for b in batch]).to(device)
             y = torch.tensor([b[2] for b in batch], device=device)
@@ -154,8 +171,13 @@ def main() -> None:
                 print(f"[bench] {rate:.1f} pairs/s; peak VRAM {torch.cuda.max_memory_allocated() / 2**30:.2f} GB; "
                       f"{args.cases} cases (~{args.cases * 16} pairs) -> {args.cases * 16 / rate / 3600:.1f} h/epoch")
                 return
-            if (m + 1) % 5000 == 0:
+            if (m + 1) % args.ckpt_every == 0 and (m + 1) % args.accum == 0:
+                torch.save({"model": model.state_dict(), "optim": optim.state_dict(), "sched": sched.state_dict(),
+                            "scaler": scaler.state_dict(), "state": {"epoch": epoch, "micro": m + 1}}, ckpt)
                 print(f"[reranker] epoch {epoch + 1} {i + args.micro}/{len(pairs)} pairs ({time.time() - started:.0f}s)", flush=True)
+        state["micro"] = 0
+        torch.save({"model": model.state_dict(), "optim": optim.state_dict(), "sched": sched.state_dict(),
+                    "scaler": scaler.state_dict(), "state": {"epoch": epoch + 1, "micro": 0}}, ckpt)
         print(f"[reranker] epoch {epoch + 1} (dev): {evaluate(model, tokenizer, device)}", flush=True)
 
     out.mkdir(parents=True, exist_ok=True)
