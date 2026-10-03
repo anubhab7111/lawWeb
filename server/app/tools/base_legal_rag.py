@@ -308,18 +308,21 @@ async def _get_shared_reranker() -> Optional[Any]:
 
             device = get_settings().reranker_device
             if device not in ("cuda", "cpu"):
-                # auto: same live-free-VRAM policy as the embeddings, with a
-                # smaller headroom since bge-reranker-base is a lighter
-                # model. The load/predict calls below also retry on cpu if
-                # this still contends with Ollama for VRAM.
+                # auto: same live-free-VRAM policy as the embeddings. The
+                # headroom is the GPU model's (reranker_model_gpu is what loads
+                # on cuda; v2-m3 needs ~2.5GB, base ~1GB). The load/predict
+                # calls below also retry on cpu if this still contends with
+                # Ollama for VRAM.
                 device = "cpu"
                 try:
                     import torch
 
                     if torch.cuda.is_available():
                         free_bytes, _total_bytes = torch.cuda.mem_get_info()
-                        reserve_bytes = get_settings().ollama_vram_reserve_gb * 1024**3
-                        reranker_headroom_bytes = 1.0 * 1024**3
+                        settings = get_settings()
+                        reserve_bytes = settings.ollama_vram_reserve_gb * 1024**3
+                        heavy = settings.reranker_model_gpu != settings.reranker_model
+                        reranker_headroom_bytes = (2.5 if heavy else 1.0) * 1024**3
                         if free_bytes > reserve_bytes + reranker_headroom_bytes:
                             device = "cuda"
                 except ImportError:
