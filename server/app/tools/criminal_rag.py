@@ -466,8 +466,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             terms.extend(["cruelty by husband", "dowry death", "abetment of suicide"])
 
         # Explicit criminal fraud / forgery (only when combined with criminal act verbs)
-        if any_word(q, ["forged document", "forged signature", "fake document"]
-        ):
+        if any_word(q, ["forged", "forgery", "forge", "fake document"]):
             terms.extend(["forgery", "using forged document"])
         if any_word(q, ["cheated me", "cheated out of", "deceived me into"]):
             terms.extend(["cheating", "dishonestly inducing delivery of property"])
