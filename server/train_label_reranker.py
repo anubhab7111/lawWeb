@@ -125,6 +125,7 @@ def main() -> None:
     model.get_input_embeddings().weight.requires_grad_(False)
     out = corpus_path("builds", "reranker", args.tag)
     ckpt = corpus_path("builds", "reranker", f"{args.tag}.ckpt.pt")
+    ckpt.parent.mkdir(parents=True, exist_ok=True)
 
     base_eval = evaluate(model, tokenizer, device, n_cases=150 if args.bench else 600)
     print(f"[reranker] before fine-tuning (dev): {base_eval}", flush=True)
