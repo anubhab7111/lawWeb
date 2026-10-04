@@ -49,3 +49,13 @@ def test_raw_logits_are_normalised():
     cands = [Candidate("statute", "a", "x"), Candidate("statute", "b", "y")]
     out = rerank("q", cands, lambda pairs: [3.0, -1.0], min_relative=0.0)
     assert out[0].key == "a" and 0 < out[1].score < 1
+
+
+def test_one_passage_per_judgment():
+    cands = [
+        Candidate("judgment", "sc-1#2", "murder murder murder", group="sc-1"),
+        Candidate("judgment", "sc-1#5", "murder murder", group="sc-1"),
+        Candidate("judgment", "sc-2#1", "murder", group="sc-2"),
+    ]
+    out = rerank("murder", cands, keyword_predict("murder"), top_k=5, min_relative=0.0)
+    assert [c.key for c in out] == ["sc-1#2", "sc-2#1"]

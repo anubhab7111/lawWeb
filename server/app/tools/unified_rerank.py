@@ -11,7 +11,8 @@ scale across sources:
   * scores are relative to the best item (cross-encoder probabilities are ordinal,
     not calibrated), items below `min_relative` of the best are dropped;
   * `per_source_cap` keeps one source (e.g. many passages of one judgment) from
-    crowding out the others.
+    crowding out the others; candidates sharing a `group` (passages of one judgment)
+    keep only their best member.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ class Candidate:
     text: str
     header: str = ""  # e.g. "Indian Penal Code s.302 — Punishment for murder"
     payload: Any = None  # the original object, returned untouched
+    group: str = ""  # e.g. the judgment's doc_id; one candidate per non-empty group
     score: float = 0.0
     segment_scores: List[float] = field(default_factory=list)
 
@@ -96,13 +98,18 @@ def rerank(
     top = scored[0].score if scored else 0.0
     caps = dict(per_source_cap or {})
     out: List[Candidate] = []
+    seen_groups = set()
     for c in scored:
         if top <= 0 or c.score / top < min_relative:
             break
+        if c.group and c.group in seen_groups:
+            continue
         if c.source in caps:
             if caps[c.source] <= 0:
                 continue
             caps[c.source] -= 1
+        if c.group:
+            seen_groups.add(c.group)
         c.score = c.score / top
         out.append(c)
         if len(out) >= top_k:

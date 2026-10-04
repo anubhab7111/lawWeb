@@ -224,7 +224,7 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
         Candidate("case_law", c.case_id, c.summary or c.text[:1500], header=c.case_name, payload=c)
         for c in cases
     ] + [
-        Candidate("judgment", p.chunk_id, p.text, header=p.case_title, payload=p)
+        Candidate("judgment", p.chunk_id, p.text, header=p.case_title, payload=p, group=p.doc_id)
         for p in passages
     ]
     reranker = await _get_shared_reranker()
