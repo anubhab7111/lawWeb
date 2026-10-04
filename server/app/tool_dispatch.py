@@ -197,8 +197,9 @@ def _format_case_law(cases, max_chars: int = 4000, per_case_chars: int = 1200) -
     parts = []
     used = 0
     for c in cases:
+        citation = (c.citation or "").split(",")[0].strip()  # records list every parallel citation
         entry = (
-            f"• **{c.case_name}** ({c.citation or c.court}, {c.date[:4] if c.date else '?'})"
+            f"• **{c.case_name}** ({citation or c.court}, {c.date[:4] if c.date else '?'})"
             f" — {c.court}\n{c.text[:per_case_chars]}"
         )
         if used + len(entry) > max_chars and parts:
@@ -235,7 +236,7 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
         predict = lambda pairs: reranker.predict(pairs, batch_size=16)  # noqa: E731
         ranked = await loop.run_in_executor(
             None,
-            lambda: rerank(query, candidates, predict, top_k=6, min_relative=0.25,
+            lambda: rerank(query, candidates, predict, top_k=6, min_relative=0.15,
                            per_source_cap={"judgment": 4, "case_law": 3}),
         )
     else:
@@ -243,9 +244,12 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
 
     parts, used = [], 0
     for c in ranked:
-        entry = _format_case_law([c.payload]) if c.source == "case_law" else _format_passage(c.payload)
+        if c.source == "case_law":
+            entry = _format_case_law([c.payload], per_case_chars=800)
+        else:
+            entry = _format_passage(c.payload, max_chars=800)
         if used + len(entry) > max_chars and parts:
-            break
+            continue
         parts.append(entry)
         used += len(entry)
     return "\n\n".join(parts)
