@@ -452,4 +452,71 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "human_rights_law",
     },
+    # ── criminal (penal sections kept by the chargeable-penalty filter) ──────
+    {
+        "query": "What is the punishment for abetment of a crime in India?",
+        "relevant_ipc_sections": [],
+        "relevant_sections": ["109"],
+        "relevant_keywords": ["Section 109", "abetment", "punishment provided for the offence"],
+        "expected_acts": ["Indian Penal Code"],
+        "reference_answer": (
+            "Under Section 109 of the Indian Penal Code, abetment of an offence "
+            "is punished with the punishment provided for that offence when the "
+            "abetted act is committed in consequence and no express provision is made."
+        ),
+        "domain": "criminal_law",
+    },
+    {
+        "query": "Someone helped another person commit a theft. Am I liable for abetting it?",
+        "relevant_ipc_sections": [],
+        "relevant_sections": ["109"],
+        "relevant_keywords": ["Section 109", "abetment", "Section 107"],
+        "expected_acts": ["Indian Penal Code"],
+        "reference_answer": (
+            "Helping another person commit an offence can be abetment under Section 107 "
+            "of the Indian Penal Code, and Section 109 punishes abetment with the "
+            "punishment provided for the offence abetted if the act is committed in consequence."
+        ),
+        "domain": "criminal_law",
+    },
+    {
+        "query": "Is abetting an offence punished the same as committing it under Indian law?",
+        "relevant_ipc_sections": [],
+        "relevant_sections": ["109"],
+        "relevant_keywords": ["Section 109", "abetment", "same as the offence"],
+        "expected_acts": ["Indian Penal Code"],
+        "reference_answer": (
+            "Under Section 109 of the Indian Penal Code, abetment is punished with the "
+            "punishment provided for the offence itself when the abetted act is committed "
+            "in consequence and no express provision is made."
+        ),
+        "domain": "criminal_law",
+    },
+    {
+        "query": "What is the punishment for using a forged document as genuine?",
+        "relevant_ipc_sections": [],
+        "relevant_sections": ["471"],
+        "relevant_keywords": ["Section 471", "forged document", "same manner"],
+        "expected_acts": ["Indian Penal Code"],
+        "reference_answer": (
+            "Under Section 471 of the Indian Penal Code, fraudulently using as genuine a "
+            "document known to be forged is punished in the same manner as if the person "
+            "had forged the document."
+        ),
+        "domain": "criminal_law",
+    },
+    {
+        "query": "Someone knowingly produced a forged will in court. What offence is that?",
+        "relevant_ipc_sections": [],
+        "relevant_sections": ["471"],
+        "relevant_keywords": ["Section 471", "forged", "Section 466", "Section 467"],
+        "expected_acts": ["Indian Penal Code"],
+        "reference_answer": (
+            "Producing a forged will in court as genuine is using a forged document as "
+            "genuine under Section 471 of the Indian Penal Code, punished in the same manner "
+            "as forgery of that document (see Sections 466 and 467 for forging wills and "
+            "valuable securities)."
+        ),
+        "domain": "criminal_law",
+    },
 ]
