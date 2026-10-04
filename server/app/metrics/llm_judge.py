@@ -58,7 +58,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Set
 
 import httpx
 
@@ -420,19 +420,27 @@ def _cache_put(model: str, prompt: str, entry: dict) -> None:
     _save_json(_CACHE_PATH, cache)
 
 
-def _usage_count_today() -> int:
+def _key_id(api_key: str) -> str:
+    """Counter key for an API key; the key itself is never written to disk."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
+
+
+def _usage_today(primary_id: str) -> Dict[str, int]:
+    """Today's call count per key id. A file in the old single-count format
+    belongs to the primary key."""
     usage = _load_json(_USAGE_PATH)
     if usage.get("date") != date.today().isoformat():
-        return 0
-    return int(usage.get("count", 0))
+        return {}
+    if "by_key" not in usage:
+        return {primary_id: int(usage.get("count", 0))}
+    return {k: int(v) for k, v in usage["by_key"].items()}
 
 
-def _usage_increment() -> int:
-    today = date.today().isoformat()
-    usage = _load_json(_USAGE_PATH)
-    count = int(usage.get("count", 0)) + 1 if usage.get("date") == today else 1
-    _save_json(_USAGE_PATH, {"date": today, "count": count})
-    return count
+def _usage_increment(key_id: str, primary_id: str) -> int:
+    counts = _usage_today(primary_id)
+    counts[key_id] = counts.get(key_id, 0) + 1
+    _save_json(_USAGE_PATH, {"date": date.today().isoformat(), "by_key": counts})
+    return counts[key_id]
 
 
 # Process-wide throttle so concurrent judge calls (evaluator.py runs several
@@ -497,6 +505,9 @@ class LLMJudge:
         settings = get_settings()
 
         self._api_key: str = api_key or getattr(settings, "openrouter_api_key", "")
+        alt = "" if api_key else getattr(settings, "openrouter_api_key_alt", "")
+        self._api_keys: List[str] = [k for k in (self._api_key, alt) if k]
+        self._exhausted: Set[str] = set()  # keys OpenRouter refused with HTTP 429 this run
         self._model_name: str = (
             model or getattr(settings, "openrouter_model", None) or OPENROUTER_DEFAULT_MODEL
         )
@@ -540,9 +551,16 @@ class LLMJudge:
         if not self._api_key:
             return None, 0.0, "OPENROUTER_API_KEY not configured."
 
-        if _usage_count_today() >= self._daily_limit:
+        primary_id = _key_id(self._api_keys[0])
+        counts = _usage_today(primary_id)
+        api_key = next(
+            (k for k in self._api_keys
+             if k not in self._exhausted and counts.get(_key_id(k), 0) < self._daily_limit),
+            None,
+        )
+        if api_key is None:
             logger.warning(
-                "OpenRouter daily judge budget (%d calls) reached; skipping call.",
+                "OpenRouter daily judge budget (%d calls) reached on every key; skipping call.",
                 self._daily_limit,
             )
             return (
@@ -562,7 +580,7 @@ class LLMJudge:
                     response = await client.post(
                         f"{self._base_url}/chat/completions",
                         headers={
-                            "Authorization": f"Bearer {self._api_key}",
+                            "Authorization": f"Bearer {api_key}",
                             "X-Title": "LawWeb RAG Evaluation",
                         },
                         json={
@@ -576,7 +594,7 @@ class LLMJudge:
                         },
                     )
                 elapsed = time.perf_counter() - t0
-                _usage_increment()  # counts against quota whether it parsed or not
+                _usage_increment(_key_id(api_key), primary_id)  # counts whether it parsed or not
 
                 response.raise_for_status()
                 data = response.json()
@@ -592,6 +610,13 @@ class LLMJudge:
                 last_exc = RuntimeError(
                     f"OpenRouter HTTP {exc.response.status_code}: {exc.response.text[:200]}"
                 )
+                if exc.response.status_code == 429:
+                    self._exhausted.add(api_key)
+                    nxt = next((k for k in self._api_keys if k not in self._exhausted), None)
+                    if nxt is None:
+                        break
+                    logger.warning("OpenRouter key %s hit its quota; switching keys.", _key_id(api_key))
+                    api_key = nxt
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
             logger.warning(

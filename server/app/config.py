@@ -215,6 +215,8 @@ class Settings(BaseSettings):
 
     # OpenRouter (LLM-as-judge for RAG evaluation — see app/metrics/llm_judge.py)
     openrouter_api_key: str = ""
+    # Second key, used once the first reaches openrouter_daily_limit or OpenRouter's quota.
+    openrouter_api_key_alt: str = ""
     # Free-tier model; check https://openrouter.ai/models?max_price=0 for the
     # current catalog since free model availability rotates. openai/gpt-oss-20b:free
     # was retired (now 404s, paid-only) as of 2026-08-31, and minimax-m2.7:free
