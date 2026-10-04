@@ -70,12 +70,16 @@ of a test case (and the dev-flagged ones when scoring dev) are masked only at sc
 sklearn macro-F1 over the 100 label names on all 13,019 test cases; thresholds and fusion
 weights fitted on dev only. Published: LeSICiN 28.08, InLegalBERT 26.23, GPT-4 0-shot 23.99.
 
-| System | Test macro-F1 |
-|---|---|
-| InLegalBERT chunked classifier | 38.35 (confirmed with the leaderboard's `evaluate_lsi`) |
-| Classifier + 0.25 x precedent kNN (train-only memory) | 38.48 |
-| Precedent kNN, train+dev memory / train-only / strict near-dup masking | 31.3 / 29.6 / 28.1 |
-| Judgment-passage section votes alone | 16.15 |
+| System | Test macro-F1 | Without near-dup cases |
+|---|---|---|
+| InLegalBERT chunked classifier | 38.35 | 37.43 |
+| Classifier + 0.25 x precedent kNN (train-only memory) | 38.48 | 37.49 |
+| Precedent kNN, train+dev memory / train-only / strict near-dup masking | 31.3 / 29.6 / 28.1 | |
+| Judgment-passage section votes alone | 16.15 | |
+
+The first two rows are confirmed by the leaderboard's own `evaluate_lsi`
+(`verify_iltur_leaderboard.py classifier [precedent_trainmem:0.25]`). "Without near-dup
+cases" drops the 891 test cases that share >=50% of their text with a train case.
 
 The judgment votes (dev-fitted weight 0) and the fine-tuned label reranker (dev candidate
 MRR 0.455 -> 0.606, still below precedent's 0.687; no fusion gain on 1,536 dev cases) add
