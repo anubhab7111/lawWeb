@@ -50,6 +50,9 @@ def _build_llm() -> ChatOllama:
         num_predict=1536,  # multi-issue Constitution Bench cases need headroom
         timeout=180.0,  # offline batch job — latency doesn't matter, don't spuriously abort
         reasoning=False,
+        # JSON-constrained decoding: qwen3 otherwise "thinks" past num_predict
+        # before writing any JSON (every case failed with no </think>).
+        format="json",
         keep_alive="15m",  # stay loaded across the whole batch
     )
 

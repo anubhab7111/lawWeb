@@ -33,7 +33,7 @@ os.chdir(_SERVER_DIR)
 from bs4 import BeautifulSoup
 
 from app.config import get_settings
-from app.ingest.paths import case_law_dir
+from app.ingest.paths import case_law_dir, corpus_path
 from app.data.case_law_manifest import ManifestEntry, build_manifest
 from app.tools.indian_kanoon import IndianKanoonClient
 
@@ -61,39 +61,94 @@ def _search_query(case_name: str) -> str:
     return re.sub(r"\bv\.\s*", "vs ", name, flags=re.IGNORECASE)
 
 
-def _title_overlap(a: str, b: str) -> float:
-    wa = set(re.findall(r"[a-z]+", a.lower()))
-    wb = set(re.findall(r"[a-z]+", b.lower()))
-    if not wa or not wb:
-        return 0.0
-    return len(wa & wb) / len(wa | wb)
+def _cited_year(case_name: str) -> Optional[int]:
+    m = _YEAR_RE.search(case_name)
+    return int(m.group(1)) if m else None
+
+
+def _in_window(cited: int, decided: Optional[int]) -> bool:
+    """Landmark names often carry the report year, up to two years after the
+    decision (Bhajan Lal "(1992)" was decided in November 1990)."""
+    return decided is not None and cited - 2 <= decided <= cited + 1
+
+
+def _search_queries(case_name: str) -> list:
+    """Supreme Court first, then any court; both limited to the cited year's window.
+    An unrestricted search let a same-titled High Court order or a later case
+    between the same parties win (e.g. Bhajan Lal (1992) -> a 2009 HC revision)."""
+    q = _search_query(case_name)
+    year = _cited_year(case_name)
+    window = f" fromdate: 1-1-{year - 2} todate: 31-12-{year + 1}" if year else ""
+    return [f"{q} doctypes: supremecourt{window}", f"{q}{window}"]
+
+
+def _doc_year(d: dict) -> Optional[int]:
+    m = re.match(r"(\d{4})", str(d.get("publishdate", "")))
+    return int(m.group(1)) if m else None
+
+
+def suspect_reason(record: dict) -> Optional[str]:
+    """Why a saved record probably holds the wrong judgment, or None."""
+    year = _cited_year(record.get("case_name", ""))
+    fetched = _doc_year({"publishdate": record.get("date", "")})
+    if year and fetched and not _in_window(year, fetched):
+        return f"named {year}, fetched a {fetched} judgment"
+    if "supreme court" not in (record.get("court") or "").lower():
+        return f"fetched a {record.get('court') or 'non-Supreme Court'} document"
+    title = (record.get("text") or "").split("\n", 1)[0].split(" on ")[0]
+    if title and _party_match(record.get("case_name", ""), title) < 0.5:
+        return f"fetched {title[:60]!r}"
+    return None
+
+
+_BOILERPLATE = {"vs", "and", "ors", "anr", "others", "another", "the", "state", "union", "india", "ltd", "limited",
+                "pvt", "private", "govt", "government"}
+
+
+def _distinctive(text: str) -> set:
+    return {w for w in re.findall(r"[a-z]+", text.lower()) if len(w) >= 3 and w not in _BOILERPLATE}
+
+
+def _party_match(case_name: str, title: str) -> float:
+    """Share of the case name's distinctive party words found in the title.
+    Containment, not Jaccard: IK titles add "& Ors", "M/s", full corporate names."""
+    wanted = _distinctive(_search_query(case_name))
+    return len(wanted & _distinctive(title)) / len(wanted) if wanted else 0.0
 
 
 def _pick_best_result(case_name: str, docs: list) -> Optional[dict]:
-    if not docs:
-        return None
-    cited_year = _YEAR_RE.search(case_name)
-    cited_year = cited_year.group(1) if cited_year else None
+    """Best judgment for the named case, or None rather than a wrong one.
+
+    Hard requirements: the case's distinctive party names in the title, a date
+    in the cited year's window, and not a High Court "Orders" listing (hearing
+    dates and counsel appearances). IK files some landmark Supreme Court rulings
+    under "Daily Orders" (Subramanian Swamy, 13 May 2016), so those are accepted
+    only when dated in the exact cited year."""
+    cited = _cited_year(case_name)
+
+    def source(d: dict) -> str:
+        return (d.get("docsource", "") or "").lower()
+
+    def acceptable(d: dict) -> bool:
+        if _party_match(case_name, d.get("title", "")) < 0.5:
+            return False
+        if cited and not _in_window(cited, _doc_year(d)):
+            return False
+        is_sc = "supreme court" in source(d)
+        listing = bool(re.search(r"daily order|- orders", source(d)))
+        if listing and not is_sc:
+            return False
+        return not (listing and cited and _doc_year(d) != cited)
 
     def score(d: dict) -> float:
-        overlap = _title_overlap(_search_query(case_name), d.get("title", ""))
-        is_sc = "supreme court" in (d.get("docsource", "") or "").lower()
-        year_match = bool(
-            cited_year and str(d.get("publishdate", "")).startswith(cited_year)
-        )
-        return overlap + (0.2 if is_sc else 0.0) + (0.3 if year_match else 0.0)
+        is_sc = "supreme court" in source(d)
+        exact_year = bool(cited and _doc_year(d) == cited)
+        listing = "daily order" in source(d)
+        return (_party_match(case_name, d.get("title", "")) + (0.5 if is_sc else 0.0)
+                + (0.4 if exact_year else 0.0) - (0.3 if listing else 0.0))
 
-    # "Daily Orders" are brief procedural listings (hearing dates, notices),
-    # not the reasoned judgment — never the right pick when an actual
-    # judgment of the same case exists among the results, even if its title
-    # (with "& Ors" etc.) scores marginally lower on raw word overlap.
-    is_daily_order = lambda d: "daily order" in (d.get("docsource", "") or "").lower()
-    judgments = [d for d in docs if not is_daily_order(d)]
-    pool = judgments or docs
-
-    scored = sorted(pool, key=score, reverse=True)
-    best_doc = scored[0]
-    return best_doc if score(best_doc) >= 0.4 else None
+    pool = [d for d in docs if acceptable(d)]
+    return max(pool, key=score) if pool else None
 
 
 def _extract_bench_size(doc_html: str) -> int:
@@ -140,15 +195,16 @@ async def fetch_one(client: IndianKanoonClient, entry: ManifestEntry) -> Optiona
     # docsource field _pick_best_result needs to prefer Supreme Court hits —
     # go one level lower and hit the search endpoint directly for raw fields.
     session = await client._get_session()
-    async with session.post(
-        f"{client.BASE_URL}/search/",
-        params={"formInput": _search_query(entry["case_name"]), "pagenum": 0},
-    ) as resp:
-        if resp.status != 200:
-            print(f"  search failed ({resp.status}) for {entry['case_name']}")
-            return None
-        data = await resp.json()
-    best = _pick_best_result(entry["case_name"], data.get("docs", []))
+    docs = []
+    for query in _search_queries(entry["case_name"]):
+        async with session.post(
+            f"{client.BASE_URL}/search/", params={"formInput": query, "pagenum": 0}
+        ) as resp:
+            if resp.status != 200:
+                print(f"  search failed ({resp.status}) for {entry['case_name']}")
+                return None
+            docs += (await resp.json()).get("docs", [])
+    best = _pick_best_result(entry["case_name"], docs)
     if not best:
         print(f"  no confident match for: {entry['case_name']}")
         return None
@@ -179,10 +235,33 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--audit", action="store_true", help="list saved records that look like the wrong judgment (no API calls)")
+    parser.add_argument("--refetch-suspect", action="store_true", help="quarantine and re-fetch the records --audit lists")
+    parser.add_argument("--only", action="append", default=[], metavar="NAME",
+                        help="re-fetch cases whose name contains NAME (repeatable); the old record is quarantined")
     args = parser.parse_args()
 
     CASE_LAW_DIR.mkdir(parents=True, exist_ok=True)
     manifest = build_manifest()
+
+    def saved(entry):
+        path = CASE_LAW_DIR / f"{_slug(entry['case_name'])}.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+    if args.audit:
+        flagged = [(e["case_name"], suspect_reason(r)) for e in manifest if (r := saved(e)) and suspect_reason(r)]
+        for name, reason in flagged:
+            print(f"  SUSPECT {name}: {reason}")
+        print(f"{len(flagged)} suspect of {len(manifest)}")
+        return
+
+    def refetch_reason(entry) -> Optional[str]:
+        if any(n.lower() in entry["case_name"].lower() for n in args.only):
+            return "named with --only"
+        record = saved(entry)
+        return suspect_reason(record) if record and args.refetch_suspect else None
+
+    quarantine = corpus_path("quarantine", "case_law")
 
     api_key = get_settings().indian_kanoon_api_key
     if not api_key:
@@ -197,6 +276,12 @@ async def main() -> None:
         for entry in manifest:
             slug = _slug(entry["case_name"])
             out_path = CASE_LAW_DIR / f"{slug}.json"
+            reason = refetch_reason(entry) if out_path.exists() else None
+            if reason:
+                quarantine.mkdir(parents=True, exist_ok=True)
+                out_path.replace(quarantine / out_path.name)
+                (quarantine / f"{slug}.reason.json").write_text(json.dumps({"reason": reason}))
+                print(f"  quarantined {out_path.name}: {reason}")
             if out_path.exists() and not args.force:
                 skipped += 1
                 continue
