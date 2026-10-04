@@ -803,7 +803,7 @@ class LLMJudge:
             # Some free judge models wrap output in hidden reasoning; the
             # 4-metric prompt needs a generous token budget so that doesn't
             # crowd out the JSON answer.
-            raw, elapsed, reason = await self._post_chat(prompt, max_tokens=4096)
+            raw, elapsed, reason = await self._post_chat(prompt, max_tokens=8192)
             if not raw:
                 return {
                     m: JudgeScore.failure(m, reason or "empty judge response")
