@@ -34,6 +34,7 @@ Key design decisions
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from app.text_match import any_word
@@ -299,6 +300,18 @@ def extract_crime_features(text: str) -> CrimeFeatures:
 # ─────────────────────────────────────────────────────────────
 
 
+# Chargeable offences often name their penalty without the "shall be punished
+# with" wording _extract_punishment matches ("shall, if the act abetted is
+# committed, be punished with…", "shall be punished in the same manner as…").
+# Only the "be punished <with|in the same manner|as|under>" forms are taken as
+# chargeable: a bare "punishable" also appears in definitions and sentencing
+# rules and would pull those in.
+_CHARGEABLE_PUNISHMENT_RE = re.compile(
+    r"\b(?:be|shall be)\s+punished\s+(?:with|in the same manner|as|under)\b",
+    re.IGNORECASE,
+)
+
+
 class CriminalRAGSystem(BaseLegalRAGSystem):
     """
     Criminal law RAG: indexes IPC, BNS, CrPC, BNSS, Evidence Act, BSA, NDPS,
@@ -368,7 +381,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         # Apply criminal-specific filter: only index sections with punishment
         filtered: List[LegalChunk] = []
         for chunk in base_chunks:
-            if chunk.has_punishment:
+            if chunk.has_punishment or _CHARGEABLE_PUNISHMENT_RE.search(chunk.text):
                 filtered.append(chunk)
             # else: skip definition-only sections — appropriate for IPC/BNS
 
