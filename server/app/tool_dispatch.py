@@ -8,6 +8,7 @@ a bug fixed here (or a call-signature change in the underlying tool) is
 fixed everywhere at once.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -214,15 +215,19 @@ def _format_passage(p, max_chars: int = 900) -> str:
     return f"• **{p.case_title}** ({when}) — Supreme Court of India\n{p.text[:max_chars]}"
 
 
+_RESERVED_LANDMARKS = 2
+
+
 async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000) -> str:
     """Landmark cases and judgment passages ranked together by the cross-encoder,
     so the prompt gets the most relevant authority whichever index found it.
     Falls back to landmark cases first when no reranker is available."""
-    from app.tools.base_legal_rag import _get_shared_reranker
+    from app.tools.base_legal_rag import _get_shared_reranker, cached_predict
+    from app.tools.case_law_rag import rerank_header, rerank_source
     from app.tools.unified_rerank import Candidate, rerank
 
     candidates = [
-        Candidate("case_law", c.case_id, c.summary or c.text[:1500], header=c.case_name, payload=c)
+        Candidate("case_law", c.case_id, rerank_source(c), header=rerank_header(c), payload=c)
         for c in cases
     ] + [
         Candidate("judgment", p.chunk_id, p.text, header=p.case_title, payload=p, group=p.doc_id)
@@ -230,10 +235,8 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
     ]
     reranker = await _get_shared_reranker()
     if reranker is not None:
-        import asyncio
-
         loop = asyncio.get_event_loop()
-        predict = lambda pairs: reranker.predict(pairs, batch_size=16)  # noqa: E731
+        predict = lambda pairs: cached_predict(reranker, pairs)  # noqa: E731
         ranked = await loop.run_in_executor(
             None,
             lambda: rerank(query, candidates, predict, top_k=6, min_relative=0.15,
@@ -242,12 +245,22 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
     else:
         ranked = candidates[:6]
 
+    # The landmark set is curated: its top cases (case-law retrieval's own order,
+    # which weighs doctrine/statute links) keep a slot even when their fact-heavy
+    # summaries score below a verbatim judgment passage on the cross-encoder.
+    reserved = [c for c in candidates if c.source == "case_law"][:_RESERVED_LANDMARKS]
+    for c in reserved:
+        if c not in ranked:
+            ranked.append(c)
+    while len(ranked) > 6 and any(c.source == "judgment" for c in ranked):
+        ranked.remove(next(c for c in reversed(ranked) if c.source == "judgment"))
+
     parts, used = [], 0
     for c in ranked:
         if c.source == "case_law":
-            entry = _format_case_law([c.payload], per_case_chars=800)
+            entry = _format_case_law([c.payload], per_case_chars=700)
         else:
-            entry = _format_passage(c.payload, max_chars=800)
+            entry = _format_passage(c.payload, max_chars=700)
         if used + len(entry) > max_chars and parts:
             continue
         parts.append(entry)
@@ -283,11 +296,14 @@ async def invoke_statute_context(
     k: int = 8,
     domain_hint: Optional[list] = None,
     fast_llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
+    with_case_law: bool = True,
 ) -> ToolInvocationResult:
     """
     Understanding-first statute + case-law retrieval: parse the legal
     question, fill via the unified hybrid index, then hop to the curated
     landmark-judgment corpus for cases interpreting those same provisions.
+    with_case_law=False skips the case-law and judgment hop (the chat's
+    sub-question queries, whose statutes are merged with the main query's).
 
     context_text carries the statute text; raw["case_law_text"] carries the
     paired case-law text (kept separate since handlers give each its own
@@ -324,14 +340,18 @@ async def invoke_statute_context(
 
         case_text = ""
         cases, passages = [], []
-        try:
-            cases = await retrieve_case_law(query, parsed, context.chunks)
-        except Exception as e:
-            logger.warning(f"Case law lookup error: {e}")
-        try:
-            passages = await retrieve_judgment_passages(query, context.chunks)
-        except Exception as e:
-            logger.warning(f"Judgment passage lookup error: {e}")
+        if with_case_law:
+            cases, passages = await asyncio.gather(
+                retrieve_case_law(query, parsed, context.chunks),
+                retrieve_judgment_passages(query, context.chunks),
+                return_exceptions=True,
+            )
+            if isinstance(cases, BaseException):
+                logger.warning(f"Case law lookup error: {cases}")
+                cases = []
+            if isinstance(passages, BaseException):
+                logger.warning(f"Judgment passage lookup error: {passages}")
+                passages = []
         if cases or passages:
             case_text = await _reranked_case_law_text(query, cases, passages)
             logger.info(

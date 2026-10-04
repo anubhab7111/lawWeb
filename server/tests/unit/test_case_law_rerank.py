@@ -62,3 +62,11 @@ def test_landmark_case_fits_beside_four_long_passages():
     text = run([landmark], passages, KeywordReranker())
     assert "Arnesh Kumar" in text and "(1990) 8 SCC 273, 2014)" in text
     assert all(f"P{i} v. State" in text for i in range(4))
+
+
+def test_curated_landmark_keeps_a_slot_against_stronger_passages():
+    landmark = case("bhajan", "State of Haryana v. Bhajan Lal (1992)", "facts about a minister and an FIR")
+    passages = [passage(f"sc-{i}#001", f"P{i} v. State", "arrest arrest arrest arrest") for i in range(6)]
+    text = run([landmark], passages, KeywordReranker())
+    assert "Bhajan Lal" in text
+    assert sum(f"P{i} v. State" in text for i in range(6)) == 4
