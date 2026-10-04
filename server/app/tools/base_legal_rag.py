@@ -288,6 +288,21 @@ _shared_reranker_lock = asyncio.Lock()
 _RERANK_CACHE: Dict[Tuple[str, str], float] = {}
 _RERANK_CACHE_MAX = 4096
 
+# (query, text) -> raw cross-encoder score, shared by callers that score the same
+# pair: case-law retrieval and the unified case-law rerank use identical texts.
+_PAIR_CACHE: Dict[Tuple[str, str], float] = {}
+
+
+def cached_predict(reranker: Any, pairs: List[Tuple[str, str]], batch_size: int = 16) -> List[float]:
+    scores = {p: _PAIR_CACHE[p] for p in pairs if p in _PAIR_CACHE}
+    todo = [p for p in dict.fromkeys(pairs) if p not in scores]
+    if todo:
+        scores.update(zip(todo, (float(s) for s in reranker.predict(todo, batch_size=batch_size))))
+        if len(_PAIR_CACHE) > _RERANK_CACHE_MAX:
+            _PAIR_CACHE.clear()
+        _PAIR_CACHE.update(scores)
+    return [scores[p] for p in pairs]
+
 
 async def _get_shared_reranker() -> Optional[Any]:
     """
@@ -454,6 +469,18 @@ def _split_into_sentences(text: str) -> List[str]:
     return parts or [text]
 
 
+_COMPRESS_CANDIDATES = 8
+_FUNCTION_WORDS = frozenset(
+    "the and for with that this from shall any such under which who whom what when where"
+    " are was were has have had been being may can not all its his her their into upon".split()
+)
+
+
+def _content_words(text: str) -> set:
+    """6-letter stems of a text's content words (crude, suffix-insensitive)."""
+    return {w[:6] for w in re.findall(r"[a-z]{3,}", text.lower()) if w not in _FUNCTION_WORDS}
+
+
 async def compress_chunks_for_context(
     query: str, chunks: List["LegalChunk"], max_sentences: int = 3
 ) -> List["LegalChunk"]:
@@ -474,14 +501,22 @@ async def compress_chunks_for_context(
         return chunks
 
     per_chunk_sentences = [_split_into_sentences(c.text) for c in chunks]
+    query_words = _content_words(query)
     pairs: List[Tuple[str, str]] = []
-    owner: List[int] = []
+    owner: List[Tuple[int, int]] = []
     for i, sentences in enumerate(per_chunk_sentences):
         if len(sentences) <= max_sentences:
             continue  # already short enough — nothing to gain from scoring
-        for sent in sentences:
-            pairs.append((query, sent))
-            owner.append(i)
+        # Sentence 0 is always kept. Long sections are pre-filtered lexically so
+        # the cross-encoder (the dominant CPU cost) scores at most
+        # _COMPRESS_CANDIDATES sentences per chunk instead of every one.
+        candidates = sorted(
+            range(1, len(sentences)),
+            key=lambda j: -len(query_words & _content_words(sentences[j])),
+        )[:_COMPRESS_CANDIDATES]
+        for j in candidates:
+            pairs.append((query, sentences[j]))
+            owner.append((i, j))
 
     if not pairs:
         return chunks
@@ -495,9 +530,9 @@ async def compress_chunks_for_context(
         print(f"[compress_chunks_for_context] Sentence rerank failed ({e}) — using full chunks.")
         return chunks
 
-    scores_by_chunk: Dict[int, List[float]] = {}
-    for idx, score in zip(owner, logits):
-        scores_by_chunk.setdefault(idx, []).append(float(score))
+    scores_by_chunk: Dict[int, Dict[int, float]] = {}
+    for (i, j), score in zip(owner, logits):
+        scores_by_chunk.setdefault(i, {})[j] = float(score)
 
     out: List[LegalChunk] = []
     for i, chunk in enumerate(chunks):
@@ -511,9 +546,7 @@ async def compress_chunks_for_context(
         # can strand a later sub-clause ("(2) Notwithstanding...") without the
         # "(1)" it refers back to, which reads as an incomplete/misleading
         # excerpt even though each kept sentence scored well on its own.
-        fill = sorted(
-            (j for j in range(1, len(sentences))), key=lambda j: scores[j], reverse=True
-        )[: max_sentences - 1]
+        fill = sorted(scores, key=lambda j: scores[j], reverse=True)[: max_sentences - 1]
         top_idx = [0] + fill
         keep = sorted(top_idx)  # restore document order, not score order
         out.append(replace(chunk, text=" ".join(sentences[j] for j in keep)))

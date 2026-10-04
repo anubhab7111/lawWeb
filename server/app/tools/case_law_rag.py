@@ -33,9 +33,31 @@ from app.tools.base_legal_rag import (
     _get_shared_reranker,
     _make_bge_embeddings,
     _sigmoid,
+    cached_predict,
 )
+from app.tools.unified_rerank import segments
 
 CASE_LAW_DIR = case_law_dir()
+
+
+def rerank_source(case: "CaseRecord") -> str:
+    return case.summary or case.text[:1500]
+
+
+def rerank_header(case: "CaseRecord") -> str:
+    """Case name plus its curated doctrines: a summary that opens with the facts
+    ("The respondent was a Minister...") says little about what the case stands for."""
+    return f"{case.case_name} — {'; '.join(case.doctrines)}" if case.doctrines else case.case_name
+
+
+def rerank_pair_text(case: "CaseRecord") -> str:
+    """Exactly the unified rerank's first (header + segment) input for this case,
+    so its cross-encoder score is computed once per request (cached_predict)."""
+    segs = segments(rerank_source(case))
+    return f"{rerank_header(case)}\n{segs[0] if segs else case.case_name}"
+
+
+_MAX_CURATED_CANDIDATES = 4
 FAISS_DIR = Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "case_law"
 
 # Composite reranking weights — must sum to 1.0. Semantic similarity still
@@ -545,6 +567,29 @@ class CaseLawRAGSystem:
         for cid, rank in sparse_rank.items():
             fused[cid] = fused.get(cid, 0.0) + 1.0 / (60 + rank)
         candidates = [c for c in sorted(fused, key=fused.get, reverse=True) if c in self._cases][:15]
+
+        boost_keys: Set[Tuple[str, str]] = set()
+        if boost_statutes:
+            boost_keys = {(normalize_act(a), s.lower()) for a, s in boost_statutes}
+        query_issues = query_issues or []
+        query_doctrines = query_doctrines or []
+
+        # The curated doctrine/statute links name the landmark for a question even
+        # when its summary text is far from the query (Bhajan Lal for "quashing of
+        # FIR"); similarity alone never put it in the pool for the boosts to act on.
+        curated = sorted(
+            (cid for cid, c in self._cases.items() if cid not in candidates),
+            key=lambda cid: (
+                _doctrine_overlap_score(self._cases[cid].doctrines, query_doctrines),
+                _statute_overlap_score(self._cases[cid].statutes_cited, boost_keys),
+            ),
+            reverse=True,
+        )
+        candidates += [
+            cid for cid in curated[:_MAX_CURATED_CANDIDATES]
+            if _doctrine_overlap_score(self._cases[cid].doctrines, query_doctrines) > 0
+            or _statute_overlap_score(self._cases[cid].statutes_cited, boost_keys) > 0
+        ]
         if not candidates:
             return []
 
@@ -552,9 +597,9 @@ class CaseLawRAGSystem:
         relevance: Dict[str, float] = {}
         if reranker is not None:
             try:
-                pairs = [(query, self._cases[cid].summary[:2000]) for cid in candidates]
+                pairs = [(query, rerank_pair_text(self._cases[cid])) for cid in candidates]
                 logits = await loop.run_in_executor(
-                    None, lambda: reranker.predict(pairs, batch_size=16)
+                    None, lambda: cached_predict(reranker, pairs)
                 )
                 raw = [float(s) for s in logits]
                 if any(s < 0.0 or s > 1.0 for s in raw):
@@ -566,12 +611,6 @@ class CaseLawRAGSystem:
                 print(f"[case_law] Rerank failed ({e}) — using fused order.")
         if not relevance:
             relevance = {cid: 0.5 for cid in candidates}
-
-        boost_keys: Set[Tuple[str, str]] = set()
-        if boost_statutes:
-            boost_keys = {(normalize_act(a), s.lower()) for a, s in boost_statutes}
-        query_issues = query_issues or []
-        query_doctrines = query_doctrines or []
 
         breakdowns: Dict[str, Dict[str, float]] = {}
 

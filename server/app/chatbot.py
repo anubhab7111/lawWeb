@@ -1627,6 +1627,9 @@ async def gq_retrieve(state: ChatState) -> ChatState:
                 fast_llm_invoke=(
                     _fast_llm_invoke if is_primary and not widen else None
                 ),
+                # Sub-questions add statutes; authorities come from the first
+                # query only (each extra case-law hop cost ~10s of CPU reranking).
+                with_case_law=i == 0,
             )
     if "indian_kanoon" in tools and "indian_kanoon" not in prior:
         jobs["indian_kanoon"] = RAG_TOOL_REGISTRY["indian_kanoon"](
