@@ -570,6 +570,9 @@ class LLMJudge:
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.0,
                             "max_tokens": max_tokens,
+                            # Reasoning models otherwise spend the whole budget
+                            # thinking and return empty content; ignored by others.
+                            "reasoning": {"effort": "low"},
                         },
                     )
                 elapsed = time.perf_counter() - t0
@@ -577,7 +580,12 @@ class LLMJudge:
 
                 response.raise_for_status()
                 data = response.json()
-                raw = data["choices"][0]["message"]["content"] or ""
+                choice = data["choices"][0]
+                raw = choice["message"]["content"] or ""
+                if not raw and choice.get("finish_reason") == "length":
+                    return None, elapsed, (
+                        f"judge used all {max_tokens} tokens on hidden reasoning (finish_reason=length)"
+                    )
                 return raw, elapsed, None
 
             except httpx.HTTPStatusError as exc:
@@ -770,7 +778,7 @@ class LLMJudge:
             # Some free judge models wrap output in hidden reasoning; the
             # 4-metric prompt needs a generous token budget so that doesn't
             # crowd out the JSON answer.
-            raw, elapsed, reason = await self._post_chat(prompt, max_tokens=2048)
+            raw, elapsed, reason = await self._post_chat(prompt, max_tokens=4096)
             if not raw:
                 return {
                     m: JudgeScore.failure(m, reason or "empty judge response")
