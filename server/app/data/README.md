@@ -30,8 +30,9 @@ quarantine/         files rejected by a quality gate, each with a reason
 ```
 
 Layers flow one way: raw PDF -> `text/` -> `clean/` -> `chunks/`. The chunked Supreme
-Court corpus (38,338 judgments, ~1.07M chunks) is prepared data; no retrieval index is
-built from it (a judgment-passage index was tried and removed: see below).
+Court corpus (38,338 judgments, 1,074,755 chunks) is indexed in full in
+`faiss_index/judgments/` (IVF4096-SQ8 FAISS + SQLite FTS5); chat retrieves passages from it
+and reranks them together with the curated landmark cases.
 
 ## Regenerating (from `server/`, conda env `legal_chatbot_env`)
 
@@ -43,9 +44,15 @@ built from it (a judgment-passage index was tried and removed: see below).
 | Precedent index (train+dev) | `EMBEDDINGS_DEVICE=cuda python -m app.ingest.build_precedent_index` |
 | Section maps (IPC->BNS, CrPC->BNSS) | `python -m app.ingest.section_maps` |
 | Decontaminate judgments vs IL-TUR test/dev | `python -m app.ingest.decontaminate [--split dev]` |
+| Judgment index (all chunks, resumable) | `EMBEDDINGS_DEVICE=cuda python -m app.ingest.build_judgment_index` |
+| Statute classifier (InLegalBERT) | `python train_lsi_classifier.py`, then `python -m app.ingest.export_statute_classifier` |
+| Label reranker (fine-tuned cross-encoder) | `python train_label_reranker.py --cases 4000 --tag v1` |
 | Statute + case-law indices | `python rebuild_rag_indices.py --all` |
 | IL-TUR retrieval eval | `python eval_iltur_retrieval.py --split test --tag <name>` |
 | Cache retrieval output for offline tuning | `python tune_iltur_retrieval.py cache ...` |
+| Official IL-TUR scores (per system, sharded) | `python score_iltur.py <system> --split dev\|test` |
+| Report + dev-fitted fusion | `python report_iltur.py classifier precedent_trainmem --fuse` |
+| Check with the leaderboard's own scorer | `python verify_iltur_leaderboard.py` |
 
 Run GPU builds with Ollama idle (see hardware constraints in `CLAUDE.md`).
 
@@ -55,13 +62,21 @@ IL-TUR `lsi` labels are **bare section numbers**. The dataset attaches IPC text 
 one, but the cases beneath mix IPC and CrPC (label 482 is CrPC 482 quashing, 438 is
 anticipatory bail), so scoring is by number. The IL-TUR **test** split is never indexed
 (`iltur_export.assert_disjoint`). Tune on `--split dev`; report on `--split test`.
-Judgments sharing near-verbatim text with a test/dev case can be found with
-`decontaminate.py` before any use of the judgment corpus for retrieval.
+Every judgment is indexed; the 3,967 judgments `decontaminate.py` flags as near-duplicates
+of a test case (and the dev-flagged ones when scoring dev) are masked only at scoring time.
 
-## Tried and removed
+## Results (official IL-TUR `lsi` protocol)
 
-A hybrid (dense + FTS5) index over IPC/CrPC-citing Supreme Court passages, voting for
-the sections their judgments cite, reached Hit@5 ~0.75 alone but added nothing to the
-tuned fusion (best weight 0) and got worse when widened to CrPC-citing judgments
-(procedural passages match any police narrative). Removed per the keep-only-if-it-helps
-rule; it is recoverable from git history (`judgment_rag.py`, `build_judgment_index.py`).
+sklearn macro-F1 over the 100 label names on all 13,019 test cases; thresholds and fusion
+weights fitted on dev only. Published: LeSICiN 28.08, InLegalBERT 26.23, GPT-4 0-shot 23.99.
+
+| System | Test macro-F1 |
+|---|---|
+| InLegalBERT chunked classifier | 38.35 (confirmed with the leaderboard's `evaluate_lsi`) |
+| Classifier + 0.25 x precedent kNN (train-only memory) | 38.48 |
+| Precedent kNN, train+dev memory / train-only / strict near-dup masking | 31.3 / 29.6 / 28.1 |
+| Judgment-passage section votes alone | 16.15 |
+
+The judgment votes (dev-fitted weight 0) and the fine-tuned label reranker (dev candidate
+MRR 0.455 -> 0.606, still below precedent's 0.687; no fusion gain on 1,536 dev cases) add
+nothing to the benchmark. Both stay available: the judgment index serves chat.
