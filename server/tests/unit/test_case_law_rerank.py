@@ -53,3 +53,12 @@ def test_without_a_reranker_landmark_cases_come_first():
     passages = [passage("sc-2#004", "C v. D", "arrest")]
     text = run(cases, passages, None)
     assert text.index("Arnesh Kumar") < text.index("C v. D")
+
+
+def test_landmark_case_fits_beside_four_long_passages():
+    landmark = case("arnesh", "Arnesh Kumar v. State of Bihar", "arrest guidelines " + "x" * 2000)
+    landmark.citation = ", ".join(f"({y}) 8 SCC 273" for y in range(1990, 2030))
+    passages = [passage(f"sc-{i}#001", f"P{i} v. State", "arrest arrest " + "y" * 2000) for i in range(4)]
+    text = run([landmark], passages, KeywordReranker())
+    assert "Arnesh Kumar" in text and "(1990) 8 SCC 273, 2014)" in text
+    assert all(f"P{i} v. State" in text for i in range(4))
