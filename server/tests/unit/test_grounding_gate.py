@@ -1,6 +1,6 @@
 """The claim-level grounding gate. Fixtures are modelled on real answers where the
 previous gate flagged faithful statute text, resolved section numbers against the
-wrong Act, and rewrote correct sentences (see docs/chatbot-production-readiness.md)."""
+wrong Act, and rewrote correct sentences."""
 
 import asyncio
 import json

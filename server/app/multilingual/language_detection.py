@@ -66,8 +66,8 @@ async def _get_model() -> Optional[Any]:
         try:
             if not os.path.exists(path):
                 raise FileNotFoundError(
-                    f"fastText model not found at {path!r} — download lid.176.bin "
-                    "(see docs/multilingual.md)"
+                    f"fastText model not found at {path!r} — download it with: "
+                    f"curl -L -o {path} https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
                 )
             import fasttext
 
