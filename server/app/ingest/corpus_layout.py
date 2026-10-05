@@ -139,9 +139,12 @@ def verify(root: Path, deep: bool = False) -> List[str]:
 
     legacy = root / "manifest" / "legacy_migration.jsonl"
     if legacy.exists():
+        quarantined = {p.name.removesuffix(".reason.json") for p in (root / "quarantine").rglob("*.reason.json")}
         for line in legacy.open():
             r = json.loads(line)
             p = root / r["dst"]
+            if not p.exists() and Path(r["dst"]).stem in quarantined:
+                continue
             if not p.exists():
                 problems.append(f"legacy file missing: {r['dst']}")
             elif deep and hashlib.sha256(p.read_bytes()).hexdigest() != r["sha256"]:
