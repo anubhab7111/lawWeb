@@ -14,8 +14,6 @@ from pathlib import Path
 import os
 import sys
 
-os.environ.setdefault("EMBEDDINGS_DEVICE", "cuda")
-
 _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
@@ -28,6 +26,7 @@ DOMAINS = {
     "unified": get_unified_rag_system,
     "case_law": get_case_law_rag_system,
 }
+REBUILD_DEVICE = "cuda"
 
 
 async def rebuild_domain(domain: str):
@@ -55,10 +54,11 @@ async def rebuild_domain(domain: str):
         print(f"  Removing existing index at {faiss_dir}...")
         shutil.rmtree(faiss_dir)
 
-    # 4. Force rebuild via initialize
-    # initialize() checks _should_rebuild(), which returns True if faiss_dir is missing
+    # 4. Force rebuild with a throwaway embedding model on CUDA. This bypasses
+    # the query-time shared singleton, whose auto policy may use CPU to reserve
+    # VRAM for Ollama.
     print(f"  Building new index from PDFs...")
-    success = await system.initialize()
+    success = await system.build_offline(device=REBUILD_DEVICE)
 
     if success:
         # Bare-act systems hold `_chunks`; the case-law system holds `_cases`.
@@ -108,12 +108,34 @@ async def main():
     args = parser.parse_args()
 
     if args.all:
+        _require_cuda()
         for domain in DOMAINS:
             await rebuild_domain(domain)
     elif args.domain:
+        _require_cuda()
         await rebuild_domain(args.domain)
     else:
         parser.print_help()
+
+
+def _require_cuda() -> None:
+    try:
+        import torch
+    except ImportError as e:
+        raise SystemExit(
+            "CUDA rebuild requires PyTorch in the legal_chatbot_env environment."
+        ) from e
+
+    if not torch.cuda.is_available():
+        raise SystemExit(
+            "CUDA is unavailable; refusing to rebuild on CPU. "
+            "Check the NVIDIA driver and PyTorch CUDA installation."
+        )
+
+    print(
+        f"[rebuild] Using CUDA on {torch.cuda.get_device_name(0)} "
+        f"(PyTorch CUDA {torch.version.cuda})"
+    )
 
 
 if __name__ == "__main__":
