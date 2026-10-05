@@ -1869,7 +1869,7 @@ def _prefers_concise(state: ChatState) -> bool:
     prompt, since it is depth on those that the concise answer would cost. The
     reason to do it at all: the full prompt gives up (never closes its <think>
     block) on a meaningful share of queries and takes 2+ minutes when it doesn't,
-    where the concise one measured ~6x faster (see docs/chatbot-production-readiness.md)."""
+    where the concise one measured ~6x faster."""
     settings = get_settings()
     if not settings.concise_first_enabled:
         return False
