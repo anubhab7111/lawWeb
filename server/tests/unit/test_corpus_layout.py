@@ -56,3 +56,17 @@ def test_verify_flags_problems(tmp_path):
     assert "not in manifest: extra.pdf" in problems
     assert "sha256 mismatch: a.pdf" in problems
     assert "empty directory" in problems
+
+
+def test_verify_accepts_quarantined_legacy_files(tmp_path):
+    init_layout(tmp_path)
+    (tmp_path / "case_law").mkdir(exist_ok=True)
+    (tmp_path / "case_law" / "kept.json").write_text("{}")
+    (tmp_path / "quarantine" / "case_law").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "quarantine" / "case_law" / "gone.reason.json").write_text('{"reason": "wrong judgment"}')
+    rows = [{"dst": "case_law/kept.json", "sha256": ""}, {"dst": "case_law/gone.json", "sha256": ""}]
+    (tmp_path / "manifest" / "legacy_migration.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    legacy = lambda: [p for p in verify(tmp_path) if p.startswith("legacy")]
+    assert legacy() == []
+    (tmp_path / "quarantine" / "case_law" / "gone.reason.json").unlink()
+    assert legacy() == ["legacy file missing: case_law/gone.json"]
