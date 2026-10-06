@@ -34,11 +34,14 @@ Key design decisions
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from app.text_match import any_word
 from typing import List, Optional
+
+import numpy as np
 
 from app.tools.base_legal_rag import (
     BaseLegalRAGSystem,
@@ -311,6 +314,83 @@ _CHARGEABLE_PUNISHMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Doctrine families matched by embedding similarity to the query. Each entry is
+# (plain-language description, expansion terms appended to the search query).
+_DOCTRINE_DESCRIPTIONS = {
+    "forgery": (
+        "Forgery (IPC 463, 468, 471): making a false document or part of a document with intent "
+        "to cause damage or injury, to cheat, or to support a claim; using as genuine a document "
+        "known to be forged. Forgery of a court record, public register, will, valuable security "
+        "or power of attorney.",
+        ["forgery", "using forged document"],
+    ),
+    "abetment": (
+        "Abetment (IPC 107, 109, 120B): instigating a person to do a thing, hiring or procuring "
+        "another person to commit an offence, conspiring with others to commit it, or intentionally "
+        "aiding it. A person who abets an offence or joins a criminal conspiracy is punished with the "
+        "punishment provided for the offence committed in consequence.",
+        ["abetment", "punishment of abetment"],
+    ),
+    "cheating": (
+        "Cheating (IPC 415, 417, 420): deceiving a person, fraudulently or dishonestly, to induce "
+        "them to deliver property, consent to retention of property, or do something causing "
+        "damage. Falsely pretending to be another person, or dishonest concealment of facts.",
+        ["cheating", "dishonestly inducing delivery of property"],
+    ),
+    "theft": (
+        "Theft (IPC 378, 379, 380): dishonestly taking movable property out of the possession of "
+        "another person without consent. Theft from a building or dwelling house, and theft by a "
+        "clerk or servant of their employer's property.",
+        ["theft", "dishonestly taking movable property"],
+    ),
+    "criminal_intimidation": (
+        "Criminal intimidation (IPC 503, 506): threatening another person with injury to their "
+        "person, reputation or property, with intent to cause alarm or to make them do or omit an "
+        "act. A threat to cause death or grievous hurt.",
+        ["criminal intimidation", "threat of injury"],
+    ),
+    "breach_of_trust": (
+        "Criminal breach of trust (IPC 405, 406, 409): a person entrusted with property or with "
+        "dominion over property dishonestly misappropriates or converts it to his own use, or uses "
+        "it in violation of a legal contract or trust. Includes a banker, agent or public servant.",
+        ["criminal breach of trust", "misappropriation of entrusted property"],
+    ),
+    "extortion": (
+        "Extortion (IPC 383, 384): intentionally putting a person in fear of injury and thereby "
+        "dishonestly inducing them to deliver property or a valuable security. Threats to publish "
+        "defamatory material or to accuse of an offence in order to obtain money.",
+        ["extortion", "putting in fear to deliver property"],
+    ),
+    "defamation": (
+        "Defamation (IPC 499, 500): making or publishing an imputation concerning a person, by "
+        "words, signs or visible representation, intending to harm or knowing it will harm their "
+        "reputation. Punishment for defamation.",
+        ["defamation", "imputation harming reputation"],
+    ),
+    "dowry_cruelty": (
+        "Dowry death and cruelty (IPC 304B, 498A): death of a woman within seven years of marriage "
+        "after cruelty or harassment by her husband or his relatives over a dowry demand. A husband "
+        "or relative of the husband subjecting a woman to cruelty.",
+        ["dowry death", "cruelty by husband"],
+    ),
+    "kidnapping": (
+        "Kidnapping and abduction (IPC 359, 363, 366): taking a person out of India or out of lawful "
+        "guardianship, especially a minor. Kidnapping or abducting a woman to compel her marriage or "
+        "forced illicit intercourse.",
+        ["kidnapping", "abduction"],
+    ),
+}
+DOCTRINE_MATCH_MIN_SCORE = 0.50
+
+# Query -> IPC section classifier trained on ILSIC lay questions (see the README in
+# its directory). Its top sections, with their BNS equivalents, join the rerank
+# candidate pool, and its best IPC sections lead the results (gated for short questions).
+CLASSIFIER_DIR = Path(__file__).resolve().parent.parent / "data" / "criminal_section_classifier"
+CLASSIFIER_TOP_N = 10
+CLASSIFIER_FIRST = 5
+CLASSIFIER_LONG_QUERY_WORDS = 40
+CLASSIFIER_SHORT_MIN_PROB = 0.15
+
 
 class CriminalRAGSystem(BaseLegalRAGSystem):
     """
@@ -347,6 +427,77 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         "indian_penal_code_1860",
         "bharatiya_nyaya_sanhita_bns_2023",
     }
+
+    _doctrine_cache: Optional[tuple] = None
+    _pin_index: Optional[dict] = None
+    _classifier: Optional[tuple] = None
+    _query_vec_cache: Optional[tuple] = None
+
+    def _query_vector(self, query: str) -> Optional[np.ndarray]:
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        if self._query_vec_cache and self._query_vec_cache[0] == query:
+            return self._query_vec_cache[1]
+        embeddings = get_unified_rag_system().embeddings
+        if embeddings is None:
+            return None
+        q = np.array(embeddings.embed_query(query))
+        q = q / np.linalg.norm(q)
+        self._query_vec_cache = (query, q)
+        return q
+
+    def _classified_sections(self, query: str) -> List[tuple]:
+        """(act, section, probability) for the classifier's top IPC sections, each followed
+        by its BNS equivalent when one is mapped; empty if the classifier is not installed."""
+        if self._classifier is None:
+            weights = CLASSIFIER_DIR / "weights.npz"
+            if not weights.exists():
+                self._classifier = ()
+                return []
+            z = np.load(weights)
+            bns_map = json.loads((CLASSIFIER_DIR / "bns_map.json").read_text())
+            self._classifier = (z["W"], z["b"], [str(label) for label in z["labels"]], bns_map)
+        if not self._classifier:
+            return []
+        W, b, labels, bns_map = self._classifier
+        q = self._query_vector(query)
+        if q is None:
+            return []
+        # No abstaining on NONE: queries reach this path already routed as criminal, and
+        # on ILSIC dev abstaining dropped hit@5 from 0.82 to 0.65.
+        logits = W @ q + b
+        probs = np.exp(logits - logits.max())
+        probs /= probs.sum()
+        triples = []
+        for i in np.argsort(-logits):
+            if labels[i] == "NONE":
+                continue
+            triples.append(("Indian Penal Code", labels[i], float(probs[i])))
+            if labels[i] in bns_map:
+                triples.append(("Bharatiya Nyaya Sanhita", bns_map[labels[i]], float(probs[i])))
+            if sum(1 for act, _, _ in triples if act == "Indian Penal Code") >= CLASSIFIER_TOP_N:
+                break
+        return triples
+
+    def _pinned_chunk_ids(self, sections: List[tuple]) -> List[str]:
+        """Chunk ids for the given (act, section) pairs."""
+        if not sections:
+            return []
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        if self._pin_index is None:
+            index: dict = {}
+            for cid, chunk in get_unified_rag_system()._chunks.items():
+                key = (chunk.act_name, str(chunk.section_number))
+                index.setdefault(key, []).append(cid)
+            self._pin_index = index
+        return [
+            cid
+            for (act, section), cids in self._pin_index.items()
+            for act_key, sec in sections
+            if act_key in act and section == sec
+            for cid in cids
+        ]
 
     @property
     def domain_name(self) -> str:
@@ -507,9 +658,39 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         ):
             terms.extend(["criminal trespass", "house-breaking"])
 
+        terms.extend(self._doctrine_terms(query))
+
         if terms:
             return query + " " + " ".join(terms)
         return query
+
+    def _matched_doctrines(self, query: str) -> List[str]:
+        """Doctrine families whose description is similar enough to the query."""
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        embeddings = get_unified_rag_system().embeddings
+        if embeddings is None:
+            return []
+        if self._doctrine_cache is None:
+            names = list(_DOCTRINE_DESCRIPTIONS)
+            vecs = np.array(
+                embeddings.embed_documents([_DOCTRINE_DESCRIPTIONS[n][0] for n in names])
+            )
+            self._doctrine_cache = (names, vecs / np.linalg.norm(vecs, axis=1, keepdims=True))
+        names, doc_vecs = self._doctrine_cache
+        q = self._query_vector(query)
+        if q is None:
+            return []
+        scores = doc_vecs @ q
+        return [name for name, score in zip(names, scores) if score >= DOCTRINE_MATCH_MIN_SCORE]
+
+    def _doctrine_terms(self, query: str) -> List[str]:
+        """Expansion terms for doctrine families whose description the query matches."""
+        return [
+            term
+            for name in self._matched_doctrines(query)
+            for term in _DOCTRINE_DESCRIPTIONS[name][1]
+        ]
 
     def _build_search_query(
         self, query: str, crime_type: str, features: CrimeFeatures
@@ -577,13 +758,34 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 self._preprocess_query(query), crime_type, features
             )
 
+            classified = self._classified_sections(query)
             chunks = await unified._hybrid_search(
                 search_query=search_query,
                 rerank_query=query,
                 k=k * 2,
-                min_score=0.25,
+                min_score=0.0,
                 domains=[self.domain_name],
+                extra_candidates=self._pinned_chunk_ids([(a, s) for a, s, _ in classified]),
             )
+            # Pinned candidates enter the fused list last, so the rerank/fused blend
+            # buries them; lead with the classifier's best sections instead. It was
+            # trained on long forum narratives, so short questions keep the reranker's
+            # order unless the classifier is confident.
+            short = len(query.split()) < CLASSIFIER_LONG_QUERY_WORDS
+            lead_sections = [
+                (a, s) for a, s, p in classified
+                if a == "Indian Penal Code" and (not short or p >= CLASSIFIER_SHORT_MIN_PROB)
+            ][:CLASSIFIER_FIRST]
+            reranked_score = {(c.act_name, c.section_number): c.score for c in chunks}
+            lead = []
+            for pair in lead_sections:
+                cids = sorted(self._pinned_chunk_ids([pair]))
+                if cids:
+                    chunk = unified._chunks[cids[0]]
+                    lead.append(replace(chunk, score=reranked_score.get(
+                        (chunk.act_name, chunk.section_number), 0.5)))
+            chunks = lead + chunks
+            lead_rank = {(c.act_name, c.section_number): i for i, c in enumerate(lead)}
 
             matches: List[SectionMatch] = []
             seen: set = set()
@@ -606,9 +808,12 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 )
 
                 punishment = _extract_punishment(chunk.text) or (
-                    chunk.text[:250] if chunk.has_punishment else ""
+                    chunk.text[:250]
+                    if chunk.has_punishment or _CHARGEABLE_PUNISHMENT_RE.search(chunk.text)
+                    else ""
                 )
-                if requires_punishment and (not punishment or len(punishment) < 10):
+                is_lead = (chunk.act_name, sec_num) in lead_rank
+                if requires_punishment and not is_lead and (not punishment or len(punishment) < 10):
                     continue
 
                 matches.append(
@@ -628,7 +833,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                     )
                 )
 
-            matches.sort(key=lambda m: m.confidence, reverse=True)
+            matches.sort(
+                key=lambda m: (lead_rank.get((m.act_name, m.section), len(lead_rank)), -m.confidence)
+            )
             matches = matches[:k]
 
             avg_conf = (
