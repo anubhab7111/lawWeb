@@ -95,7 +95,7 @@ from app.tool_dispatch import (
 )
 from app.tools.crime_reporter import classify_crime_type
 from app.tools.followup import crime_report_too_thin, find_location, missing_lawyer_details
-from app.tools.document_classifier import get_document_classifier
+from app.tools.document_classifier import classify_document, get_document_classifier
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 from app.tools.indian_law_rag import get_indian_law_rag
 from app.tools.lawyer_recommender import (
@@ -2226,8 +2226,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         # ================================================================
         # Layer 1: Document Classification (deterministic)
         # ================================================================
-        classifier = get_document_classifier()
-        classification = classifier.classify(document_content)
+        classification = await classify_document(document_content)
 
         logger.info(
             f"[Layer 1] Document classified as: {classification.document_type} "

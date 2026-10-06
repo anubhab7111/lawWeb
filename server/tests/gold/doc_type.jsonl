@@ -1,0 +1,195 @@
+{"id": "sale_deed:0", "source": "synthetic", "type": "Sale Deed", "split": "dev"}
+{"id": "sale_deed:1", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:2", "source": "synthetic", "type": "Sale Deed", "split": "dev"}
+{"id": "sale_deed:3", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:4", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:5", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:6", "source": "synthetic", "type": "Sale Deed", "split": "dev"}
+{"id": "sale_deed:7", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:8", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:9", "source": "synthetic", "type": "Sale Deed", "split": "dev"}
+{"id": "sale_deed:10", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:11", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:12", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "sale_deed:13", "source": "synthetic", "type": "Sale Deed", "split": "dev"}
+{"id": "sale_deed:14", "source": "synthetic", "type": "Sale Deed", "split": "test"}
+{"id": "agreement_to_sell:0", "source": "synthetic", "type": "Agreement to Sell", "split": "dev"}
+{"id": "agreement_to_sell:1", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:2", "source": "synthetic", "type": "Agreement to Sell", "split": "dev"}
+{"id": "agreement_to_sell:3", "source": "synthetic", "type": "Agreement to Sell", "split": "dev"}
+{"id": "agreement_to_sell:4", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:5", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:6", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:7", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:8", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:9", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:10", "source": "synthetic", "type": "Agreement to Sell", "split": "dev"}
+{"id": "agreement_to_sell:11", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:12", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "agreement_to_sell:13", "source": "synthetic", "type": "Agreement to Sell", "split": "dev"}
+{"id": "agreement_to_sell:14", "source": "synthetic", "type": "Agreement to Sell", "split": "test"}
+{"id": "power_of_attorney:0", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:1", "source": "synthetic", "type": "Power of Attorney", "split": "dev"}
+{"id": "power_of_attorney:2", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:3", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:4", "source": "synthetic", "type": "Power of Attorney", "split": "dev"}
+{"id": "power_of_attorney:5", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:6", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:7", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:8", "source": "synthetic", "type": "Power of Attorney", "split": "dev"}
+{"id": "power_of_attorney:9", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:10", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:11", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "power_of_attorney:12", "source": "synthetic", "type": "Power of Attorney", "split": "dev"}
+{"id": "power_of_attorney:13", "source": "synthetic", "type": "Power of Attorney", "split": "dev"}
+{"id": "power_of_attorney:14", "source": "synthetic", "type": "Power of Attorney", "split": "test"}
+{"id": "rent_agreement:0", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:1", "source": "synthetic", "type": "Rent Agreement", "split": "dev"}
+{"id": "rent_agreement:2", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:3", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:4", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:5", "source": "synthetic", "type": "Rent Agreement", "split": "dev"}
+{"id": "rent_agreement:6", "source": "synthetic", "type": "Rent Agreement", "split": "dev"}
+{"id": "rent_agreement:7", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:8", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:9", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:10", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:11", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:12", "source": "synthetic", "type": "Rent Agreement", "split": "dev"}
+{"id": "rent_agreement:13", "source": "synthetic", "type": "Rent Agreement", "split": "test"}
+{"id": "rent_agreement:14", "source": "synthetic", "type": "Rent Agreement", "split": "dev"}
+{"id": "will:0", "source": "synthetic", "type": "Will / Testament", "split": "dev"}
+{"id": "will:1", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:2", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:3", "source": "synthetic", "type": "Will / Testament", "split": "dev"}
+{"id": "will:4", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:5", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:6", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:7", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:8", "source": "synthetic", "type": "Will / Testament", "split": "dev"}
+{"id": "will:9", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:10", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:11", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:12", "source": "synthetic", "type": "Will / Testament", "split": "test"}
+{"id": "will:13", "source": "synthetic", "type": "Will / Testament", "split": "dev"}
+{"id": "will:14", "source": "synthetic", "type": "Will / Testament", "split": "dev"}
+{"id": "partnership_deed:0", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:1", "source": "synthetic", "type": "Partnership Deed", "split": "dev"}
+{"id": "partnership_deed:2", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:3", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:4", "source": "synthetic", "type": "Partnership Deed", "split": "dev"}
+{"id": "partnership_deed:5", "source": "synthetic", "type": "Partnership Deed", "split": "dev"}
+{"id": "partnership_deed:6", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:7", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:8", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:9", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:10", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:11", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:12", "source": "synthetic", "type": "Partnership Deed", "split": "test"}
+{"id": "partnership_deed:13", "source": "synthetic", "type": "Partnership Deed", "split": "dev"}
+{"id": "partnership_deed:14", "source": "synthetic", "type": "Partnership Deed", "split": "dev"}
+{"id": "affidavit:0", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:1", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:2", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:3", "source": "synthetic", "type": "Affidavit", "split": "dev"}
+{"id": "affidavit:4", "source": "synthetic", "type": "Affidavit", "split": "dev"}
+{"id": "affidavit:5", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:6", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:7", "source": "synthetic", "type": "Affidavit", "split": "dev"}
+{"id": "affidavit:8", "source": "synthetic", "type": "Affidavit", "split": "dev"}
+{"id": "affidavit:9", "source": "synthetic", "type": "Affidavit", "split": "dev"}
+{"id": "affidavit:10", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:11", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:12", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:13", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "affidavit:14", "source": "synthetic", "type": "Affidavit", "split": "test"}
+{"id": "bail_application:0", "source": "synthetic", "type": "Bail Application", "split": "dev"}
+{"id": "bail_application:1", "source": "synthetic", "type": "Bail Application", "split": "dev"}
+{"id": "bail_application:2", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:3", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:4", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:5", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:6", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:7", "source": "synthetic", "type": "Bail Application", "split": "dev"}
+{"id": "bail_application:8", "source": "synthetic", "type": "Bail Application", "split": "dev"}
+{"id": "bail_application:9", "source": "synthetic", "type": "Bail Application", "split": "dev"}
+{"id": "bail_application:10", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:11", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:12", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:13", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "bail_application:14", "source": "synthetic", "type": "Bail Application", "split": "test"}
+{"id": "complaint:0", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:1", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:2", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:3", "source": "synthetic", "type": "Complaint (CrPC)", "split": "dev"}
+{"id": "complaint:4", "source": "synthetic", "type": "Complaint (CrPC)", "split": "dev"}
+{"id": "complaint:5", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:6", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:7", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:8", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:9", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:10", "source": "synthetic", "type": "Complaint (CrPC)", "split": "dev"}
+{"id": "complaint:11", "source": "synthetic", "type": "Complaint (CrPC)", "split": "dev"}
+{"id": "complaint:12", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "complaint:13", "source": "synthetic", "type": "Complaint (CrPC)", "split": "dev"}
+{"id": "complaint:14", "source": "synthetic", "type": "Complaint (CrPC)", "split": "test"}
+{"id": "notice:0", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:1", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "dev"}
+{"id": "notice:2", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:3", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:4", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:5", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:6", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:7", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:8", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "dev"}
+{"id": "notice:9", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:10", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "dev"}
+{"id": "notice:11", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:12", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "dev"}
+{"id": "notice:13", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "test"}
+{"id": "notice:14", "source": "synthetic", "type": "Notice (CrPC/CPC)", "split": "dev"}
+{"id": "chargesheet:0", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:1", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:2", "source": "synthetic", "type": "Chargesheet", "split": "dev"}
+{"id": "chargesheet:3", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:4", "source": "synthetic", "type": "Chargesheet", "split": "dev"}
+{"id": "chargesheet:5", "source": "synthetic", "type": "Chargesheet", "split": "dev"}
+{"id": "chargesheet:6", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:7", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:8", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:9", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:10", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:11", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:12", "source": "synthetic", "type": "Chargesheet", "split": "test"}
+{"id": "chargesheet:13", "source": "synthetic", "type": "Chargesheet", "split": "dev"}
+{"id": "chargesheet:14", "source": "synthetic", "type": "Chargesheet", "split": "dev"}
+{"id": "year=2014/2014_3_810_820.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "dev"}
+{"id": "year=2007/2007_4_777_790.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=1997/1997_3_412_420.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=2003/S_2003_6_690_693.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=1996/S_1996_5_219_221.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=1980/1980_1_498_505.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "dev"}
+{"id": "year=2016/2016_1_34_48.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=2026/2026_1_91_118.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=1996/1996_2_468_470.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=1971/1971_1_943_948.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=1960/1961_2_949_956.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "dev"}
+{"id": "year=1993/S_1993_1_553_560.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=2005/S_2005_3_651_662.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "test"}
+{"id": "year=2007/2007_8_115_125.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "dev"}
+{"id": "year=1994/1994_2_257_264.txt.gz", "source": "sc_judgment", "type": "Court Order / Judgment", "split": "dev"}
+{"id": "Airport PSAIRPORT-0034-2017-1907__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "Airport PSAIRPORT-0043-2018-3085__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "dev"}
+{"id": "Baguiati PS511-19__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "dev"}
+{"id": "Baguiati PS516-18__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "Bidhannagar North PSBDN-NORTH-0208-2017-2524__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "Bidhannagar South PSBDN-SOUTH-0100-2017-4941__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "Bidhannagar South PSBDN-SOUTH-0143-2017-4823__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "dev"}
+{"id": "Cyber-Crime PS50-2020__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "Cyber-Crime PS55-21__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "ECO PARK PS2__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "dev"}
+{"id": "ECO PARK PS8__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "Lake Town PS17__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "NSCBI Airport PSNSCBI-AIRPORT-0010-2018-5239__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "dev"}
+{"id": "NSCBI Airport PSNSCBI-AIRPORT-0015-2018-5367__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}
+{"id": "Women PS53__1.jpg", "source": "icdar_fir", "type": "FIR", "split": "test"}

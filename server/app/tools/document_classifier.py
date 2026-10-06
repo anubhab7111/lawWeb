@@ -21,8 +21,12 @@ Supported document types:
 """
 
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 from dataclasses import dataclass, field
+
+import numpy as np
 
 
 @dataclass
@@ -338,6 +342,48 @@ DOCUMENT_PATTERNS: Dict[str, Dict[str, Any]] = {
 }
 
 
+REFERENCE_PATH = Path(__file__).resolve().parents[1] / "data" / "doc_type_classifier" / "references.npz"
+REFERENCE_CHARS = 2000
+TOP_K = 3
+
+
+@lru_cache(maxsize=1)
+def _load_references():
+    if not REFERENCE_PATH.exists():
+        return None
+    z = np.load(REFERENCE_PATH)
+    return z["X"], np.array([str(label) for label in z["labels"]])
+
+
+def _nearest_type(vector) -> Tuple[str, float]:
+    """Type whose top-K most similar reference documents have the highest mean cosine."""
+    X, labels = _load_references()
+    q = np.asarray(vector, dtype=np.float32)
+    sims = X @ (q / np.linalg.norm(q))
+    best_type, best = "Unknown", -1.0
+    for doc_type in dict.fromkeys(labels):
+        score = float(np.sort(sims[labels == doc_type])[::-1][:TOP_K].mean())
+        if score > best:
+            best_type, best = doc_type, score
+    return best_type, best
+
+
+async def classify_document(document_text: str) -> DocumentClassification:
+    """Embedding classification when the shared model and references are available, regex otherwise."""
+    classifier = get_document_classifier()
+    if not document_text or _load_references() is None:
+        return classifier.classify(document_text)
+    try:
+        from app.tools.base_legal_rag import _get_shared_embeddings
+
+        embeddings = await _get_shared_embeddings()
+        vector = embeddings.embed_query(document_text[:REFERENCE_CHARS])
+    except Exception as e:
+        print(f"[document_classifier] embedding failed ({e}) — regex fallback")
+        return classifier.classify(document_text)
+    return classifier.classify(document_text, vector)
+
+
 class DocumentClassifier:
     """
     Deterministic classifier for Indian legal documents.
@@ -350,21 +396,29 @@ class DocumentClassifier:
     def __init__(self):
         self.patterns = DOCUMENT_PATTERNS
 
-    def classify(self, document_text: str) -> DocumentClassification:
+    def classify(self, document_text: str, vector=None) -> DocumentClassification:
         """
-        Classify a legal document into a predefined type.
-
-        Args:
-            document_text: Full text of the document
-
-        Returns:
-            DocumentClassification with type, confidence, and matched indicators
+        Classify a legal document into a predefined type. With `vector` (the BGE-M3
+        embedding of the first REFERENCE_CHARS characters) and the reference file
+        present, the type comes from the nearest reference documents; otherwise from
+        the weighted regex patterns.
         """
         if not document_text or not document_text.strip():
             return DocumentClassification(
                 document_type="Unknown",
                 confidence=0.0,
                 matched_indicators=["Empty document"],
+            )
+
+        if vector is not None and _load_references() is not None:
+            doc_type, score = _nearest_type(vector)
+            text = document_text.lower()
+            return DocumentClassification(
+                document_type=doc_type,
+                confidence=min(score, 0.99),
+                sub_type=self._detect_sub_type(doc_type, text),
+                matched_indicators=["embedding: nearest reference documents"],
+                jurisdiction_hints=self._detect_jurisdiction(text),
             )
 
         text = document_text.lower()
