@@ -73,7 +73,7 @@ def collect() -> None:
                     "text": s.text.strip(), "citations": s.citations, "high_risk": s.is_high_risk,
                     "det_status": s.det_status, "final_status": s.status, "overlap": round(s.overlap, 3),
                     "needs_llm": s.needs_llm, "sent_to_llm": id(s) in fix_ids, "outcome": s.outcome,
-                    "evidence": s.evidence, "candidates": s.candidates,
+                    "evidence": s.evidence,
                 }
                 for s in report.sentences if s.is_claim
             ],
@@ -132,8 +132,93 @@ def premise() -> None:
           {s: sum(x["final_status"] == s for x in all_claims) for s in {x["final_status"] for x in all_claims}})
 
 
+GOLD = Path("tests/gold/grounding.jsonl")
+GATE = 0.90
+
+
+def load_gold(split: str = None) -> list:
+    rows = [json.loads(l) for l in GOLD.read_text().splitlines()]
+    return [r for r in rows if split is None or r["split"] == split]
+
+
+def binary_report(name: str, rows: list, supported: list) -> dict:
+    gold = [r["label"] == SUPPORTED for r in rows]
+    tp = sum(g and p for g, p in zip(gold, supported))
+    tn = sum(not g and not p for g, p in zip(gold, supported))
+    pos, neg = sum(gold), len(gold) - sum(gold)
+    cleared = sum(supported)
+    out = {
+        "acc": (tp + tn) / len(rows),
+        "balanced_acc": (tp / pos + tn / neg) / 2,
+        "precision_supported": tp / cleared if cleared else float("nan"),
+        "cleared": cleared,
+    }
+    print(f"[{name}] n={len(rows)} " + " ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in out.items()))
+    return out
+
+
+def baseline() -> None:
+    for split in ("dev", "test"):
+        rows = load_gold(split)
+        binary_report(f"rules only / {split}", rows, [r["det_status"] == SUPPORTED for r in rows])
+        binary_report(f"rules + LLM (current) / {split}", rows, [r["llm_status"] == SUPPORTED for r in rows])
+
+
+async def similarities(rows: list) -> list:
+    """Cosine between each claim and its evidence window, on the shared BGE-M3 model."""
+    import numpy as np
+
+    from app.tools.base_legal_rag import _get_shared_embeddings
+
+    emb = await _get_shared_embeddings()
+    texts = [r["text"] for r in rows]
+    evid = [r["evidence"] or " " for r in rows]
+    A = np.array(emb.embed_documents(texts))
+    B = np.array(emb.embed_documents(evid))
+    A /= np.linalg.norm(A, axis=1, keepdims=True)
+    B /= np.linalg.norm(B, axis=1, keepdims=True)
+    return [float(x) for x in (A * B).sum(axis=1)]
+
+
+def similarity() -> None:
+    """Option 1: a claim the LLM would only review is cleared as SUPPORTED when its cosine
+    similarity to the evidence is >= T. T = the lowest threshold whose dev precision on
+    cleared claims is >= 0.95; gate: test precision of cleared claims >= 0.90."""
+    rows = load_gold()
+    sims = asyncio.run(similarities(rows))
+    for r, s in zip(rows, sims):
+        r["sim"] = s
+    dev = [r for r in rows if r["split"] == "dev"]
+    test = [r for r in rows if r["split"] == "test"]
+    for name, part in (("dev", dev), ("test", test)):
+        sup = sorted(round(r["sim"], 3) for r in part if r["label"] == SUPPORTED)
+        nsup = sorted(round(r["sim"], 3) for r in part if r["label"] != SUPPORTED)
+        print(f"{name} sims  SUPPORTED median {sup[len(sup) // 2]}  NOT median {nsup[len(nsup) // 2]}")
+    best = None
+    for t in sorted({round(r["sim"], 3) for r in dev}):
+        cleared = [r for r in dev if r["sim"] >= t]
+        if len(cleared) >= 5 and sum(r["label"] == SUPPORTED for r in cleared) / len(cleared) >= 0.95:
+            best = t
+            break
+    print(f"chosen threshold T={best}")
+    if best is None:
+        return
+    for name, part in (("dev", dev), ("test", test)):
+        binary_report(f"similarity>=T alone / {name}", part, [r["sim"] >= best for r in part])
+        reviewed = [r for r in part if r["sent_to_llm"] and r["det_status"] not in (CONTRADICTED, UNGROUNDED)]
+        cleared = [r for r in reviewed if r["sim"] >= best]
+        good = sum(r["label"] == SUPPORTED for r in cleared)
+        print(f"  {name}: review-only claims {len(reviewed)}, cleared without LLM {len(cleared)}, "
+              f"of which truly supported {good}")
+        combined = [(r["sim"] >= best) if r in cleared else (r["llm_status"] == SUPPORTED) for r in part]
+        binary_report(f"rules + similarity + LLM / {name}", part, combined)
+    test_cleared = [r for r in test if r["sim"] >= best]
+    prec = sum(r["label"] == SUPPORTED for r in test_cleared) / max(1, len(test_cleared))
+    print(f"\nGATE {'PASS' if prec >= GATE else 'FAIL'}: test precision of cleared claims {prec:.3f} vs {GATE}")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["collect", "premise"])
+    ap.add_argument("cmd", choices=["collect", "premise", "baseline", "similarity"])
     a = ap.parse_args()
-    {"collect": collect, "premise": premise}[a.cmd]()
+    {"collect": collect, "premise": premise, "baseline": baseline, "similarity": similarity}[a.cmd]()

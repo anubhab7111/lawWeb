@@ -122,7 +122,6 @@ class SentenceGrounding:
     # Status from the deterministic pass alone, before any LLM adjudication. A
     # sentence is only ever rewritten when this already condemned it.
     det_status: str = SUPPORTED
-    candidates: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -608,7 +607,6 @@ def assess_grounding(
                 reason=reason,
                 evidence=evidence,
                 needs_llm=needs_llm,
-                candidates=candidates,
             )
         )
 
@@ -628,11 +626,12 @@ evidence and decide a status:
 - CONTRADICTED: the evidence states the opposite, or the claim reverses a condition/exception (e.g. drops "unless", "except", "subject to", "shall not")
 - UNGROUNDED: the evidence does not address the claim at all
 
-Then rewrite the claim as a single "corrected" sentence:
-- If SUPPORTED, repeat the claim unchanged.
-- Otherwise, rewrite it using ONLY facts present in its evidence. If the evidence supports nothing \
-useful, write a short sentence stating the retrieved sources do not confirm this and recommend \
-consulting a lawyer. Never invent new facts, numbers, or section references that are not in the evidence.
+Then fill "corrected":
+- For a claim marked REWRITE: no, always set "corrected" to an empty string "".
+- For a claim marked REWRITE: yes: if SUPPORTED, repeat the claim unchanged; otherwise rewrite it as a \
+single sentence using ONLY facts present in its evidence. If the evidence supports nothing useful, write \
+a short sentence stating the retrieved sources do not confirm this and recommend consulting a lawyer. \
+Never invent new facts, numbers, or section references that are not in the evidence.
 
 CLAIMS:
 {claims_block}
@@ -668,11 +667,18 @@ CORRECTION_RESPONSE_SCHEMA = {
 }
 
 
+def _may_rewrite(s: SentenceGrounding) -> bool:
+    """Only text the deterministic evidence already condemned is ever rewritten; for the rest
+    the LLM's verdict is all that's used, so asking it for a sentence just costs tokens."""
+    return s.det_status in (CONTRADICTED, UNGROUNDED)
+
+
 def _build_claims_block(sentences: List[SentenceGrounding]) -> str:
     lines = []
     for i, s in enumerate(sentences, 1):
         evidence = (s.evidence.strip() or "(no retrieved evidence available)")[:_MAX_EVIDENCE_CHARS]
-        lines.append(f'{i}. CLAIM: "{s.text.strip()}"\n   EVIDENCE: "{evidence}"')
+        rewrite = "yes" if _may_rewrite(s) else "no"
+        lines.append(f'{i}. CLAIM: "{s.text.strip()}"\n   EVIDENCE: "{evidence}"\n   REWRITE: {rewrite}')
     return "\n\n".join(lines)
 
 
@@ -733,10 +739,7 @@ async def _llm_adjudicate_and_correct(
         status = str(item.get("status", "")).upper().strip()
         if status not in valid_statuses:
             status = UNGROUNDED
-        corrected = str(item.get("corrected", "")).strip()
-        if not corrected:
-            continue
-        result[idx] = (status, corrected)
+        result[idx] = (status, str(item.get("corrected", "")).strip())
     return result
 
 
@@ -813,7 +816,10 @@ async def ground_and_correct(
             # Verified as stated: never rewrite it, whatever wording came back.
             s.status = SUPPORTED
             continue
-        if s.det_status not in (CONTRADICTED, UNGROUNDED):
+        if _may_rewrite(s) and not corrected_sentence:
+            s.status = new_status
+            continue
+        if not _may_rewrite(s):
             # Only the small model objects; the deterministic evidence (quantities,
             # citations, conditions, overlap) does not. Measured on real answers,
             # a 4B model rewriting a sentence from an 800-char window flips
