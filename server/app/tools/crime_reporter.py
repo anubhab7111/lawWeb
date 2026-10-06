@@ -4,9 +4,15 @@ Provides crime type detection for routing crime reports.
 The finetuned LLM handles generating guidance, IPC sections, punishment, and further steps.
 """
 
-from typing import Dict, List
+from functools import lru_cache
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 
 from app.text_match import count_words
+
+CLASSIFIER_DIR = Path(__file__).resolve().parents[1] / "data" / "crime_type_classifier"
 
 # List of recognized crime types for the /crime-types API endpoint
 CRIME_TYPES: List[str] = [
@@ -207,6 +213,33 @@ def detect_crime_type(description: str) -> str:
         return max(scores.items(), key=lambda x: x[1])[0]
 
     return "general"
+
+
+@lru_cache(maxsize=1)
+def _load_classifier() -> Optional[Tuple[np.ndarray, np.ndarray, List[str]]]:
+    weights = CLASSIFIER_DIR / "weights.npz"
+    if not weights.exists():
+        return None
+    z = np.load(weights)
+    return z["W"], z["b"], [str(label) for label in z["labels"]]
+
+
+async def classify_crime_type(description: str) -> str:
+    """Crime type from a logistic-regression head over the shared BGE-M3 embedding;
+    falls back to keyword matching when the weights or the embedding model are missing."""
+    classifier = _load_classifier()
+    if classifier is None:
+        return detect_crime_type(description)
+    try:
+        from app.tools.base_legal_rag import _get_shared_embeddings
+
+        embeddings = await _get_shared_embeddings()
+        q = np.array(embeddings.embed_query(description), dtype=np.float32)
+    except Exception as e:
+        print(f"[crime_reporter] embedding failed ({e}) — keyword fallback")
+        return detect_crime_type(description)
+    W, b, labels = classifier
+    return labels[int(np.argmax(W @ (q / np.linalg.norm(q)) + b))]
 
 
 def is_complex_crime(crime_type: str) -> bool:
