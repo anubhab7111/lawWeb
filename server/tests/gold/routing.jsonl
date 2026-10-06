@@ -1,0 +1,400 @@
+{"id": "ilsic_train5328", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train3988", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev151", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train111", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train640", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev432", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev0", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3271", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_test435", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train620", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train6188", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5133", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3323", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1821", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train1261", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4246", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train321", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train2701", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3391", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3244", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train3351", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_test286", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train4758", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train6006", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train3966", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4874", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4754", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train3085", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train6112", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4959", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train2185", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_test661", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train1482", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train646", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train2755", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train293", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_test16", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_test142", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5454", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev618", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train1519", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5960", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train4455", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train1341", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train3575", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4537", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev707", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train2750", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train2476", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train413", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train5692", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train2677", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train714", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_dev16", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4862", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_test295", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1268", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train3251", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train1627", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train665", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3608", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3719", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5867", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4368", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3932", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train1548", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5973", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3909", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train5412", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_dev502", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4175", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_test328", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "ilsic_train5063", "source": "ilsic", "intent": "general_query", "has_document": false, "split": "test"}
+{"id": "chat0", "source": "chat_messages", "intent": "general_query", "text": "What is the punishment for theft under Indian law?", "has_document": false, "split": "dev"}
+{"id": "chat1", "source": "chat_messages", "intent": "general_query", "text": "What is the punishment for dowry harassment under Indian law?", "has_document": false, "split": "test"}
+{"id": "chat2", "source": "chat_messages", "intent": "general_query", "text": "What is bail under CrPC?", "has_document": false, "split": "dev"}
+{"id": "chat3", "source": "chat_messages", "intent": "general_query", "text": "what does the article 21 of the constitution state?", "has_document": false, "split": "dev"}
+{"id": "chat4", "source": "chat_messages", "intent": "general_query", "text": "What is Article 21 of the Indian Constitution?", "has_document": false, "split": "test"}
+{"id": "chat5", "source": "chat_messages", "intent": "general_query", "text": "What does Article 21 guarantee?", "has_document": false, "split": "test"}
+{"id": "chat6", "source": "chat_messages", "intent": "general_query", "text": "Can Parliament pass a law restricting social media speech citing public order? How would courts test its constitutionality under Article 19?", "has_document": false, "split": "dev"}
+{"id": "ilsic_test75", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev762", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train2351", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev196", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train91", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train2125", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4323", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train2696", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train4686", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train980", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train1596", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train5456", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1751", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4189", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train5352", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_test130", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train2380", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train5527", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3303", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train82", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5711", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train6328", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_test299", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3136", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4111", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1693", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1829", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train2068", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train1877", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train2984", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4914", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train6374", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_test506", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_test0", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5115", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3815", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train5369", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train606", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3950", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train5266", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train291", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev236", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train3443", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train3011", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train2881", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train527", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev661", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train1235", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3811", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev157", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train884", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3749", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train4890", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev223", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train2343", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev240", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train242", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train5791", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_test488", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev226", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3952", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev181", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1884", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5090", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train3223", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train216", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train747", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train6370", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train4242", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_test49", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train1733", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_train147", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1611", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev754", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "ilsic_dev6", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train784", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_train1967", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_test395", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "dev"}
+{"id": "ilsic_test450", "source": "ilsic", "intent": "crime_report", "has_document": false, "split": "test"}
+{"id": "chat_c0", "source": "chat_messages", "intent": "crime_report", "text": "I got raped in market, please help", "has_document": false, "split": "dev"}
+{"id": "ilsic_dev589", "source": "ilsic", "intent": "find_lawyer", "has_document": false, "split": "dev"}
+{"id": "ilsic_train5808", "source": "ilsic", "intent": "find_lawyer", "has_document": false, "split": "dev"}
+{"id": "ilsic_train6082", "source": "ilsic", "intent": "find_lawyer", "has_document": false, "split": "test"}
+{"id": "syn_lawyer0", "source": "synthetic", "intent": "find_lawyer", "text": "I need a lawyer for my divorce case in Pune", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer1", "source": "synthetic", "intent": "find_lawyer", "text": "Can you suggest a good criminal lawyer in Delhi?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer2", "source": "synthetic", "intent": "find_lawyer", "text": "Looking for an advocate who handles property disputes in Hyderabad", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer3", "source": "synthetic", "intent": "find_lawyer", "text": "please recommend a family lawyer near Andheri", "has_document": false, "split": "test"}
+{"id": "syn_lawyer4", "source": "synthetic", "intent": "find_lawyer", "text": "Who is the best lawyer for cheque bounce cases in Chennai?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer5", "source": "synthetic", "intent": "find_lawyer", "text": "I want to hire a lawyer for my father's bail hearing", "has_document": false, "split": "test"}
+{"id": "syn_lawyer6", "source": "synthetic", "intent": "find_lawyer", "text": "Need an experienced consumer court advocate in Kolkata", "has_document": false, "split": "test"}
+{"id": "syn_lawyer7", "source": "synthetic", "intent": "find_lawyer", "text": "Find me a lawyer who speaks Tamil for a land case", "has_document": false, "split": "test"}
+{"id": "syn_lawyer8", "source": "synthetic", "intent": "find_lawyer", "text": "Can you connect me with a labour law specialist? My company fired me illegally", "has_document": false, "split": "test"}
+{"id": "syn_lawyer9", "source": "synthetic", "intent": "find_lawyer", "text": "Mujhe ek acha vakeel chahiye property case ke liye, Lucknow mein", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer10", "source": "synthetic", "intent": "find_lawyer", "text": "any good advocate in jaipur for 498a case??", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer11", "source": "synthetic", "intent": "find_lawyer", "text": "I am looking for a woman lawyer for a domestic violence matter", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer12", "source": "synthetic", "intent": "find_lawyer", "text": "Suggest a lawyer for RERA complaint against my builder in Noida", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer13", "source": "synthetic", "intent": "find_lawyer", "text": "Which lawyers on your platform handle cyber crime cases?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer14", "source": "synthetic", "intent": "find_lawyer", "text": "I need legal representation in the Bombay High Court for a writ petition", "has_document": false, "split": "test"}
+{"id": "syn_lawyer15", "source": "synthetic", "intent": "find_lawyer", "text": "Recommend an affordable lawyer for a small civil suit", "has_document": false, "split": "test"}
+{"id": "syn_lawyer16", "source": "synthetic", "intent": "find_lawyer", "text": "Is there a lawyer available who does online consultations for NRI property issues?", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer17", "source": "synthetic", "intent": "find_lawyer", "text": "Need a corporate lawyer to review my startup's shareholder agreement", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer18", "source": "synthetic", "intent": "find_lawyer", "text": "Can I book an appointment with a tax lawyer this week?", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer19", "source": "synthetic", "intent": "find_lawyer", "text": "Help me find a good immigration lawyer", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer20", "source": "synthetic", "intent": "find_lawyer", "text": "I want to talk to a lawyer about my mother's will, who should I contact", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer21", "source": "synthetic", "intent": "find_lawyer", "text": "looking for lawyer in bangalore urgent", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer22", "source": "synthetic", "intent": "find_lawyer", "text": "Show me lawyers who specialise in motor accident claims", "has_document": false, "split": "test"}
+{"id": "syn_lawyer23", "source": "synthetic", "intent": "find_lawyer", "text": "I need an advocate to file an anticipatory bail application in Gurgaon", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer24", "source": "synthetic", "intent": "find_lawyer", "text": "Who can represent me in a consumer forum case against an airline?", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer25", "source": "synthetic", "intent": "find_lawyer", "text": "Please find a lawyer in Ahmedabad experienced with GST disputes", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer26", "source": "synthetic", "intent": "find_lawyer", "text": "need a vakil for court marriage formalities", "has_document": false, "split": "test"}
+{"id": "syn_lawyer27", "source": "synthetic", "intent": "find_lawyer", "text": "Recommend a trademark lawyer for registering my brand", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer28", "source": "synthetic", "intent": "find_lawyer", "text": "Can you suggest a lawyer with a high success rate in custody cases?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer29", "source": "synthetic", "intent": "find_lawyer", "text": "I'd like to consult a senior advocate about an appeal in the Supreme Court", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer30", "source": "synthetic", "intent": "find_lawyer", "text": "Which lawyer should I approach for a partition suit in Kerala?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer31", "source": "synthetic", "intent": "find_lawyer", "text": "Find a criminal defence advocate who can take a case in Patna", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer32", "source": "synthetic", "intent": "find_lawyer", "text": "My brother got arrested, we need a lawyer immediately in Indore", "has_document": false, "split": "test"}
+{"id": "syn_lawyer33", "source": "synthetic", "intent": "find_lawyer", "text": "Can you list some employment lawyers in Mumbai with their fees?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer34", "source": "synthetic", "intent": "find_lawyer", "text": "I want a lawyer to send a legal notice to my tenant", "has_document": false, "split": "test"}
+{"id": "syn_lawyer35", "source": "synthetic", "intent": "find_lawyer", "text": "Do you have any lawyers for medical negligence cases?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer36", "source": "synthetic", "intent": "find_lawyer", "text": "Suggest a good lawyer for mutual consent divorce, budget is limited", "has_document": false, "split": "test"}
+{"id": "syn_lawyer37", "source": "synthetic", "intent": "find_lawyer", "text": "Need an advocate who handles SARFAESI and bank auction matters", "has_document": false, "split": "test"}
+{"id": "syn_lawyer38", "source": "synthetic", "intent": "find_lawyer", "text": "Who is a reliable lawyer for property registration in Chandigarh?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer39", "source": "synthetic", "intent": "find_lawyer", "text": "please help me find lawyer for my uncle's land dispute in village near Nagpur", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer40", "source": "synthetic", "intent": "find_lawyer", "text": "I'm looking for a lawyer who handles defamation cases", "has_document": false, "split": "test"}
+{"id": "syn_lawyer41", "source": "synthetic", "intent": "find_lawyer", "text": "Get me a lawyer for an insurance claim rejection", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer42", "source": "synthetic", "intent": "find_lawyer", "text": "Recommend a lawyer to draft my will", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer43", "source": "synthetic", "intent": "find_lawyer", "text": "kya aap koi criminal lawyer suggest kar sakte ho Bhopal mein", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer44", "source": "synthetic", "intent": "find_lawyer", "text": "Need a lawyer for a cheating case filed against me", "has_document": false, "split": "test"}
+{"id": "syn_lawyer45", "source": "synthetic", "intent": "find_lawyer", "text": "I need someone to represent me at the family court next Monday", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer46", "source": "synthetic", "intent": "find_lawyer", "text": "Can I hire one of your lawyers for a POCSO case?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer47", "source": "synthetic", "intent": "find_lawyer", "text": "Looking for an advocate for a service matter at the CAT", "has_document": false, "split": "test"}
+{"id": "syn_lawyer48", "source": "synthetic", "intent": "find_lawyer", "text": "Find lawyers near me who handle eviction of tenants", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer49", "source": "synthetic", "intent": "find_lawyer", "text": "Which advocate should I hire to fight a false dowry case?", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer50", "source": "synthetic", "intent": "find_lawyer", "text": "I want to book a consultation with a property lawyer", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer51", "source": "synthetic", "intent": "find_lawyer", "text": "Can you recommend a lawyer for intellectual property infringement?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer52", "source": "synthetic", "intent": "find_lawyer", "text": "Need an arbitration lawyer for a commercial contract dispute", "has_document": false, "split": "test"}
+{"id": "syn_lawyer53", "source": "synthetic", "intent": "find_lawyer", "text": "I need a lawyer who can handle a case in both Delhi and Haryana courts", "has_document": false, "split": "test"}
+{"id": "syn_lawyer54", "source": "synthetic", "intent": "find_lawyer", "text": "suggest some good lawyers for maintenance case under 125", "has_document": false, "split": "test"}
+{"id": "syn_lawyer55", "source": "synthetic", "intent": "find_lawyer", "text": "Who are the top rated lawyers on this site for civil cases?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer56", "source": "synthetic", "intent": "find_lawyer", "text": "Help me find an advocate to challenge a traffic challan in court", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer57", "source": "synthetic", "intent": "find_lawyer", "text": "I want a lawyer for adoption paperwork", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer58", "source": "synthetic", "intent": "find_lawyer", "text": "Need a lawyer urgently, police are refusing to register my FIR", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer59", "source": "synthetic", "intent": "find_lawyer", "text": "Recommend an NRI-friendly lawyer for selling my flat in Pune", "has_document": false, "split": "test"}
+{"id": "syn_lawyer60", "source": "synthetic", "intent": "find_lawyer", "text": "Is there any lawyer available for a free legal aid consultation?", "has_document": false, "split": "test"}
+{"id": "syn_lawyer61", "source": "synthetic", "intent": "find_lawyer", "text": "I need a lawyer for my company's insolvency proceedings before NCLT", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer62", "source": "synthetic", "intent": "find_lawyer", "text": "Please suggest an advocate for a land acquisition compensation case", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer63", "source": "synthetic", "intent": "find_lawyer", "text": "Find a lawyer in Guwahati who handles family matters", "has_document": false, "split": "test"}
+{"id": "syn_lawyer64", "source": "synthetic", "intent": "find_lawyer", "text": "can u find me lawyer for my sisters divorce, she lives in coimbatore", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer65", "source": "synthetic", "intent": "find_lawyer", "text": "I'm searching for a criminal lawyer with experience in NDPS cases", "has_document": false, "split": "test"}
+{"id": "syn_lawyer66", "source": "synthetic", "intent": "find_lawyer", "text": "Which lawyer can help me with a succession certificate?", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer67", "source": "synthetic", "intent": "find_lawyer", "text": "Need a good lawyer to defend a defamation suit against my newspaper", "has_document": false, "split": "test"}
+{"id": "syn_lawyer68", "source": "synthetic", "intent": "find_lawyer", "text": "Suggest a lawyer to handle my visa refusal appeal", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer69", "source": "synthetic", "intent": "find_lawyer", "text": "I want to engage a lawyer for a consumer case about a defective car", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer70", "source": "synthetic", "intent": "find_lawyer", "text": "Can you show me lawyers available tomorrow for a phone consultation?", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer71", "source": "synthetic", "intent": "find_lawyer", "text": "Recommend a lawyer for a builder delay case in Gurugram", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer72", "source": "synthetic", "intent": "find_lawyer", "text": "I need an advocate for a bail matter in Sessions Court Thane", "has_document": false, "split": "dev"}
+{"id": "syn_lawyer73", "source": "synthetic", "intent": "find_lawyer", "text": "Find me a lawyer to file a RTI appeal", "has_document": false, "split": "test"}
+{"id": "syn_lawyer74", "source": "synthetic", "intent": "find_lawyer", "text": "Looking for a lawyer for my mother's pension dispute with the government", "has_document": false, "split": "test"}
+{"id": "syn_lawyer75", "source": "synthetic", "intent": "find_lawyer", "text": "i need lawyer who handle cyber fraud case where i lost 2 lakh", "has_document": false, "split": "test"}
+{"id": "syn_lawyer76", "source": "synthetic", "intent": "find_lawyer", "text": "Which of your lawyers handles cases in the Madras High Court?", "has_document": false, "split": "test"}
+{"id": "syn_doc0", "source": "synthetic", "intent": "document_analysis", "text": "Please review this rent agreement I just uploaded", "has_document": true, "split": "dev"}
+{"id": "syn_doc1", "source": "synthetic", "intent": "document_analysis", "text": "Can you check if this sale deed has any problems?", "has_document": true, "split": "test"}
+{"id": "syn_doc2", "source": "synthetic", "intent": "document_analysis", "text": "I've attached my employment offer letter, is the non-compete clause enforceable?", "has_document": true, "split": "dev"}
+{"id": "syn_doc3", "source": "synthetic", "intent": "document_analysis", "text": "What does this legal notice mean? I've uploaded it", "has_document": true, "split": "test"}
+{"id": "syn_doc4", "source": "synthetic", "intent": "document_analysis", "text": "Check this affidavit for mistakes before I get it notarised", "has_document": true, "split": "test"}
+{"id": "syn_doc5", "source": "synthetic", "intent": "document_analysis", "text": "Is this power of attorney valid for selling my flat?", "has_document": true, "split": "dev"}
+{"id": "syn_doc6", "source": "synthetic", "intent": "document_analysis", "text": "Summarise the attached court order in simple words", "has_document": true, "split": "dev"}
+{"id": "syn_doc7", "source": "synthetic", "intent": "document_analysis", "text": "Go through this FIR copy and tell me which sections are applied", "has_document": true, "split": "test"}
+{"id": "syn_doc8", "source": "synthetic", "intent": "document_analysis", "text": "Review the will I uploaded and tell me if anything is missing", "has_document": true, "split": "dev"}
+{"id": "syn_doc9", "source": "synthetic", "intent": "document_analysis", "text": "Can you analyse this partnership deed for risky clauses?", "has_document": true, "split": "test"}
+{"id": "syn_doc10", "source": "synthetic", "intent": "document_analysis", "text": "Here is the agreement to sell, does it protect me as the buyer?", "has_document": true, "split": "dev"}
+{"id": "syn_doc11", "source": "synthetic", "intent": "document_analysis", "text": "Please read this bail order and explain the conditions", "has_document": true, "split": "dev"}
+{"id": "syn_doc12", "source": "synthetic", "intent": "document_analysis", "text": "Is the stamp duty mentioned in this document correct?", "has_document": true, "split": "test"}
+{"id": "syn_doc13", "source": "synthetic", "intent": "document_analysis", "text": "Check whether this lease deed needs registration", "has_document": true, "split": "dev"}
+{"id": "syn_doc14", "source": "synthetic", "intent": "document_analysis", "text": "I uploaded the chargesheet, what are the charges against my brother?", "has_document": true, "split": "test"}
+{"id": "syn_doc15", "source": "synthetic", "intent": "document_analysis", "text": "Look at this notice from my landlord and tell me my options", "has_document": true, "split": "dev"}
+{"id": "syn_doc16", "source": "synthetic", "intent": "document_analysis", "text": "Does this contract have a termination clause? Please check the file", "has_document": true, "split": "test"}
+{"id": "syn_doc17", "source": "synthetic", "intent": "document_analysis", "text": "Can you verify if this gift deed is properly executed?", "has_document": true, "split": "test"}
+{"id": "syn_doc18", "source": "synthetic", "intent": "document_analysis", "text": "Explain the judgment I've attached, did we win or lose?", "has_document": true, "split": "dev"}
+{"id": "syn_doc19", "source": "synthetic", "intent": "document_analysis", "text": "Please check this NDA before I sign it", "has_document": true, "split": "dev"}
+{"id": "syn_doc20", "source": "synthetic", "intent": "document_analysis", "text": "what are the key points in this document", "has_document": true, "split": "test"}
+{"id": "syn_doc21", "source": "synthetic", "intent": "document_analysis", "text": "Is this complaint under CrPC drafted properly? File attached", "has_document": true, "split": "dev"}
+{"id": "syn_doc22", "source": "synthetic", "intent": "document_analysis", "text": "Review my bail application draft for errors", "has_document": true, "split": "dev"}
+{"id": "syn_doc23", "source": "synthetic", "intent": "document_analysis", "text": "Tell me if this rental agreement favours the landlord too much", "has_document": true, "split": "dev"}
+{"id": "syn_doc24", "source": "synthetic", "intent": "document_analysis", "text": "I got this summons, please explain what it says", "has_document": true, "split": "dev"}
+{"id": "syn_doc25", "source": "synthetic", "intent": "document_analysis", "text": "Check this loan agreement for hidden charges", "has_document": true, "split": "test"}
+{"id": "syn_doc26", "source": "synthetic", "intent": "document_analysis", "text": "Analyse this service agreement, is the payment clause fair?", "has_document": true, "split": "test"}
+{"id": "syn_doc27", "source": "synthetic", "intent": "document_analysis", "text": "Does the uploaded sale deed mention all the boundaries correctly?", "has_document": true, "split": "dev"}
+{"id": "syn_doc28", "source": "synthetic", "intent": "document_analysis", "text": "Can you find any loopholes in this contract?", "has_document": true, "split": "test"}
+{"id": "syn_doc29", "source": "synthetic", "intent": "document_analysis", "text": "Please go through this property document and tell me if the title is clear", "has_document": true, "split": "test"}
+{"id": "syn_doc30", "source": "synthetic", "intent": "document_analysis", "text": "read this and tell me what i should do", "has_document": true, "split": "dev"}
+{"id": "syn_doc31", "source": "synthetic", "intent": "document_analysis", "text": "Is this divorce petition complete? I have uploaded the draft", "has_document": true, "split": "test"}
+{"id": "syn_doc32", "source": "synthetic", "intent": "document_analysis", "text": "Check this employment bond, can they really make me pay 3 lakh?", "has_document": true, "split": "dev"}
+{"id": "syn_doc33", "source": "synthetic", "intent": "document_analysis", "text": "What are my obligations under this agreement?", "has_document": true, "split": "dev"}
+{"id": "syn_doc34", "source": "synthetic", "intent": "document_analysis", "text": "Kindly examine the attached legal notice and suggest a reply", "has_document": true, "split": "dev"}
+{"id": "syn_doc35", "source": "synthetic", "intent": "document_analysis", "text": "Please check if the witnesses on this will are sufficient", "has_document": true, "split": "dev"}
+{"id": "syn_doc36", "source": "synthetic", "intent": "document_analysis", "text": "Review this franchise agreement for unfair terms", "has_document": true, "split": "dev"}
+{"id": "syn_doc37", "source": "synthetic", "intent": "document_analysis", "text": "Is there anything wrong with this leave and licence agreement?", "has_document": true, "split": "dev"}
+{"id": "syn_doc38", "source": "synthetic", "intent": "document_analysis", "text": "I've uploaded the maintenance order, how much do I have to pay?", "has_document": true, "split": "test"}
+{"id": "syn_doc39", "source": "synthetic", "intent": "document_analysis", "text": "Highlight the risky clauses in this vendor contract", "has_document": true, "split": "dev"}
+{"id": "syn_doc40", "source": "synthetic", "intent": "document_analysis", "text": "Is the arbitration clause in this document valid in India?", "has_document": true, "split": "dev"}
+{"id": "syn_doc41", "source": "synthetic", "intent": "document_analysis", "text": "Can you check this cheque bounce notice I received?", "has_document": true, "split": "test"}
+{"id": "syn_doc42", "source": "synthetic", "intent": "document_analysis", "text": "Explain this court order in Hindi please", "has_document": true, "split": "dev"}
+{"id": "syn_doc43", "source": "synthetic", "intent": "document_analysis", "text": "Summarize this document", "has_document": true, "split": "test"}
+{"id": "syn_doc44", "source": "synthetic", "intent": "document_analysis", "text": "Look through the attached chargesheet and list the evidence mentioned", "has_document": true, "split": "test"}
+{"id": "syn_doc45", "source": "synthetic", "intent": "document_analysis", "text": "Does this rent agreement need a police verification clause?", "has_document": true, "split": "test"}
+{"id": "syn_doc46", "source": "synthetic", "intent": "document_analysis", "text": "Check the uploaded consumer complaint before I file it", "has_document": true, "split": "dev"}
+{"id": "syn_doc47", "source": "synthetic", "intent": "document_analysis", "text": "Is this power of attorney revocable? See attached", "has_document": true, "split": "dev"}
+{"id": "syn_doc48", "source": "synthetic", "intent": "document_analysis", "text": "Tell me if this employment contract violates labour laws", "has_document": true, "split": "dev"}
+{"id": "syn_doc49", "source": "synthetic", "intent": "document_analysis", "text": "Please validate this sale agreement against the registration requirements", "has_document": true, "split": "dev"}
+{"id": "syn_doc50", "source": "synthetic", "intent": "document_analysis", "text": "I attached the notice from the bank under SARFAESI, what does it mean for me?", "has_document": true, "split": "dev"}
+{"id": "syn_doc51", "source": "synthetic", "intent": "document_analysis", "text": "Analyse this partnership deed, how are profits shared?", "has_document": true, "split": "test"}
+{"id": "syn_doc52", "source": "synthetic", "intent": "document_analysis", "text": "Is this affidavit format acceptable for a name change?", "has_document": true, "split": "test"}
+{"id": "syn_doc53", "source": "synthetic", "intent": "document_analysis", "text": "Check this agreement and tell me who bears the maintenance costs", "has_document": true, "split": "test"}
+{"id": "syn_doc54", "source": "synthetic", "intent": "document_analysis", "text": "Go through my uploaded will draft and suggest improvements", "has_document": true, "split": "dev"}
+{"id": "syn_doc55", "source": "synthetic", "intent": "document_analysis", "text": "What does clause 7 in this document mean?", "has_document": true, "split": "test"}
+{"id": "syn_doc56", "source": "synthetic", "intent": "document_analysis", "text": "can u check this doc and tell if its legally valid", "has_document": true, "split": "test"}
+{"id": "syn_doc57", "source": "synthetic", "intent": "document_analysis", "text": "Is the indemnity clause in this contract too broad?", "has_document": true, "split": "dev"}
+{"id": "syn_doc58", "source": "synthetic", "intent": "document_analysis", "text": "Review the attached settlement agreement before mediation", "has_document": true, "split": "test"}
+{"id": "syn_doc59", "source": "synthetic", "intent": "document_analysis", "text": "Please explain the conditions in this anticipatory bail order", "has_document": true, "split": "test"}
+{"id": "syn_doc60", "source": "synthetic", "intent": "document_analysis", "text": "Check if this deed has the correct stamp paper value for Maharashtra", "has_document": true, "split": "dev"}
+{"id": "syn_doc61", "source": "synthetic", "intent": "document_analysis", "text": "I've uploaded my tenancy agreement, can my landlord increase rent mid-term?", "has_document": true, "split": "test"}
+{"id": "syn_doc62", "source": "synthetic", "intent": "document_analysis", "text": "Read the judgment and tell me the grounds the court relied on", "has_document": true, "split": "test"}
+{"id": "syn_doc63", "source": "synthetic", "intent": "document_analysis", "text": "Is this notice period clause in my offer letter enforceable?", "has_document": true, "split": "test"}
+{"id": "syn_doc64", "source": "synthetic", "intent": "document_analysis", "text": "Look at this lease and tell me when it expires", "has_document": true, "split": "test"}
+{"id": "syn_doc65", "source": "synthetic", "intent": "document_analysis", "text": "Can you check whether this agreement to sell has a penalty clause for delay?", "has_document": true, "split": "test"}
+{"id": "syn_doc66", "source": "synthetic", "intent": "document_analysis", "text": "Please review this MOU between two companies", "has_document": true, "split": "test"}
+{"id": "syn_doc67", "source": "synthetic", "intent": "document_analysis", "text": "Does this document prove ownership of the land?", "has_document": true, "split": "test"}
+{"id": "syn_doc68", "source": "synthetic", "intent": "document_analysis", "text": "Check this FIR, is my name mentioned as an accused?", "has_document": true, "split": "dev"}
+{"id": "syn_doc69", "source": "synthetic", "intent": "document_analysis", "text": "Analyse the attached police complaint and tell me if it's strong enough", "has_document": true, "split": "test"}
+{"id": "syn_doc70", "source": "synthetic", "intent": "document_analysis", "text": "Explain the terms of this loan sanction letter", "has_document": true, "split": "test"}
+{"id": "syn_doc71", "source": "synthetic", "intent": "document_analysis", "text": "Tell me what is missing in this rent agreement", "has_document": true, "split": "test"}
+{"id": "syn_doc72", "source": "synthetic", "intent": "document_analysis", "text": "I uploaded a court notice, when do I have to appear?", "has_document": true, "split": "dev"}
+{"id": "syn_doc73", "source": "synthetic", "intent": "document_analysis", "text": "Review this settlement deed between my siblings and me", "has_document": true, "split": "dev"}
+{"id": "syn_doc74", "source": "synthetic", "intent": "document_analysis", "text": "Is this contract one-sided? Please go through it", "has_document": true, "split": "dev"}
+{"id": "syn_doc75", "source": "synthetic", "intent": "document_analysis", "text": "Check this employment termination letter, was due process followed?", "has_document": true, "split": "test"}
+{"id": "syn_doc76", "source": "synthetic", "intent": "document_analysis", "text": "Please check the attached builder-buyer agreement for RERA compliance", "has_document": true, "split": "test"}
+{"id": "syn_doc77", "source": "synthetic", "intent": "document_analysis", "text": "what is this document about", "has_document": true, "split": "dev"}
+{"id": "syn_doc78", "source": "synthetic", "intent": "document_analysis", "text": "Verify whether this will is properly attested", "has_document": true, "split": "test"}
+{"id": "syn_doc79", "source": "synthetic", "intent": "document_analysis", "text": "Compare this draft agreement with the one we signed last year and list the changes", "has_document": true, "split": "dev"}
+{"id": "clinc_test2304", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2444", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3940", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test3397", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test1230", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test952", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test3178", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4446", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test1499", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test5226", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4180", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2832", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test1505", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test730", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4119", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2290", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test4310", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4580", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4209", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3019", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test516", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2973", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4902", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test281", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2564", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3037", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4671", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2360", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test4068", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2229", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2467", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2845", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test5412", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test1493", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4846", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test94", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3975", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4570", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2083", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2729", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2302", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3882", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2426", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4188", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test5393", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2981", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2909", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2303", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test5366", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2891", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test3436", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2927", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test1442", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test3774", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test3044", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2798", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test4334", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test1192", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test4426", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test1391", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test1657", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3025", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3999", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test2377", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test645", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test3503", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test1437", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test5142", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test4848", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test4320", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test3537", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2539", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test5199", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4621", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test5307", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test2277", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test226", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test1632", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "dev"}
+{"id": "clinc_test1340", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
+{"id": "clinc_test4894", "source": "clinc150", "intent": "non_legal", "has_document": false, "split": "test"}
