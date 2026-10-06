@@ -215,6 +215,23 @@ def detect_crime_type(description: str) -> str:
     return "general"
 
 
+# Classifier labels are the IndianBailJudgments-1200 crime families it was trained on.
+# Two families cover more than one of our types; keywords pick within those (first wins ties).
+FAMILY_TYPES: Dict[str, List[str]] = {
+    "Theft or Robbery": ["theft", "robbery"],
+    "Dowry Harassment": ["dowry"],
+    "Sexual Offense": ["harassment", "rape"],
+    "Fraud or Cheating": ["fraud"],
+    "Cyber Crime": ["cybercrime"],
+    "Extortion": ["threat"],
+    "Kidnapping": ["kidnapping"],
+    "Murder": ["murder"],
+    "Domestic Violence": ["domestic_violence"],
+    "Narcotics": ["general"],
+    "Others": ["general"],
+}
+
+
 @lru_cache(maxsize=1)
 def _load_classifier() -> Optional[Tuple[np.ndarray, np.ndarray, List[str]]]:
     weights = CLASSIFIER_DIR / "weights.npz"
@@ -224,11 +241,20 @@ def _load_classifier() -> Optional[Tuple[np.ndarray, np.ndarray, List[str]]]:
     return z["W"], z["b"], [str(label) for label in z["labels"]]
 
 
+def resolve_family(family: str, description: str) -> str:
+    text = description.lower()
+    return max(FAMILY_TYPES[family], key=lambda t: count_words(text, CRIME_KEYWORDS.get(t, [])))
+
+
+def crime_type_from_vector(q: np.ndarray, description: str) -> str:
+    W, b, labels = _load_classifier()  # type: ignore[misc]
+    return resolve_family(labels[int(np.argmax(W @ (q / np.linalg.norm(q)) + b))], description)
+
+
 async def classify_crime_type(description: str) -> str:
     """Crime type from a logistic-regression head over the shared BGE-M3 embedding;
     falls back to keyword matching when the weights or the embedding model are missing."""
-    classifier = _load_classifier()
-    if classifier is None:
+    if _load_classifier() is None:
         return detect_crime_type(description)
     try:
         from app.tools.base_legal_rag import _get_shared_embeddings
@@ -238,8 +264,7 @@ async def classify_crime_type(description: str) -> str:
     except Exception as e:
         print(f"[crime_reporter] embedding failed ({e}) — keyword fallback")
         return detect_crime_type(description)
-    W, b, labels = classifier
-    return labels[int(np.argmax(W @ (q / np.linalg.norm(q)) + b))]
+    return crime_type_from_vector(q, description)
 
 
 def is_complex_crime(crime_type: str) -> bool:
