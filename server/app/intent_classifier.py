@@ -25,7 +25,11 @@ _ReferenceSet primitive:
 
 import asyncio
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Dict, List, Optional
+
+import numpy as np
 
 from app.tools.base_legal_rag import _get_shared_embeddings
 
@@ -209,13 +213,57 @@ def _aggregate(query_vec: List[float], example_vecs: List[List[float]]) -> float
     return sum(top) / len(top)
 
 
+INTENT_HEAD_PATH = Path(__file__).resolve().parent / "data" / "intent_classifier" / "weights.npz"
+# Probabilities from the logistic-regression head (not similarities): below this the
+# route goes to the tiebreak/clarification path; other intents at or above
+# SECONDARY_MIN_PROB are its contenders. Set on dev cross-validation (eval_routing.py --cv).
+INTENT_MIN_PROB = 0.4
+SECONDARY_MIN_PROB = 0.2
+
+
+@lru_cache(maxsize=1)
+def _load_intent_head() -> Optional[tuple]:
+    if not INTENT_HEAD_PATH.exists():
+        return None
+    z = np.load(INTENT_HEAD_PATH)
+    return z["W"], z["b"], [str(label) for label in z["labels"]]
+
+
+def intent_probabilities(query_vec, has_document: bool) -> Dict[str, float]:
+    """Softmax of the LR head over [unit-normalised BGE-M3 vector, has_document]."""
+    W, b, labels = _load_intent_head()  # type: ignore[misc]
+    q = np.asarray(query_vec, dtype=np.float32)
+    x = np.append(q / np.linalg.norm(q), float(has_document))
+    logits = W @ x + b
+    p = np.exp(logits - logits.max())
+    p /= p.sum()
+    return dict(zip(labels, (float(v) for v in p)))
+
+
+def _classify_with_head(query_vec, has_document: bool) -> IntentClassification:
+    probs = intent_probabilities(query_vec, has_document)
+    ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
+    (top_intent, top_p), (_, second_p) = ranked[0], ranked[1]
+    return IntentClassification(
+        primary_intent=top_intent,
+        confidence=top_p,
+        margin=top_p - second_p,
+        is_ambiguous=top_p < INTENT_MIN_PROB,
+        reasoning=f"logistic-regression head: top={top_intent}({top_p:.3f}), second={second_p:.3f}",
+        secondary_intents=[i for i, p in ranked[1:] if p >= SECONDARY_MIN_PROB],
+        scores=probs,
+    )
+
+
 async def classify_intent_embedding(
     text: str, has_document: bool
 ) -> IntentClassification:
     embeddings = await _get_shared_embeddings()
-    reference = await _INTENT_REFERENCE_SET.get()
     loop = asyncio.get_event_loop()
     query_vec = await loop.run_in_executor(None, lambda: embeddings.embed_query(text))
+    if _load_intent_head() is not None:
+        return _classify_with_head(query_vec, has_document)
+    reference = await _INTENT_REFERENCE_SET.get()
 
     scores: Dict[str, float] = {
         intent: _aggregate(query_vec, vecs) for intent, vecs in reference.items()
