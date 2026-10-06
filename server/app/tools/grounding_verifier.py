@@ -122,6 +122,7 @@ class SentenceGrounding:
     # Status from the deterministic pass alone, before any LLM adjudication. A
     # sentence is only ever rewritten when this already condemned it.
     det_status: str = SUPPORTED
+    candidates: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -607,6 +608,7 @@ def assess_grounding(
                 reason=reason,
                 evidence=evidence,
                 needs_llm=needs_llm,
+                candidates=candidates,
             )
         )
 
