@@ -43,6 +43,8 @@ from app.prompts import (
     CLARIFY_LAW_OR_LAWYER,
     CLARIFY_LAW_OR_REPORT,
     CLARIFY_PREFIX,
+    CRIME_DETAILS_ASK,
+    CRIME_DETAILS_PREFIX,
     CRIME_REPORT_FALLBACK,
     CRIME_REPORT_PROMPT,
     DOC_RAG_UNAVAILABLE_DISCLAIMER,
@@ -55,6 +57,9 @@ from app.prompts import (
     GROUNDING_UNAVAILABLE_DISCLAIMER,
     GROUNDING_UNAVAILABLE_PROMPT_WARNING,
     INDIAN_KANOON_CONTEXT_BLOCK,
+    LAWYER_DETAILS_ASK,
+    LAWYER_DETAILS_PREFIX,
+    LAWYER_NONE_NEARBY_NOTE,
     LAWYER_SEARCH_FALLBACK,
     LAWYER_SEARCH_PROMPT,
     NON_LEGAL_RESPONSE,
@@ -89,6 +94,7 @@ from app.tool_dispatch import (
     select_tools,
 )
 from app.tools.crime_reporter import classify_crime_type
+from app.tools.followup import crime_report_too_thin, find_location, missing_lawyer_details
 from app.tools.document_classifier import get_document_classifier
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 from app.tools.indian_law_rag import get_indian_law_rag
@@ -752,6 +758,18 @@ def _clarification_gate(
     return _ambiguous_action_contenders(result)
 
 
+def _resume_after_followup(messages: List[Message], user_input: str) -> Optional[tuple]:
+    """(intent, original request + this reply) when the last assistant turn was a
+    missing-detail question; None otherwise."""
+    if len(messages) < 2 or messages[-1]["role"] != "assistant" or messages[-2]["role"] != "user":
+        return None
+    asked = messages[-1]["content"]
+    for prefix, intent in ((LAWYER_DETAILS_PREFIX, "find_lawyer"), (CRIME_DETAILS_PREFIX, "crime_report")):
+        if asked.startswith(prefix):
+            return intent, f"{messages[-2]['content'].strip()} {user_input.strip()}"
+    return None
+
+
 def _clarify_question(contenders: FrozenSet[str]) -> str:
     if contenders == {"general_query", "find_lawyer"}:
         return CLARIFY_LAW_OR_LAWYER
@@ -868,6 +886,23 @@ async def classify_intent(state: ChatState) -> ChatState:
     messages = state.get("messages", [])
 
     logger.info("Router input=%.100r has_document=%s", user_input, has_document)
+
+    resumed = _resume_after_followup(messages, user_input)
+    if resumed:
+        intent, merged = resumed
+        logger.info("Router: reply to a %s follow-up — resuming that flow", intent)
+        await emit_event("routing", intent=intent)
+        return {
+            **state,
+            "intent": intent,
+            "followup_answered": True,
+            "retrieval_query": merged,
+            "lawyer_query": merged if intent == "find_lawyer" else None,
+            "crime_details": merged if intent == "crime_report" else None,
+            "selected_tools": select_tools(intent, merged),
+            "domain_hint": await classify_domain_hint_embedding(merged),
+            "trace": _merge_trace(state, routing={"intent": intent, "followup_answered": True}),
+        }
 
     result = await classify_intent_embedding(user_input, has_document)
     # Ambiguous ties among the four *legal* intents default to general_query
@@ -1188,6 +1223,16 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
         }
 
 
+def _ask_followup(state: ChatState, question: str, flow: str) -> ChatState:
+    """Answer this turn with a missing-detail question; the next turn resumes `flow`."""
+    return {
+        **state,
+        "response": question,
+        "messages": state["messages"] + [{"role": "assistant", "content": question}],
+        "trace": _merge_trace(state, followup={"asked": True, "flow": flow}),
+    }
+
+
 async def handle_crime_report(state: ChatState) -> ChatState:
     """
     Handle crime reporting and guidance requests.
@@ -1201,6 +1246,8 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     crime_details = (
         state.get("crime_details") or state.get("retrieval_query") or user_input
     )
+    if not state.get("followup_answered") and crime_report_too_thin(crime_details):
+        return _ask_followup(state, CRIME_DETAILS_ASK, "crime_report")
 
     identified_crime = await classify_crime_type(crime_details)
 
@@ -1267,6 +1314,11 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     user_input = state["current_input"]
     lawyer_query = (state.get("lawyer_query") or user_input)[:_MAX_QUERY_CHARS]
     tools = state.get("selected_tools") or []
+    if not state.get("followup_answered"):
+        missing = missing_lawyer_details(state.get("retrieval_query") or lawyer_query)
+        if missing:
+            return _ask_followup(state, LAWYER_DETAILS_PREFIX + LAWYER_DETAILS_ASK[tuple(missing)], "find_lawyer")
+    location = find_location(state.get("retrieval_query") or lawyer_query)
 
     # Real Postgres-backed recommendation (pgvector semantic search + weighted
     # rating/success_rate score). ChatState has no session plumbing, and this
@@ -1277,10 +1329,17 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     from app.db.engine import get_engine
     from sqlmodel import Session as DBSession
 
+    location_note = ""
     with DBSession(get_engine()) as session:
         lawyers = await recommend_lawyers_core(
-            session, problem_description=lawyer_query, limit=5
-        )
+            session, problem_description=lawyer_query, location=location, limit=5
+        ) if location else []
+        if not lawyers:
+            if location:
+                location_note = LAWYER_NONE_NEARBY_NOTE.format(location=location.title())
+            lawyers = await recommend_lawyers_core(
+                session, problem_description=lawyer_query, limit=5
+            )
         formatted_results = format_lawyer_results(lawyers)
         lawyers_info: List[LawyerInfo] = [
             {
@@ -1327,6 +1386,9 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
         final_response = LAWYER_SEARCH_FALLBACK.format(
             formatted_results=formatted_results
         )
+    if location_note:
+        final_response = location_note + final_response
+        await emit_event("replace", content=final_response)
 
     return {
         **state,
