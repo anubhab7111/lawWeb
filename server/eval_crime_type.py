@@ -20,6 +20,7 @@ import lzma
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
@@ -102,32 +103,39 @@ def ilsic_rows(split: str) -> list:
     return rows
 
 
-async def embed(texts: list, batch: int = 32) -> np.ndarray:
-    """Batched with ThermalGuard pauses: unguarded GPU embedding of a few thousand
-    texts hard-powered-off the dev laptop three times."""
+EMBED_BATCH = 32
+
+
+async def embed(texts: list, checkpoint: Optional[Path] = None) -> np.ndarray:
+    """Unit-normalised BGE-M3 embeddings, in ThermalGuard-paced batches. With `checkpoint`,
+    each batch is saved there and reused on the next run, so an interrupted run resumes."""
     from app.ingest.thermal import ThermalGuard
     from app.tools.base_legal_rag import _get_shared_embeddings
 
     emb = await _get_shared_embeddings()
     guard = ThermalGuard()
     parts = []
-    for i in range(0, len(texts), batch):
-        parts.append(np.array(emb.embed_documents(texts[i : i + batch]), dtype=np.float32))
+    for n, i in enumerate(range(0, len(texts), EMBED_BATCH)):
+        part_path = checkpoint / f"{n:05d}.npy" if checkpoint else None
+        if part_path and part_path.exists():
+            parts.append(np.load(part_path))
+            continue
+        part = np.array(emb.embed_documents(texts[i : i + EMBED_BATCH]), dtype=np.float32)
+        if part_path:
+            np.save(part_path.with_suffix(".tmp.npy"), part)
+            part_path.with_suffix(".tmp.npy").rename(part_path)
+        parts.append(part)
         guard.step()
     X = np.vstack(parts)
     return X / np.linalg.norm(X, axis=1, keepdims=True)
 
 
 def cached_embed(texts: list) -> np.ndarray:
-    """Training embeddings, cached on disk by content hash (embedding ~3k texts is slow)."""
+    """Training embeddings, checkpointed per batch under a content-hash directory."""
     key = hashlib.sha1("\x00".join(texts).encode()).hexdigest()[:16]
-    path = Path.home() / ".cache" / "lawweb" / f"crime_type_embed_{key}.npy"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        return np.load(path)
-    X = asyncio.run(embed(texts))
-    np.save(path, X)
-    return X
+    checkpoint = Path.home() / ".cache" / "lawweb" / f"crime_type_embed_{key}"
+    checkpoint.mkdir(parents=True, exist_ok=True)
+    return asyncio.run(embed(texts, checkpoint))
 
 
 def predict(system: str, texts: list) -> list:
