@@ -88,7 +88,7 @@ from app.tool_dispatch import (
     infer_indian_kanoon_context_type,
     select_tools,
 )
-from app.tools.crime_reporter import detect_crime_type
+from app.tools.crime_reporter import classify_crime_type
 from app.tools.document_classifier import get_document_classifier
 from app.tools.indian_kanoon import get_indian_kanoon_tool
 from app.tools.indian_law_rag import get_indian_law_rag
@@ -1202,8 +1202,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
         state.get("crime_details") or state.get("retrieval_query") or user_input
     )
 
-    # Detect crime type using keyword matching
-    identified_crime = detect_crime_type(crime_details)
+    identified_crime = await classify_crime_type(crime_details)
 
     # Retrieve IPC/BNS sections via the shared dispatcher (legal minimality:
     # k=2, fewer/more-accurate chargeable sections)
