@@ -364,7 +364,7 @@ def _nearest_type(vector) -> Tuple[str, float]:
     for doc_type in dict.fromkeys(labels):
         score = float(np.sort(sims[labels == doc_type])[::-1][:TOP_K].mean())
         if score > best:
-            best_type, best = doc_type, score
+            best_type, best = str(doc_type), score
     return best_type, best
 
 
