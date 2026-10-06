@@ -512,6 +512,28 @@ CLARIFY_LAW_OR_REPORT = (
     + "are you looking for **guidance on reporting this** (what to file and where), "
     "or do you want me to **explain the legal position** first?"
 )
+# Missing-detail follow-ups (app.tools.followup). The prefixes are how the next turn
+# recognises the reply and resumes the same flow, so keep them stable.
+LAWYER_DETAILS_PREFIX = "To find the right lawyer for you, "
+LAWYER_DETAILS_ASK = {
+    ("location",): "which **city or district** should the lawyer be in?",
+    ("matter",): "what is the **matter about** (for example divorce, property, bail, a cheque bounce)?",
+    ("location", "matter"): (
+        "could you tell me **which city or district** you are in, and **what the matter is about** "
+        "(for example divorce, property, bail, a cheque bounce)?"
+    ),
+}
+CRIME_DETAILS_PREFIX = "To guide you properly on reporting this, "
+CRIME_DETAILS_ASK = (
+    CRIME_DETAILS_PREFIX
+    + "could you tell me a little more: **what happened**, **when** it happened, and **where** "
+    "(city or area)? If you are in immediate danger, call **112** first."
+)
+LAWYER_NONE_NEARBY_NOTE = (
+    "_I couldn't find lawyers listed in {location}, so these are the closest matches from other "
+    "places — many offer online consultations._\n\n"
+)
+
 CLARIFY_GENERIC = (
     CLARIFY_PREFIX
     + "could you tell me a little more about your situation, or say whether you "

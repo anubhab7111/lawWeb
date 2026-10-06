@@ -145,6 +145,7 @@ class ChatState(TypedDict):
     extra_queries: Optional[List[str]]  # targeted retrieval queries for the regeneration
     grounding_score: Optional[float]
     clarification: Optional[bool]
+    followup_answered: Optional[bool]  # this turn answered a missing-detail question
 
     # Response
     response: Optional[str]
