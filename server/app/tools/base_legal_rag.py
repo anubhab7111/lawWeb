@@ -769,6 +769,7 @@ class BaseLegalRAGSystem(ABC):
         candidate_pool: int = 30,
         rerank_pool: int = 20,
         acts: Optional[List[str]] = None,
+        extra_candidates: Optional[List[str]] = None,
     ) -> List[LegalChunk]:
         """
         Shared hybrid pipeline: dense + BM25 → RRF fusion → cross-encoder
@@ -847,6 +848,13 @@ class BaseLegalRAGSystem(ABC):
             for cid in sorted(fused, key=lambda c: fused[c], reverse=True)
             if cid in self._chunks
         ][:rerank_pool]
+        if extra_candidates:
+            candidate_set = set(candidates)
+            candidates += [
+                cid
+                for cid in dict.fromkeys(extra_candidates)
+                if cid in self._chunks and cid not in candidate_set
+            ]
         if not candidates:
             return []
 
