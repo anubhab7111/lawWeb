@@ -4,6 +4,7 @@ wrong Act, and rewrote correct sentences."""
 
 import asyncio
 import json
+import re
 from types import SimpleNamespace
 
 from app.tools import grounding_verifier as gv
@@ -274,6 +275,37 @@ def test_an_llm_only_objection_flags_but_never_rewrites():
     assert claim.status == gv.CONTRADICTED and claim.outcome == "unchanged"
     assert report.confirmed_flagged == []
     assert "could not confirm" in claim.reason
+
+
+def test_review_only_claims_ask_for_a_verdict_not_a_rewrite():
+    answer = (
+        "Article 21 requires the State to follow a fair procedure before depriving anyone of liberty. "
+        "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    )
+    prompts = []
+
+    async def llm(prompt):
+        prompts.append(prompt)
+        marks = re.findall(r"REWRITE: (yes|no)", prompt)
+        return json.dumps([
+            {"index": i, "status": gv.UNGROUNDED, "corrected": "The retrieved text sets no ten-year period."}
+            if mark == "yes" else {"index": i, "status": gv.CONTRADICTED, "corrected": ""}
+            for i, mark in enumerate(marks, 1)
+        ])
+
+    text, report = asyncio.run(gv.ground_and_correct(answer, StubRag(), set(SECTIONS), CONTEXT, llm))
+    review, condemned = report.claim_sentences[0], report.claim_sentences[1]
+    assert "REWRITE: no" in prompts[0] and "REWRITE: yes" in prompts[0]
+    assert review.status == gv.CONTRADICTED and review.outcome == "unchanged"
+    assert condemned.outcome == "corrected" and "ten-year period" in text
+
+
+def test_a_condemned_claim_with_an_empty_rewrite_keeps_its_text_and_reason():
+    answer = "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    before = assess(answer).sentences[0].reason
+    text, report = _adjudicate(answer, gv.UNGROUNDED, "")
+    assert text == answer
+    assert report.sentences[0].status == gv.UNGROUNDED and report.sentences[0].reason == before
 
 
 def test_a_supported_verdict_never_rewrites_whatever_wording_comes_back():
