@@ -26,7 +26,10 @@ import numpy as np
 from app.tools.crime_reporter import CLASSIFIER_DIR, FAMILY_TYPES
 
 GOLD = Path("tests/gold/crime_type.jsonl")
-ILSIC_TEST = Path("/run/media/ushtro/anubhab_x9/lawweb/ilsic/Layman-new-dataset/FT-Layman-test.jsonl.xz")
+ILSIC_DIR = Path("/run/media/ushtro/anubhab_x9/lawweb/ilsic/Layman-new-dataset")
+# Weight of ILSIC lay questions (train split) relative to bail rows; 0 = bail only.
+ILSIC_WEIGHTS = (0.0, 0.25, 0.5, 1.0)
+TYPE_FAMILY = {t: f for f, types in FAMILY_TYPES.items() for t in types if t != "general"}
 TYPE_MAP = Path("app/data/crime_type_map.json")
 GATE = 0.90
 C_GRID = (1, 2, 4, 8, 16)
@@ -76,12 +79,12 @@ def load_gold(split: str) -> list:
     return [r for r in map(json.loads, GOLD.read_text().splitlines()) if r["split"] == split]
 
 
-def ilsic_check_rows() -> list:
-    """ILSIC test questions whose citations map to exactly one crime type."""
+def ilsic_rows(split: str) -> list:
+    """ILSIC lay questions whose citations map to exactly one crime type."""
     mapping = _type_map()
     pat = re.compile(r"Section\s+(\S+)\s+of\s+(.+?)(?:,\s*\d{4})?$")
     rows = []
-    for line in lzma.open(ILSIC_TEST, "rt"):
+    for line in lzma.open(ILSIC_DIR / f"FT-Layman-{split}.jsonl.xz", "rt"):
         r = json.loads(line)
         a = r["answer"]
         labels = a if isinstance(a, list) else (ast.literal_eval(a) if a.startswith("[") else [a])
@@ -99,12 +102,32 @@ def ilsic_check_rows() -> list:
     return rows
 
 
-async def embed(texts: list) -> np.ndarray:
+async def embed(texts: list, batch: int = 32) -> np.ndarray:
+    """Batched with ThermalGuard pauses: unguarded GPU embedding of a few thousand
+    texts hard-powered-off the dev laptop three times."""
+    from app.ingest.thermal import ThermalGuard
     from app.tools.base_legal_rag import _get_shared_embeddings
 
     emb = await _get_shared_embeddings()
-    X = np.array(emb.embed_documents(texts), dtype=np.float32)
+    guard = ThermalGuard()
+    parts = []
+    for i in range(0, len(texts), batch):
+        parts.append(np.array(emb.embed_documents(texts[i : i + batch]), dtype=np.float32))
+        guard.step()
+    X = np.vstack(parts)
     return X / np.linalg.norm(X, axis=1, keepdims=True)
+
+
+def cached_embed(texts: list) -> np.ndarray:
+    """Training embeddings, cached on disk by content hash (embedding ~3k texts is slow)."""
+    key = hashlib.sha1("\x00".join(texts).encode()).hexdigest()[:16]
+    path = Path.home() / ".cache" / "lawweb" / f"crime_type_embed_{key}.npy"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        return np.load(path)
+    X = asyncio.run(embed(texts))
+    np.save(path, X)
+    return X
 
 
 def predict(system: str, texts: list) -> list:
@@ -130,37 +153,62 @@ def report(name: str, rows: list, preds: list) -> float:
 
 
 def train() -> None:
-    """Logistic regression on dev facts + case summaries; C picked by 5-fold, case-grouped CV
-    scored on facts with the gold accept sets."""
+    """Logistic regression on bail dev facts + case summaries, plus ILSIC lay crime questions
+    (train split) at a weight; C and that weight picked by 5-fold, case-grouped CV on bail dev
+    facts with the gold accept sets."""
     from sklearn.linear_model import LogisticRegression
 
     from app.tools.crime_reporter import resolve_family
 
     rows = load_gold("dev")
-    texts, y, fold_of, owner = [], [], [], []
+    texts, y, fold_of, owner, lay = [], [], [], [], []
     for i, r in enumerate(rows):
         for t in [r["text"], *r["extra"]]:
             texts.append(t)
             y.append(r["family"])
             fold_of.append(i % 5)
             owner.append(i if t is r["text"] else -1)
-    X = asyncio.run(embed(texts))
-    y, fold_of, owner = np.array(y), np.array(fold_of), np.array(owner)
+            lay.append(False)
+    for r in ilsic_rows("train"):
+        if r["accept"][0] in TYPE_FAMILY:
+            texts.append(r["text"][:2000])
+            y.append(TYPE_FAMILY[r["accept"][0]])
+            fold_of.append(-1)
+            owner.append(-1)
+            lay.append(True)
+    X = cached_embed(texts)
+    y, fold_of, owner, lay = np.array(y), np.array(fold_of), np.array(owner), np.array(lay)
 
-    def cv_acc(c: float) -> float:
+    def fit(c: float, w: float, mask: np.ndarray):
+        keep = mask & (~lay | (w > 0))
+        weight = np.where(lay[keep], w, 1.0)
+        return LogisticRegression(C=c, max_iter=3000, class_weight=CLASS_WEIGHT).fit(
+            X[keep], y[keep], sample_weight=weight
+        )
+
+    from app.ingest.thermal import ThermalGuard
+
+    guard = ThermalGuard(duty=0.5, threads=2)
+
+    def cv_acc(c: float, w: float) -> float:
         hits = 0
         for k in range(5):
-            clf = LogisticRegression(C=c, max_iter=3000, class_weight=CLASS_WEIGHT).fit(X[fold_of != k], y[fold_of != k])
+            clf = fit(c, w, fold_of != k)
+            guard.step()
             test = np.where((fold_of == k) & (owner >= 0))[0]
             for i, family in zip(test, clf.predict(X[test])):
                 r = rows[owner[i]]
                 hits += resolve_family(family, r["text"]) in r["accept"]
         return hits / len(rows)
 
-    scores = {c: cv_acc(c) for c in C_GRID}
-    best = max(scores, key=scores.get)
-    print("case-grouped 5-fold dev accuracy:", {c: round(s, 3) for c, s in scores.items()}, "-> C =", best)
-    clf = LogisticRegression(C=best, max_iter=3000, class_weight=CLASS_WEIGHT).fit(X, y)
+    scores = {}
+    for w in ILSIC_WEIGHTS:
+        for c in C_GRID:
+            scores[(c, w)] = cv_acc(c, w)
+            print(f"lay weight {w} C={c}: {scores[(c, w)]:.3f}", flush=True)
+    best_c, best_w = max(scores, key=scores.get)
+    print(f"-> C={best_c}, lay weight={best_w} ({int(lay.sum())} lay rows available)")
+    clf = fit(best_c, best_w, np.ones(len(y), dtype=bool))
     CLASSIFIER_DIR.mkdir(parents=True, exist_ok=True)
     np.savez(
         CLASSIFIER_DIR / "weights.npz",
@@ -174,7 +222,7 @@ def train() -> None:
 def score(system: str, split: str) -> int:
     rows = load_gold(split)
     acc = report(f"{system} / bail {split}", rows, predict(system, [r["text"] for r in rows]))
-    check = ilsic_check_rows()
+    check = ilsic_rows("test")
     report(f"{system} / ILSIC lay check (not gated)", check, predict(system, [r["text"] for r in check]))
     if split == "test":
         print(f"\nGATE {'PASS' if acc >= GATE else 'FAIL'}: {acc:.3f} vs {GATE}")
