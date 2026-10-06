@@ -55,14 +55,25 @@ async def classify(rows: list) -> list:
     return [await classify_intent_embedding(r["text"], r["has_document"]) for r in rows]
 
 
+def routed_intent(res, has_document: bool) -> str:
+    """The flow the chatbot actually runs (route_by_intent in app/chatbot.py), before any LLM
+    tiebreak: an ambiguous legal result falls back to general_query (document_analysis when a
+    document is attached)."""
+    if res.is_ambiguous and res.primary_intent != "non_legal":
+        return "document_analysis" if has_document else "general_query"
+    return res.primary_intent
+
+
 def report(rows: list, results: list) -> float:
-    ok = [res.primary_intent == r["intent"] for r, res in zip(rows, results)]
+    top_acc = sum(res.primary_intent == r["intent"] for r, res in zip(rows, results)) / len(rows)
+    print(f"top-intent accuracy (ignoring the ambiguity fallback) {top_acc:.3f}")
+    ok = [routed_intent(res, r["has_document"]) == r["intent"] for r, res in zip(rows, results)]
     acc = sum(ok) / len(ok)
     ambiguous = sum(res.is_ambiguous for res in results) / len(results)
-    print(f"accuracy {acc:.3f} (n={len(rows)}); routed to tiebreak/clarify (ambiguous) {ambiguous:.1%}")
+    print(f"routed accuracy {acc:.3f} (n={len(rows)}); ambiguous {ambiguous:.1%}")
     by = collections.defaultdict(list)
     for r, res, good in zip(rows, results, ok):
-        by[r["intent"]].append((good, res.primary_intent, r["source"]))
+        by[r["intent"]].append((good, routed_intent(res, r["has_document"]), r["source"]))
     for intent, items in sorted(by.items()):
         misses = collections.Counter(p for g, p, _ in items if not g).most_common(3)
         print(f"  {intent:18s} recall {sum(g for g, _, _ in items) / len(items):.3f} n={len(items):3d} misses {misses}")
@@ -189,8 +200,8 @@ def main() -> int:
     acc = report(rows, results)
     if a.show_misses:
         for r, res in zip(rows, results):
-            if res.primary_intent != r["intent"]:
-                print(f"  [{r['intent']} -> {res.primary_intent}] {r['text'][:150]}")
+            if routed_intent(res, r["has_document"]) != r["intent"]:
+                print(f"  [{r['intent']} -> {routed_intent(res, r['has_document'])}] {r['text'][:150]}")
     if a.split == "test" and not a.source:
         print(f"\nGATE {'PASS' if acc >= GATE else 'FAIL'}: {acc:.3f} vs {GATE}")
         return 0 if acc >= GATE else 1
