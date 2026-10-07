@@ -1,2 +1,2 @@
 Introducing LawWeb: ask a legal question in plain language and get an answer cited to the exact Indian bare-act section, then book an advocate or check a document against the statutes, all in one place.
-Built with FastAPI, LangGraph, hybrid RAG over 40+ Indian acts, and React.
+Built with FastAPI, LangGraph, hybrid RAG over 90+ Indian acts, and React.
