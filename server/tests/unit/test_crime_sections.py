@@ -45,3 +45,11 @@ def test_ipc_match_is_replaced_by_indexed_bns_section_and_deduplicated(monkeypat
                                                        ("Indian Penal Code", "379")]
     assert "formerly IPC § 420" in out[0].title
     assert "now BNS § 303" in out[1].title
+
+
+def test_every_pinned_crime_section_belongs_to_its_crime_type():
+    from app.tools.criminal_rag import CRIME_TYPE_SECTIONS, _ipc_crime_type
+
+    for crime_type, section in CRIME_TYPE_SECTIONS.items():
+        assert _ipc_crime_type(section) == crime_type
+    assert "murder" not in CRIME_TYPE_SECTIONS

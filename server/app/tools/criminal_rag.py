@@ -423,6 +423,17 @@ RELATED_CRIME_TYPES = [
 ]
 
 
+# The penal section for each crime_reporter type (mapped to BNS by _prefer_bns). No murder
+# pin: "threatening to kill me" is typed murder, and citing § 302 for a threat is worse
+# than letting retrieval decide.
+CRIME_TYPE_SECTIONS = {
+    "theft": "379", "robbery": "392", "assault": "323", "threat": "506", "fraud": "420",
+    "harassment": "354", "kidnapping": "363", "rape": "376",
+    "domestic_violence": "498A", "dowry": "304B", "property_damage": "427",
+    "land_dispute": "447", "arson": "436",
+}
+
+
 def _fits_crime_type(section: str, crime_type: Optional[str]) -> bool:
     """A classifier-suggested IPC section from an unrelated crime family (cheating on a
     rape report) is noise; unknown or "general" on either side always fits."""
@@ -872,6 +883,11 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 and (not offences_only or _is_offence_section(a, s))
                 and not (offences_only and short and not _fits_crime_type(s, crime_type))
             ][:CLASSIFIER_FIRST]
+            # Short reports ("someone snatched my phone") give retrieval little to match
+            # on, so the detected crime type's own penal section leads.
+            core = CRIME_TYPE_SECTIONS.get(crime_type) if offences_only and short else None
+            if core and ("Indian Penal Code", core) not in lead_sections:
+                lead_sections = [("Indian Penal Code", core)] + lead_sections[:CLASSIFIER_FIRST - 1]
             reranked_score = {(c.act_name, c.section_number): c.score for c in chunks}
             lead = []
             for pair in lead_sections:
