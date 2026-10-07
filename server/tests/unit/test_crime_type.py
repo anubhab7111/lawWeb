@@ -20,6 +20,10 @@ def test_merged_family_resolved_by_keywords():
     assert crime_reporter.resolve_family("Theft or Robbery", "something went missing") == "theft"
 
 
+def test_sexual_offence_with_raped_resolves_to_rape():
+    assert crime_reporter.resolve_family("Sexual Offense", "I got raped in market, please help") == "rape"
+
+
 def test_general_families_map_to_general():
     assert crime_reporter.resolve_family("Narcotics", "ganja was found") == "general"
 

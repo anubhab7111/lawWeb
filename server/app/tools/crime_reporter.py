@@ -166,6 +166,7 @@ CRIME_KEYWORDS: Dict[str, List[str]] = {
     ],
     "rape": [
         "rape",
+        "raped",
         "sexual assault",
         "molestation",
         "molested",
