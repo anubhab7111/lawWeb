@@ -1,0 +1,11 @@
+# Rendered output and third-party media stay local (music licence unverified for redistribution)
+*.mp4
+*.jpg
+composition/assets/music/
+composition/assets/sfx/
+composition/assets/fonts/
+composition/assets/vendor/
+composition/.hfwork/
+composition/snapshots/
+composition/.hyperframes/
+composition/renders/
