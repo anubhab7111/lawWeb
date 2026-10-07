@@ -382,6 +382,67 @@ _DOCTRINE_DESCRIPTIONS = {
 }
 DOCTRINE_MATCH_MIN_SCORE = 0.50
 
+# Crime reports need the section that defines the offence: procedure/evidence codes are
+# excluded, and offence-creating Acts indexed outside the criminal domain are included.
+OFFENCE_DOMAINS = ["criminal", "consumer_cyber_ip", "family", "civil"]
+NON_OFFENCE_ACTS = ("Code of Criminal Procedure", "Bharatiya Nagarik Suraksha Sanhita", "Indian Evidence Act",
+                    "Bharatiya Sakshya Adhiniyam")
+EXTRA_OFFENCE_ACTS = ("Information Technology Act", "Dowry Prohibition Act",
+                      "Protection of Women from Domestic Violence Act")
+OFFENCE_POOL = 30
+
+
+def _is_offence_act(act_name: str) -> bool:
+    if act_name.startswith(NON_OFFENCE_ACTS):
+        return False
+    return act_name.startswith(EXTRA_OFFENCE_ACTS) or act_name in _CRIMINAL_ACT_NAMES
+
+
+# Adultery: struck down in Joseph Shine v. Union of India (2018).
+STRUCK_DOWN_IPC = {"497"}
+_IPC_CRIME_TYPES: Optional[dict] = None
+
+
+def _ipc_crime_type(section: str) -> Optional[str]:
+    global _IPC_CRIME_TYPES
+    if _IPC_CRIME_TYPES is None:
+        mapping = json.loads((Path(__file__).resolve().parents[1] / "data" / "crime_type_map.json").read_text())
+        _IPC_CRIME_TYPES = {k[4:]: v for k, v in mapping.items() if k.startswith("IPC:")}
+    return _IPC_CRIME_TYPES.get(str(section))
+
+
+# Crime types whose sections are routinely charged together (406/420 with IT Act 66D,
+# 323 with 506, 498A with 304B); a section fits a report whose type shares a family.
+RELATED_CRIME_TYPES = [
+    {"theft", "robbery"},
+    {"fraud", "cybercrime"},
+    {"assault", "murder", "threat", "robbery"},
+    {"harassment", "rape", "kidnapping", "cybercrime", "threat"},
+    {"domestic_violence", "dowry", "assault", "threat", "murder"},
+    {"property_damage", "land_dispute", "arson", "threat"},
+]
+
+
+def _fits_crime_type(section: str, crime_type: Optional[str]) -> bool:
+    """A classifier-suggested IPC section from an unrelated crime family (cheating on a
+    rape report) is noise; unknown or "general" on either side always fits."""
+    section_type = _ipc_crime_type(section)
+    if not section_type or not crime_type or crime_type == "general" or section_type == crime_type:
+        return True
+    return any({section_type, crime_type} <= group for group in RELATED_CRIME_TYPES)
+
+
+def _is_offence_section(act_name: str, section: str) -> bool:
+    return _is_offence_act(act_name) and not (act_name == "Indian Penal Code" and str(section) in STRUCK_DOWN_IPC)
+
+
+_CRIMINAL_ACT_NAMES = {
+    "Indian Penal Code", "Bharatiya Nyaya Sanhita BNS", "NDPS Act", "Juvenile Justice Act",
+    "Prevention of Money Laundering Act PMLA", "Unlawful Activities Prevention Act UAPA", "Arms Act",
+    "POCSO Act", "Immigration and Foreigners Act", "SC ST Prevention of Atrocities Act",
+    "Prevention of Corruption Act",
+}
+
 # Query -> IPC section classifier trained on ILSIC lay questions (see the README in
 # its directory). Its top sections, with their BNS equivalents, join the rerank
 # candidate pool, and its best IPC sections lead the results (gated for short questions).
@@ -478,6 +539,34 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             if sum(1 for act, _, _ in triples if act == "Indian Penal Code") >= CLASSIFIER_TOP_N:
                 break
         return triples
+
+    def _prefer_bns(self, matches: List[SectionMatch]) -> List[SectionMatch]:
+        """Replace each IPC match by its BNS equivalent (official comparative table): the
+        indexed BNS text when there is one, else the IPC text labelled with the BNS number.
+        Duplicates (both codes retrieved for the same offence) collapse to one entry."""
+        from app.tools.fact_statutes import _translation
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        ipc_to_bns = _translation()["ipc_bns"]["old_to_new"]
+        chunks = get_unified_rag_system()._chunks
+        out, seen = [], set()
+        for m in matches:
+            if m.act_name == "Indian Penal Code" and m.section in ipc_to_bns:
+                bns = ipc_to_bns[m.section][0]
+                cids = self._pinned_chunk_ids([("Bharatiya Nyaya Sanhita", bns)])
+                if cids:
+                    c = chunks[cids[0]]
+                    m = replace(
+                        m, act_name=c.act_name, section=bns, title=f"{c.title} (formerly IPC § {m.section})",
+                        punishment=_extract_punishment(c.text) or m.punishment, definition=c.text,
+                    )
+                else:
+                    m = replace(m, title=f"{m.title} (now BNS § {bns}; offences before 1 July 2024 stay under IPC)")
+            key = ("BNS", m.section) if m.act_name.startswith("Bharatiya Nyaya") else (m.act_name, m.section)
+            if key not in seen:
+                seen.add(key)
+                out.append(m)
+        return out
 
     def _pinned_chunk_ids(self, sections: List[tuple]) -> List[str]:
         """Chunk ids for the given (act, section) pairs."""
@@ -731,6 +820,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         crime_type: str = "",
         features: Optional[CrimeFeatures] = None,
         k: int = 2,
+        offences_only: bool = False,
     ) -> RAGResult:
         """
         Full criminal RAG pipeline over the unified hybrid index
@@ -762,19 +852,25 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             chunks = await unified._hybrid_search(
                 search_query=search_query,
                 rerank_query=query,
-                k=k * 2,
+                k=OFFENCE_POOL if offences_only else k * 2,
                 min_score=0.0,
-                domains=[self.domain_name],
+                domains=OFFENCE_DOMAINS if offences_only else [self.domain_name],
                 extra_candidates=self._pinned_chunk_ids([(a, s) for a, s, _ in classified]),
             )
+            if offences_only:
+                chunks = [c for c in chunks if _is_offence_section(c.act_name, c.section_number)]
             # Pinned candidates enter the fused list last, so the rerank/fused blend
             # buries them; lead with the classifier's best sections instead. It was
             # trained on long forum narratives, so short questions keep the reranker's
-            # order unless the classifier is confident.
+            # order unless the classifier is confident. On short crime reports it also
+            # must agree with the report's crime type; on long ones the section
+            # classifier beats the crime-type guess (ILSIC dev hit@2 0.66 -> ~0.52).
             short = len(query.split()) < CLASSIFIER_LONG_QUERY_WORDS
             lead_sections = [
                 (a, s) for a, s, p in classified
                 if a == "Indian Penal Code" and (not short or p >= CLASSIFIER_SHORT_MIN_PROB)
+                and (not offences_only or _is_offence_section(a, s))
+                and not (offences_only and short and not _fits_crime_type(s, crime_type))
             ][:CLASSIFIER_FIRST]
             reranked_score = {(c.act_name, c.section_number): c.score for c in chunks}
             lead = []
@@ -836,6 +932,8 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             matches.sort(
                 key=lambda m: (lead_rank.get((m.act_name, m.section), len(lead_rank)), -m.confidence)
             )
+            if offences_only:
+                matches = self._prefer_bns(matches)
             matches = matches[:k]
 
             avg_conf = (

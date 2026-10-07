@@ -156,7 +156,7 @@ def cross_validate() -> None:
                   f"accuracy on the rest {np.mean(pred[sure] == dev_lab[sure]):.3f}")
 
 
-HEAD_C = 1.0
+HEAD_C = 16.0  # dev CV under the chatbot routing rule (eval_routing.py --cv was argmax-only)
 
 
 def train() -> None:

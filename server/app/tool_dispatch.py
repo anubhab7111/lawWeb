@@ -417,7 +417,7 @@ async def invoke_crime_sections(
         )
 
         rag_result = await rag_system.retrieve_sections(
-            query, crime_type=crime_type, features=features, k=k
+            query, crime_type=crime_type, features=features, k=k, offences_only=True
         )
 
         if not rag_result.ipc_sections:
