@@ -219,6 +219,10 @@ INTENT_HEAD_PATH = Path(__file__).resolve().parent / "data" / "intent_classifier
 # SECONDARY_MIN_PROB are its contenders. Set on dev cross-validation (eval_routing.py --cv).
 INTENT_MIN_PROB = 0.4
 SECONDARY_MIN_PROB = 0.2
+# Real-chat check (2026-10-07): "My employer hasn't paid my salary..." was refused as
+# non_legal at p=0.275. At 0.5 the routing test split drops 0.930 -> 0.920 (2/40
+# off-topic messages get a legal answer instead).
+NON_LEGAL_MIN_PROB = 0.5
 
 
 @lru_cache(maxsize=1)
@@ -244,6 +248,16 @@ def _classify_with_head(query_vec, has_document: bool) -> IntentClassification:
     probs = intent_probabilities(query_vec, has_document)
     ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
     (top_intent, top_p), (_, second_p) = ranked[0], ranked[1]
+    if top_intent == "non_legal" and top_p < NON_LEGAL_MIN_PROB:
+        # Refusing a real legal question costs more than answering an off-topic one.
+        return IntentClassification(
+            primary_intent="general_query",
+            confidence=probs["general_query"],
+            margin=0.0,
+            is_ambiguous=False,
+            reasoning=f"logistic-regression head: non_legal only {top_p:.3f}, answered as general_query",
+            scores=probs,
+        )
     return IntentClassification(
         primary_intent=top_intent,
         confidence=top_p,

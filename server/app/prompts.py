@@ -529,6 +529,22 @@ CRIME_DETAILS_ASK = (
     + "could you tell me a little more: **what happened**, **when** it happened, and **where** "
     "(city or area)? If you are in immediate danger, call **112** first."
 )
+# Serious crimes are answered straight away (no missing-detail question), opening with help.
+_EMERGENCY = "🚨 **If you are in danger or need urgent help, call 112 now.** "
+_WOMEN = "**Women Helpline: 181.** "
+SERIOUS_CRIME_HELPLINES = {
+    "rape": _EMERGENCY + _WOMEN + "You can get free medical care and a free medical examination at any "
+    "government or private hospital, and you can file the FIR at any police station (a Zero FIR).\n\n",
+    "domestic_violence": _EMERGENCY + _WOMEN + "A Protection Officer or the police can help you get a "
+    "protection order under the Domestic Violence Act.\n\n",
+    "murder": _EMERGENCY + "Do not disturb the scene, and report it to the police immediately.\n\n",
+    "kidnapping": _EMERGENCY + "Report a missing or abducted person to the police immediately — there is "
+    "no waiting period. Child Helpline: 1098.\n\n",
+    "assault": _EMERGENCY + "Get your injuries treated and ask for a medical certificate; it is "
+    "important evidence.\n\n",
+}
+SERIOUS_CRIMES = frozenset(SERIOUS_CRIME_HELPLINES)
+
 LAWYER_NONE_NEARBY_NOTE = (
     "_I couldn't find lawyers listed in {location}, so these are the closest matches from other "
     "places — many offer online consultations._\n\n"

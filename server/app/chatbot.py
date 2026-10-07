@@ -45,6 +45,8 @@ from app.prompts import (
     CLARIFY_PREFIX,
     CRIME_DETAILS_ASK,
     CRIME_DETAILS_PREFIX,
+    SERIOUS_CRIME_HELPLINES,
+    SERIOUS_CRIMES,
     CRIME_REPORT_FALLBACK,
     CRIME_REPORT_PROMPT,
     DOC_RAG_UNAVAILABLE_DISCLAIMER,
@@ -1246,10 +1248,10 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     crime_details = (
         state.get("crime_details") or state.get("retrieval_query") or user_input
     )
-    if not state.get("followup_answered") and crime_report_too_thin(crime_details):
-        return _ask_followup(state, CRIME_DETAILS_ASK, "crime_report")
-
     identified_crime = await classify_crime_type(crime_details)
+    serious = identified_crime in SERIOUS_CRIMES
+    if not serious and not state.get("followup_answered") and crime_report_too_thin(crime_details):
+        return _ask_followup(state, CRIME_DETAILS_ASK, "crime_report")
 
     # Retrieve IPC/BNS sections via the shared dispatcher (legal minimality:
     # k=2, fewer/more-accurate chargeable sections)
@@ -1289,6 +1291,9 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     # Compulsory RAG: if RAG failed, prepend visible disclaimer
     if disclaimer_prefix:
         final_response = disclaimer_prefix + final_response
+    if serious:
+        final_response = SERIOUS_CRIME_HELPLINES[identified_crime] + final_response
+        await emit_event("replace", content=final_response)
 
     return {
         **state,
