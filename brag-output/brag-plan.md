@@ -44,7 +44,7 @@ Cut to the deep-ink closing panel from the site: the gold-outlined "L" mark, "La
 - Strongest visual element: the hero headline with gold-italic "stand." and the gold rule; the chat answer card with "LawWeb · Counsel" label and the "L" brand mark
 
 ## Share copy (draft)
-Introducing LawWeb: ask a legal question in plain language and get an answer cited to the exact Indian bare-act section, then book an advocate or check a document in the same place. Built with FastAPI, LangGraph, hybrid RAG over 40+ Indian acts, and React.
+Introducing LawWeb: ask a legal question in plain language and get an answer cited to the exact Indian bare-act section, then book an advocate or check a document in the same place. Built with FastAPI, LangGraph, hybrid RAG over 90+ Indian acts, and React.
 
 ## Audio direction
 - Role: warm, steady bed with sparse professional accents
