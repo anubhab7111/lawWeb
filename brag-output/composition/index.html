@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>LawWeb — brag</title>
+    <link rel="stylesheet" href="fonts.css" />
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script src="assets/audio-data.js"></script>
+    <style>
+      :root {
+        --bg: #f4efe4;
+        --surface: #fdfbf5;
+        --surface-alt: #efe8d9;
+        --text: #211d15;
+        --text-strong: #17130c;
+        --text-2: #3b352a;
+        --muted: #6a6252;
+        --border: #e5ddcd;
+        --border-2: #dcd2bf;
+        --accent: #8c6f2f;
+        --accent-dark: #745a22;
+        --accent-line: #c9ab63;
+        --accent-tint: #efe5cd;
+        --ink: #211d15;
+        --ink-fg: #fbf7ec;
+        --bubble-bg: #ece4d1;
+        --bubble-fg: #3a3122;
+        --green-fg: #3c5e3f;
+        --green-bg: #e6ecdd;
+        --amber-fg: #7a5a14;
+        --amber-bg: #f6ecd6;
+        --font-head: "Fraunces", Georgia, serif;
+        --font-serif: "Newsreader", Georgia, serif;
+        --font-body: "Inter", system-ui, sans-serif;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+      body { font-family: var(--font-body); color: var(--text); -webkit-font-smoothing: antialiased; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+      .clip { position: absolute; inset: 0; }
+      .scene { position: absolute; inset: 0; opacity: 0; }
+      svg { display: block; }
+
+      /* ── scene 1: hook ─────────────────────────────── */
+      #s1 { z-index: 1; }
+      #s1 .scene { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .glow {
+        position: absolute; left: 50%; top: 50%; width: 1500px; height: 900px; margin: -450px 0 0 -750px;
+        background: radial-gradient(closest-side, rgba(201, 171, 99, 0.34), rgba(201, 171, 99, 0) 70%);
+        opacity: 0.4; pointer-events: none;
+      }
+      .eyebrow { font: 600 26px var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-dark); }
+      #hook-eyebrow { margin-bottom: 44px; position: relative; }
+      .hook-line {
+        display: block; position: relative;
+        font-family: var(--font-head); font-weight: 560; font-size: 150px; line-height: 1.06; letter-spacing: -0.03em;
+        color: var(--text-strong); font-variation-settings: "opsz" 144;
+      }
+      .hook-line em { font-style: italic; color: var(--accent); }
+      #hook-rule {
+        position: relative; width: 180px; height: 2px; margin-top: 52px;
+        background: linear-gradient(90deg, var(--accent-line), rgba(201, 171, 99, 0));
+        transform-origin: left center;
+      }
+
+      /* ── scenes 2-3: the app window ────────────────── */
+      #s2 { z-index: 2; }
+      #window {
+        position: absolute; left: 120px; top: 64px; width: 1680px; height: 952px;
+        background: var(--surface); border: 1px solid var(--border-2); border-radius: 11px;
+        box-shadow: 0 30px 70px rgba(30, 26, 17, 0.14), 0 2px 8px rgba(30, 26, 17, 0.06);
+        overflow: hidden; transform-origin: 55% 25%;
+      }
+      .nav {
+        position: absolute; left: 0; top: 0; right: 0; height: 84px; display: flex; align-items: center; gap: 44px;
+        padding: 0 40px; border-bottom: 1px solid var(--border); background: var(--surface);
+      }
+      .brand { display: flex; align-items: center; gap: 14px; }
+      .brand-logo {
+        width: 44px; height: 44px; border-radius: 4px; border: 1.5px solid var(--accent);
+        color: var(--accent); display: flex; align-items: center; justify-content: center;
+        font: 600 25px/1 var(--font-head);
+      }
+      .brand-name { font: 600 28px var(--font-head); letter-spacing: 0.03em; color: var(--text-strong); }
+      .nav-item { font: 500 21px var(--font-body); color: var(--text-2); }
+      .nav-item.on { color: var(--text-strong); box-shadow: inset 0 -2px 0 var(--accent); padding-bottom: 6px; }
+      .side {
+        position: absolute; left: 0; top: 84px; bottom: 0; width: 340px; background: var(--surface-alt);
+        border-right: 1px solid var(--border); padding: 30px 22px;
+      }
+      .side-new { font: 600 20px var(--font-body); color: var(--text-strong); padding: 14px 18px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--surface); margin-bottom: 34px; }
+      .side-label { font: 600 17px var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-dark); padding: 0 12px 14px; }
+      .thread { font: 400 20px var(--font-body); color: var(--text-2); padding: 13px 12px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .thread.on { background: var(--surface); color: var(--text-strong); font-weight: 500; }
+      .main { position: absolute; left: 340px; top: 84px; right: 0; bottom: 0; }
+      .msgs { position: absolute; left: 110px; right: 110px; top: 44px; display: flex; flex-direction: column; gap: 34px; }
+      .bubble {
+        align-self: flex-end; max-width: 72%; background: var(--bubble-bg); color: var(--bubble-fg);
+        padding: 20px 28px; border-radius: 11px; font: 400 27px/1.45 var(--font-body); opacity: 0;
+      }
+      .answer { display: flex; gap: 22px; }
+      .answer .brand-logo { flex: none; width: 50px; height: 50px; font-size: 27px; opacity: 0; }
+      .answer-body { flex: 1; }
+      .answer-label { font: 600 17px var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; opacity: 0; }
+      .answer-text { font: 400 35px/1.5 var(--font-serif); color: var(--text-strong); max-width: 1000px; }
+      .answer-text .w { opacity: 0; }
+      .answer-text strong { font-weight: 600; color: var(--accent-dark); }
+      .cite-row { display: flex; gap: 12px; margin-top: 18px; }
+      .cite {
+        font: 600 19px var(--font-body); color: var(--accent-dark); background: var(--accent-tint);
+        border: 1px solid #e3d3a8; border-radius: 99px; padding: 8px 18px; opacity: 0;
+      }
+      #lawyers { margin-left: 72px; opacity: 0; }
+      .lawyers-title { font: 600 22px var(--font-body); color: var(--muted); margin-bottom: 14px; }
+      .lawyer {
+        display: flex; align-items: center; gap: 22px; width: 860px; padding: 22px 26px;
+        background: var(--surface); border: 1px solid var(--border-2); border-radius: 6px;
+        box-shadow: 0 2px 10px rgba(30, 26, 17, 0.06);
+      }
+      .avatar { width: 74px; height: 74px; border-radius: 99px; background: #ece3d2; color: #6e552b; display: flex; align-items: center; justify-content: center; font: 600 26px var(--font-body); flex: none; }
+      .lawyer-name { font: 700 31px var(--font-head); letter-spacing: -0.01em; color: var(--text-strong); }
+      .lawyer-meta { display: flex; align-items: center; gap: 10px; font: 500 21px var(--font-body); color: var(--muted); margin-top: 4px; }
+      .lawyer-btns { margin-left: auto; display: flex; gap: 12px; }
+      .btn { font: 600 21px var(--font-body); border-radius: 4px; padding: 13px 26px; border: 1px solid var(--border-2); color: var(--text-strong); background: var(--surface); }
+      .btn-primary { background: var(--ink); color: var(--ink-fg); border-color: var(--ink); }
+      .composer {
+        position: absolute; left: 110px; right: 110px; bottom: 40px; height: 92px; display: flex; align-items: center;
+        background: var(--surface); border: 1px solid var(--border-2); border-radius: 8px; padding: 0 16px 0 30px;
+        box-shadow: 0 2px 10px rgba(30, 26, 17, 0.06);
+      }
+      .composer-field { position: relative; flex: 1; font: 400 27px var(--font-body); color: var(--text); white-space: nowrap; }
+      #placeholder { position: absolute; left: 0; top: 0; color: var(--muted); }
+      #typed .c { opacity: 0; }
+      #caret { position: absolute; left: 0; top: 2px; width: 2px; height: 32px; background: var(--accent); opacity: 0; }
+      .send { width: 60px; height: 60px; border-radius: 6px; background: var(--ink); color: var(--ink-fg); display: flex; align-items: center; justify-content: center; }
+
+      /* booking sheet */
+      #sheet {
+        position: absolute; left: 50%; top: 50%; width: 920px; margin-left: -460px; margin-top: -260px;
+        background: var(--surface); border: 1px solid var(--border-2); border-radius: 11px; padding: 44px 48px;
+        box-shadow: 0 30px 70px rgba(20, 16, 8, 0.30); opacity: 0;
+      }
+      .sheet-title { font: 600 44px var(--font-head); letter-spacing: -0.015em; color: var(--text-strong); }
+      .sheet-sub { font: 500 23px var(--font-body); color: var(--muted); margin-top: 8px; }
+      .slot-label { font: 600 18px var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-dark); margin: 34px 0 16px; }
+      .slots { display: flex; gap: 16px; }
+      .slot { font: 600 25px var(--font-body); color: var(--text-2); border: 1px solid var(--border-2); border-radius: 99px; padding: 14px 28px; background: var(--surface); }
+      .sheet-foot { display: flex; align-items: center; margin-top: 38px; min-height: 64px; position: relative; }
+      #confirm-btn { font-size: 24px; padding: 16px 34px; }
+      #confirmed {
+        position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 22px; opacity: 0;
+      }
+      .pill-green { white-space: nowrap; display: inline-flex; align-items: center; gap: 12px; font: 600 26px var(--font-body); color: var(--green-fg); background: var(--green-bg); border-radius: 99px; padding: 14px 26px; }
+      .confirmed-note { font: 400 24px var(--font-serif); color: var(--text-2); }
+      #cursor { position: absolute; left: 0; top: 0; width: 40px; height: 40px; opacity: 0; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); }
+
+      /* ── scene 4: document ─────────────────────────── */
+      #s4 { z-index: 3; background: var(--bg); }
+      #s4 .scene { background: var(--bg); padding: 120px 210px 0; }
+      .page-title { font: 600 92px var(--font-head); letter-spacing: -0.025em; color: var(--text-strong); font-variation-settings: "opsz" 120; }
+      .doc-row { display: flex; gap: 60px; margin-top: 60px; }
+      .dropzone {
+        position: relative; width: 760px; height: 330px; border: 2px dashed var(--accent-line); border-radius: 8px;
+        background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      }
+      .drop-hint { font: 500 24px var(--font-body); color: var(--muted); }
+      #file-chip {
+        display: flex; align-items: center; gap: 14px; font: 600 28px var(--font-body); color: var(--text-strong);
+        background: var(--surface-alt); border: 1px solid var(--border-2); border-radius: 6px; padding: 16px 26px; opacity: 0;
+      }
+      .pipeline { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0; }
+      .step { display: flex; align-items: center; gap: 22px; padding: 26px 0; border-top: 1px solid var(--border-2); font: 500 30px var(--font-body); color: var(--text-2); }
+      .step:last-child { border-bottom: 1px solid var(--border-2); }
+      .step-mark { position: relative; width: 40px; height: 40px; border-radius: 99px; border: 2px solid var(--border-2); flex: none; }
+      .step-mark .on { position: absolute; inset: -2px; border-radius: 99px; display: flex; align-items: center; justify-content: center; opacity: 0; }
+      .step-mark .ok { background: var(--green-fg); }
+      .step-mark .warn { background: var(--amber-fg); }
+      .step-detail { color: var(--muted); font-weight: 400; }
+      #finding {
+        display: flex; align-items: center; gap: 30px; margin-top: 44px; padding: 32px 40px;
+        background: var(--amber-bg); border: 1px solid #e8d4a6; border-left: 6px solid var(--amber-fg); border-radius: 6px; opacity: 0;
+      }
+      .finding-title { font: 600 46px var(--font-head); letter-spacing: -0.015em; color: var(--text-strong); }
+      .finding-cite { font: italic 400 31px var(--font-serif); color: var(--amber-fg); margin-top: 6px; }
+
+      /* ── scene 5: everything after ─────────────────── */
+      #s5 { z-index: 4; background: var(--bg); }
+      #s5 .scene { background: var(--bg); display: flex; align-items: center; justify-content: center; gap: 40px; }
+      .feature {
+        width: 470px; height: 330px; background: var(--surface); border: 1px solid var(--border-2); border-radius: 8px;
+        padding: 46px 44px; display: flex; flex-direction: column; justify-content: space-between; opacity: 0;
+        box-shadow: 0 2px 10px rgba(30, 26, 17, 0.05);
+      }
+      .feature-icon { color: var(--accent); }
+      .feature-title { font: 600 52px/1.1 var(--font-head); letter-spacing: -0.02em; color: var(--text-strong); }
+      .feature-rule { width: 64px; height: 2px; background: var(--accent-line); margin-bottom: 22px; }
+
+      /* ── scene 6: outro ────────────────────────────── */
+      #s6 { z-index: 5; }
+      #s6 .scene { background: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      #s6 .glow { background: radial-gradient(closest-side, rgba(201, 171, 99, 0.22), rgba(201, 171, 99, 0) 70%); }
+      #outro-mark { position: relative; width: 132px; height: 132px; font-size: 74px; border-width: 2px; border-color: var(--accent-line); color: var(--accent-line); opacity: 0; }
+      #outro-name { position: relative; font: 600 92px var(--font-head); letter-spacing: 0.02em; color: var(--ink-fg); margin-top: 30px; opacity: 0; }
+      #outro-line { position: relative; font: 500 66px/1.15 var(--font-head); letter-spacing: -0.02em; color: var(--ink-fg); margin-top: 64px; max-width: 1300px; opacity: 0; }
+      #outro-line em { font-style: italic; color: var(--accent-line); }
+      #outro-trust { position: relative; font: 500 25px var(--font-body); letter-spacing: 0.04em; color: #bab6ab; margin-top: 46px; opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="25" data-width="1920" data-height="1080">
+      <!-- Scene 1 — hook -->
+      <section id="s1" class="clip" data-start="0" data-duration="3.5" data-track-index="0">
+        <div class="scene">
+          <div id="glow1" class="glow"></div>
+          <div id="hook-eyebrow" class="eyebrow">Indian Law · Retrieval-backed Counsel</div>
+          <span id="hook-l1" class="hook-line">Understand exactly</span>
+          <span id="hook-l2" class="hook-line">where you <em>stand.</em></span>
+          <div id="hook-rule"></div>
+        </div>
+      </section>
+
+      <!-- Scenes 2-3 — ask, then book from the answer -->
+      <section id="s2" class="clip" data-start="2.8" data-duration="11.2" data-track-index="1">
+        <div class="scene">
+          <div id="window">
+            <div class="nav">
+              <div class="brand"><div class="brand-logo">L</div><div class="brand-name">LawWeb</div></div>
+              <div class="nav-item on">Ask AI</div>
+              <div class="nav-item">Find Lawyers</div>
+              <div class="nav-item">Documents</div>
+              <div class="nav-item">Vault</div>
+              <div class="nav-item">My Cases</div>
+            </div>
+            <div class="side">
+              <div class="side-new">+ New conversation</div>
+              <div class="side-label">Recent</div>
+              <div class="thread on">Cheque bounce</div>
+              <div class="thread">Rent agreement review</div>
+              <div class="thread">Bail eligibility</div>
+              <div class="thread">Consumer complaint</div>
+            </div>
+            <div class="main">
+              <div class="msgs">
+                <div id="bubble" class="bubble">A cheque I received has bounced. What can I do?</div>
+                <div class="answer">
+                  <div id="answer-logo" class="brand-logo">L</div>
+                  <div class="answer-body">
+                    <div id="answer-label" class="answer-label">LawWeb · Counsel</div>
+                    <div id="answer-text" class="answer-text"><span class="w">An offence under</span> <strong class="w">Section 138, Negotiable Instruments Act.</strong> <span class="w">Send a demand</span> <span class="w">notice within</span> <span class="w">30 days.</span></div>
+                    <div class="cite-row">
+                      <div class="cite">NI Act, 1881 · s.138</div>
+                      <div class="cite">NI Act, 1881 · s.142</div>
+                    </div>
+                  </div>
+                </div>
+                <div id="lawyers">
+                  <div class="lawyers-title">Lawyers who could help with this</div>
+                  <div class="lawyer">
+                    <div class="avatar">VL</div>
+                    <div>
+                      <div class="lawyer-name">Vinaya Luthra</div>
+                      <div class="lawyer-meta">
+                        <span>Banking Law · Delhi</span><span>·</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#b8912f" d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6L2.5 9.4l6.6-.8z"/></svg>
+                        <span style="color: var(--text-2); font-weight: 600">4.9</span>
+                      </div>
+                    </div>
+                    <div class="lawyer-btns">
+                      <div class="btn">Profile</div>
+                      <div id="book-btn" class="btn btn-primary">Book</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer-field">
+                  <span id="placeholder">Ask a legal question…</span>
+                  <span id="typed">A cheque I received has bounced. What can I do?</span>
+                  <div id="caret"></div>
+                </div>
+                <div class="send"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+              </div>
+            </div>
+
+            <div id="sheet">
+              <div class="sheet-title">Book a consultation</div>
+              <div class="sheet-sub">Vinaya Luthra · Banking Law · Delhi</div>
+              <div class="slot-label">Choose a slot</div>
+              <div class="slots">
+                <div class="slot">Thu 10:00</div>
+                <div id="slot-pick" class="slot">Thu 11:30</div>
+                <div class="slot">Fri 16:00</div>
+              </div>
+              <div class="sheet-foot">
+                <div id="confirm-btn" class="btn btn-primary">Confirm booking</div>
+                <div id="confirmed">
+                  <div class="pill-green">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                    Confirmed · Thu, 11:30 AM
+                  </div>
+                  <div class="confirmed-note">Added to your legal calendar</div>
+                </div>
+              </div>
+            </div>
+
+            <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2.5l15 9.2-6.6 1.4 3.7 7.3-2.9 1.5-3.7-7.3L4.8 19z" fill="#17130c" stroke="#fdfbf5" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 4 — read the fine print -->
+      <section id="s4" class="clip" data-start="13.4" data-duration="5.5" data-track-index="2">
+        <div class="scene">
+          <div id="doc-title" class="page-title">Analyze a document</div>
+          <div class="doc-row">
+            <div class="dropzone">
+              <div style="color: var(--accent)"><svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15"/></svg></div>
+              <div id="file-chip">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#8c6f2f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+                Rent_Agreement.pdf
+              </div>
+              <div class="drop-hint">PDF, DOCX or a scanned image</div>
+            </div>
+            <div class="pipeline">
+              <div class="step">
+                <div class="step-mark"><div id="mark1" class="on ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></div>
+                <div>Classified <span class="step-detail">· Lease agreement</span></div>
+              </div>
+              <div class="step">
+                <div class="step-mark"><div id="mark2" class="on ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></div>
+                <div>Statutory checklist</div>
+              </div>
+              <div class="step">
+                <div class="step-mark"><div id="mark3" class="on warn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M12 6.5v7M12 17.5v.5"/></svg></div></div>
+                <div>Defects <span id="defect-count" class="step-detail" style="opacity: 0">· 1 found</span></div>
+              </div>
+            </div>
+          </div>
+          <div id="finding">
+            <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="#7a5a14" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.4v.4"/></svg>
+            <div>
+              <div class="finding-title">Lease over one year — must be registered</div>
+              <div class="finding-cite">Registration Act, 1908 · s.17</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 5 — everything after -->
+      <section id="s5" class="clip" data-start="18.2" data-duration="3.4" data-track-index="3">
+        <div class="scene">
+          <div id="f1" class="feature">
+            <div class="feature-icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></svg></div>
+            <div><div class="feature-rule"></div><div class="feature-title">Document Vault</div></div>
+          </div>
+          <div id="f2" class="feature">
+            <div class="feature-icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v17M7 20.5h10M4.5 7.5h15M12 5l-7.5 2.5M12 5l7.5 2.5"/><path d="M4.5 7.5L2 13.5a2.5 2.5 0 0 0 5 0zM19.5 7.5L17 13.5a2.5 2.5 0 0 0 5 0z"/></svg></div>
+            <div><div class="feature-rule"></div><div class="feature-title">My Cases</div></div>
+          </div>
+          <div id="f3" class="feature">
+            <div class="feature-icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="1.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M8 13.5h2.5M13.5 13.5H16M8 17h2.5"/></svg></div>
+            <div><div class="feature-rule"></div><div class="feature-title">Legal Calendar</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 6 — outro -->
+      <section id="s6" class="clip" data-start="21.0" data-duration="4" data-track-index="4">
+        <div class="scene">
+          <div id="glow6" class="glow"></div>
+          <div id="outro-mark" class="brand-logo">L</div>
+          <div id="outro-name">LawWeb</div>
+          <div id="outro-line">Your first question is waiting to be <em>answered.</em></div>
+          <div id="outro-trust">Grounded in Indian bare acts · Not a substitute for a lawyer</div>
+        </div>
+      </section>
+
+      <audio id="music" data-start="0" data-duration="25" data-track-index="10" data-volume="0.3" data-fade-in="0.8" data-fade-out="1.6" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+      <audio id="sfx-key1" data-start="3.36" data-duration="0.25" data-track-index="11" data-volume="0.28" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx-key2" data-start="3.72" data-duration="0.25" data-track-index="12" data-volume="0.24" src="assets/sfx/keypress-011.wav"></audio>
+      <audio id="sfx-key3" data-start="4.08" data-duration="0.25" data-track-index="13" data-volume="0.28" src="assets/sfx/keypress-019.wav"></audio>
+      <audio id="sfx-key4" data-start="4.44" data-duration="0.25" data-track-index="14" data-volume="0.24" src="assets/sfx/keypress-027.wav"></audio>
+      <audio id="sfx-send" data-start="4.78" data-duration="0.06" data-track-index="15" data-volume="0.45" src="assets/sfx/click2.ogg"></audio>
+      <audio id="sfx-lawyer" data-start="8.7" data-duration="0.19" data-track-index="16" data-volume="0.55" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
+      <audio id="sfx-book" data-start="10.78" data-duration="0.06" data-track-index="17" data-volume="0.5" src="assets/sfx/click2.ogg"></audio>
+      <audio id="sfx-slot" data-start="11.58" data-duration="0.01" data-track-index="18" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-confirm" data-start="12.08" data-duration="0.06" data-track-index="19" data-volume="0.5" src="assets/sfx/click2.ogg"></audio>
+      <audio id="sfx-confirmed" data-start="12.28" data-duration="0.13" data-track-index="20" data-volume="0.5" src="assets/sfx/bong_001.ogg"></audio>
+      <audio id="sfx-drop" data-start="14.72" data-duration="0.15" data-track-index="21" data-volume="0.5" src="assets/sfx/impactSoft_medium_004.ogg"></audio>
+      <audio id="sfx-step" data-start="15.29" data-duration="0.01" data-track-index="22" data-volume="0.4" src="assets/sfx/click_002.ogg"></audio>
+      <audio id="sfx-finding" data-start="16.38" data-duration="0.13" data-track-index="23" data-volume="0.45" src="assets/sfx/bong_001.ogg"></audio>
+      <audio id="sfx-cards" data-start="19.06" data-duration="0.6" data-track-index="24" data-volume="0.38" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx-outro" data-start="21.78" data-duration="0.66" data-track-index="25" data-volume="0.4" src="assets/sfx/impactBell_heavy_003.ogg"></audio>
+    </div>
+
+    <script>
+      document.fonts.ready.then(function () {
+        var tl = gsap.timeline({ paused: true });
+        var FPS = 30;
+
+        // Typed-character spans and caret stops are measured once, before any tween touches layout.
+        var typed = document.getElementById("typed");
+        var q = typed.textContent;
+        typed.textContent = "";
+        var chars = [];
+        for (var i = 0; i < q.length; i++) {
+          var c = document.createElement("span");
+          c.className = "c";
+          c.textContent = q[i];
+          typed.appendChild(c);
+          chars.push(c);
+        }
+        var caretX = chars.map(function (c) { return c.offsetLeft + c.offsetWidth; });
+
+        var win = document.getElementById("window");
+        var winRect = win.getBoundingClientRect();
+        function centerOf(id, dx, dy) {
+          var r = document.getElementById(id).getBoundingClientRect();
+          return { x: r.left - winRect.left + r.width * (dx || 0.5), y: r.top - winRect.top + r.height * (dy || 0.5) };
+        }
+        var pBook = centerOf("book-btn", 0.45, 0.55);
+        var pSlot = centerOf("slot-pick", 0.45, 0.6);
+        var pConfirm = centerOf("confirm-btn", 0.4, 0.6);
+
+        // ── scene 1: hook ──
+        tl.to("#s1 .scene", { opacity: 1, duration: 0.5, ease: "power1.out" }, 0);
+        tl.fromTo("#hook-eyebrow", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 0.15);
+        tl.fromTo("#hook-l1", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.85, ease: "power3.out" }, 0.3);
+        tl.fromTo("#hook-l2", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.85, ease: "power3.out" }, 0.62);
+        tl.fromTo("#hook-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.9, ease: "power2.inOut" }, 1.0);
+        tl.to("#s1 .scene", { opacity: 0, y: -24, duration: 0.7, ease: "power1.in" }, 2.8);
+
+        // ── scene 2: ask ──
+        tl.fromTo("#s2 .scene", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "power1.out" }, 2.8);
+        tl.fromTo("#window", { scale: 0.965, y: 26 }, { scale: 1, y: 0, duration: 1.1, ease: "power2.out" }, 2.8);
+        tl.to("#window", { scale: 1.08, duration: 4.2, ease: "power1.inOut" }, 5.2);
+        tl.set("#placeholder", { opacity: 0 }, 3.3);
+        tl.set("#caret", { opacity: 1, x: 0 }, 3.3);
+        var tStart = 3.32, tEnd = 4.6, step = (tEnd - tStart) / chars.length;
+        chars.forEach(function (c, i) {
+          var t = tStart + i * step;
+          tl.set(c, { opacity: 1 }, t);
+          tl.set("#caret", { x: caretX[i] }, t);
+        });
+        tl.set("#typed", { opacity: 0 }, 4.8);
+        tl.set("#caret", { opacity: 0 }, 4.8);
+        tl.set("#placeholder", { opacity: 1 }, 4.8);
+        tl.fromTo("#bubble", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 4.8);
+        tl.fromTo("#answer-logo", { opacity: 0 }, { opacity: 1, duration: 0.35 }, 5.05);
+        tl.fromTo("#answer-label", { opacity: 0 }, { opacity: 1, duration: 0.35 }, 5.1);
+        gsap.utils.toArray("#answer-text .w").forEach(function (w, i) {
+          tl.fromTo(w, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "none" }, 5.2 + i * 0.22);
+        });
+        gsap.utils.toArray(".cite").forEach(function (el, i) {
+          tl.fromTo(el, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 6.35 + i * 0.12);
+        });
+        // beat-locked: 8.74s — the lawyer suggestion lands on the strong cue
+        tl.fromTo("#lawyers", { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 8.66);
+
+        // ── scene 3: book ──
+        tl.fromTo("#cursor", { opacity: 0, x: pBook.x + 220, y: pBook.y + 170 }, { opacity: 1, duration: 0.25 }, 10.1);
+        tl.to("#cursor", { x: pBook.x, y: pBook.y, duration: 0.55, ease: "power2.inOut" }, 10.15);
+        tl.to("#book-btn", { scale: 0.94, duration: 0.08, yoyo: true, repeat: 1 }, 10.76);
+        tl.to(["#window .side", "#window .main"], { opacity: 0, duration: 0.35, ease: "power1.in" }, 10.86);
+        tl.fromTo("#sheet", { opacity: 0, y: 30, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "power3.out" }, 11.16);
+        tl.to("#cursor", { x: pSlot.x, y: pSlot.y, duration: 0.38, ease: "power2.inOut" }, 11.18);
+        tl.to("#slot-pick", { backgroundColor: "#211d15", borderColor: "#211d15", color: "#fbf7ec", duration: 0.15 }, 11.58);
+        tl.to("#cursor", { x: pConfirm.x, y: pConfirm.y, duration: 0.38, ease: "power2.inOut" }, 11.66);
+        tl.to("#confirm-btn", { scale: 0.95, duration: 0.08, yoyo: true, repeat: 1 }, 12.06);
+        tl.to("#confirm-btn", { opacity: 0, duration: 0.18 }, 12.22);
+        tl.fromTo("#confirmed", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.4, ease: "back.out(1.6)" }, 12.28);
+        tl.to("#cursor", { opacity: 0, duration: 0.3 }, 12.5);
+        tl.to("#s2 .scene", { opacity: 0, duration: 0.6, ease: "power1.in" }, 13.4);
+
+        // ── scene 4: read the fine print ──
+        tl.fromTo("#s4 .scene", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power1.out" }, 13.4);
+        tl.fromTo("#doc-title", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 13.6);
+        tl.fromTo("#file-chip", { opacity: 0, y: -70 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.in" }, 14.3);
+        // beat-grid: step 1 at 15.29s, step 2 at 15.84s, finding at 16.38s
+        tl.fromTo("#mark1", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, 15.29);
+        tl.fromTo("#mark2", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, 15.84);
+        tl.fromTo("#mark3", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, 16.3);
+        tl.fromTo("#defect-count", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 16.3);
+        tl.fromTo("#finding", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 16.36);
+
+        // ── scene 5: everything after ──
+        tl.fromTo("#s5 .scene", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power1.out" }, 18.2);
+        // beat-grid: 19.10 / 19.66 / 20.19, then the set holds together
+        [["#f1", 19.04], ["#f2", 19.6], ["#f3", 20.13]].forEach(function (f) {
+          tl.fromTo(f[0], { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, f[1]);
+        });
+
+        // ── scene 6: outro ──
+        tl.fromTo("#s6 .scene", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power1.inOut" }, 21.0);
+        tl.fromTo("#outro-mark", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.7, ease: "power3.out" }, 21.7);
+        tl.fromTo("#outro-name", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 21.82);
+        tl.fromTo("#outro-trust", { opacity: 0 }, { opacity: 1, duration: 0.7 }, 21.9);
+        // beat-locked: 22.37s — the closing line
+        tl.fromTo("#outro-line", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 22.3);
+
+        // Audio-reactive: the gold glow behind the hook and the outro mark breathes with the music's RMS.
+        var rms = window.AUDIO_RMS || [];
+        function glowAt(sel, from, to) {
+          for (var f = Math.round(from * FPS); f < Math.min(rms.length, Math.round(to * FPS)); f++) {
+            tl.set(sel, { opacity: 0.3 + 0.55 * rms[f], scale: 0.96 + 0.06 * rms[f] }, f / FPS);
+          }
+        }
+        glowAt("#glow1", 0, 3.5);
+        glowAt("#glow6", 21.0, 25.0);
+
+        window.__timelines["main"] = tl;
+      });
+    </script>
+  </body>
+</html>

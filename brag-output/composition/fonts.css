@@ -1,0 +1,4 @@
+@font-face { font-family: 'Fraunces'; font-style: italic; font-weight: 400 700; font-display: block; src: url(assets/fonts/fraunces-italic-0.woff2) format('woff2'); }
+@font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 400 700; font-display: block; src: url(assets/fonts/fraunces-normal-1.woff2) format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400 700; font-display: block; src: url(assets/fonts/inter-normal-2.woff2) format('woff2'); }
+@font-face { font-family: 'Newsreader'; font-style: normal; font-weight: 400 600; font-display: block; src: url(assets/fonts/newsreader-normal-3.woff2) format('woff2'); }
