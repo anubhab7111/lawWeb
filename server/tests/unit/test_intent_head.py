@@ -33,6 +33,15 @@ def test_message_split_three_ways_is_ambiguous_with_all_contenders(monkeypatch):
     assert {result.primary_intent, *result.secondary_intents} == {"crime_report", "general_query", "non_legal"}
 
 
+def test_unsure_non_legal_is_answered_as_a_legal_question(monkeypatch):
+    _fake_head(monkeypatch)
+    sure = ic._classify_with_head([0.0, 0.0, 0.0, 1.0], has_document=False)
+    unsure = ic._classify_with_head([0.4, 0.0, 0.4, 0.5], has_document=False)
+    assert sure.primary_intent == "non_legal"
+    assert unsure.scores["non_legal"] < ic.NON_LEGAL_MIN_PROB
+    assert unsure.primary_intent == "general_query" and not unsure.is_ambiguous
+
+
 def test_attached_document_feeds_the_document_feature(monkeypatch):
     _fake_head(monkeypatch, logits_for_doc_flag=12.0)
     q = [0.0, 0.0, 1.0, 0.0]

@@ -36,9 +36,36 @@ def test_lawyer_request_asks_before_searching():
     assert "city or district" in out["response"] and "matter" in out["response"]
 
 
-def test_short_crime_report_asks_what_when_where():
+def _crime_type(monkeypatch, crime):
+    async def fake(_):
+        return crime
+
+    monkeypatch.setattr(cb, "classify_crime_type", fake)
+
+
+def test_short_crime_report_asks_what_when_where(monkeypatch):
+    _crime_type(monkeypatch, "fraud")
     out = asyncio.run(cb.handle_crime_report(_state("I was cheated")))
     assert out["response"].startswith(CRIME_DETAILS_PREFIX)
+
+
+def test_short_serious_report_is_answered_with_helplines_not_asked(monkeypatch):
+    _crime_type(monkeypatch, "rape")
+
+    class Sections:
+        context_text, succeeded = "", False
+
+    async def no_sections(*args, **kwargs):
+        return Sections()
+
+    async def answer(*args, **kwargs):
+        return "Guidance."
+
+    monkeypatch.setitem(cb.RAG_TOOL_REGISTRY, "crime_sections", no_sections)
+    monkeypatch.setattr(cb, "invoke_llm_safely", answer)
+    out = asyncio.run(cb.handle_crime_report(_state("I got raped in market, please help")))
+    assert not out["response"].startswith(CRIME_DETAILS_PREFIX)
+    assert "112" in out["response"] and "181" in out["response"]
 
 
 def test_reply_to_a_followup_resumes_the_same_flow_with_both_messages(monkeypatch):
