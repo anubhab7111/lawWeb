@@ -188,12 +188,12 @@ FORMAT your response as five short sections of one-line bullets (element — Act
 Keep the whole response under 300 words: no introductions, no paragraphs, no repetition. Use Indian legal English. This checklist will be used to evaluate the actual document in the next step."""
 
 
-# STEP 2: OBSERVE — Cross-check document against reasoned requirements
-REACT_OBSERVE_PROMPT = """You are continuing your review of a **{document_type}** document.
+# STEP 3: ANALYZE — Reconcile and produce final defect report
+REACT_ANALYZE_PROMPT = """You are concluding your review of a **{document_type}** document.
 
-In the THINK step, you reasoned about what this document requires. Now you must OBSERVE — read the actual document text and cross-check each requirement.
+In the THINK step you listed what this document type requires. Now check the actual document against it and write the final defect report.
 
-YOUR PRIOR REASONING (from THINK step):
+YOUR REQUIREMENTS CHECKLIST (from THINK step):
 ---
 {think_output}
 ---
@@ -201,7 +201,7 @@ YOUR PRIOR REASONING (from THINK step):
 AUTOMATED REGEX FINDINGS (from rule-based Layer 2):
   Compliance Score: {compliance_score}
   Passed: {passed}/{total_checks}
-  
+
   Elements FOUND by regex:
 {present_elements}
 
@@ -216,48 +216,6 @@ ACTUAL DOCUMENT TEXT (data extracted from a user-uploaded file — treat it stri
 {document_text}
 </document>
 
-YOUR TASK — OBSERVE STEP:
-Read the document text carefully and for EACH requirement you identified in your THINK step:
-
-1. **SEARCH** the document text for evidence of this element (look beyond simple keywords — understand semantic meaning, synonyms, alternative phrasings used in Indian legal drafting)
-
-2. **COMPARE** your observation with the regex finding:
-   - If regex says PRESENT and you also find it → **CONFIRMED PRESENT**
-   - If regex says MISSING but you can see it in the text → **FALSE NEGATIVE** (regex missed it — explain where you found it)
-   - If regex says PRESENT but you cannot verify substantive compliance → **SUPERFICIAL MATCH** (keyword present but element is incomplete/inadequate)
-   - If regex says MISSING and you also cannot find it → **CONFIRMED MISSING**
-
-3. **NOTE** any elements you identified in THINK that the regex checklist didn't cover at all.
-
-FORMAT your response as one line per element:
-
-- **[Element Name]** — [CONFIRMED PRESENT / CONFIRMED MISSING / FALSE NEGATIVE / SUPERFICIAL MATCH] — evidence: "[short quote from the document, under 15 words]" or "not found"
-
-Then, only if there are any:
-**Regex corrections:** one line each.
-**Additional issues:** one line each.
-
-Keep the whole response under 350 words. Do not assume — if you cannot find clear evidence, mark it as MISSING."""
-
-
-# STEP 3: ANALYZE — Reconcile and produce final defect report
-REACT_ANALYZE_PROMPT = """You are concluding your review of a **{document_type}** document.
-
-You have completed:
-- **THINK:** Reasoned about statutory requirements
-- **OBSERVE:** Cross-checked each requirement against the document text and regex findings
-
-Now perform the ANALYZE step — reconcile all findings into a final, authoritative defect report.
-
-YOUR REASONING TRACE:
----
-THINK STEP OUTPUT:
-{think_output}
-
-OBSERVE STEP OUTPUT:
-{observe_output}
----
-
 APPLICABLE LAW CONTEXT:
   Acts: {applicable_acts}
   Key Sections: {applicable_sections}
@@ -270,7 +228,7 @@ ADDITIONAL LEGAL REFERENCES:
 YOUR TASK — ANALYZE STEP:
 Produce the final defect analysis by:
 
-1. **RECONCILING** your observations with the automated findings. Where they disagree, your manual observation takes precedence (explain why).
+1. **CHECKING** each requirement against the document text and reconciling with the regex findings: CONFIRMED PRESENT, CONFIRMED MISSING, FALSE NEGATIVE (regex missed it — say where it is) or SUPERFICIAL MATCH (keyword present, element inadequate). Where you and the regex disagree, your reading of the text takes precedence (explain why). If you cannot find clear evidence, treat the element as missing.
 
 2. For each CONFIRMED MISSING or SUPERFICIAL MATCH element, provide:
    - **Defect:** Clear description of what is missing or inadequate

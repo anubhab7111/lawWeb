@@ -2,14 +2,13 @@
 Legal Defect Analyzer (Layer 3) — ReAct Pattern
 Uses Reasoning-then-Action (ReAct) prompting for document validation.
 
-3-Step LLM Pipeline:
+2-Step LLM Pipeline:
   STEP 1 — THINK:   LLM reasons about what the document type requires
                      (governing statutes, mandatory elements, formalities)
-  STEP 2 — OBSERVE: LLM reads the actual document text, cross-checks each
+  STEP 2 — ANALYZE: LLM reads the actual document text, cross-checks each
                      requirement against the text AND the regex findings,
-                     identifies false positives/negatives
-  STEP 3 — ANALYZE: LLM reconciles all findings into a final defect report
-                     with Act/Section/Case Law citations and remediation
+                     and writes the final defect report with Act/Section/Case
+                     Law citations and remediation
 
 IMPORTANT: This module NEVER provides binding legal opinions.
 All output is framed as:
@@ -25,7 +24,6 @@ from app.tools.statutory_validator import StatutoryValidationResult, format_scor
 from app.tools.indian_law_rag import IndianLawContext
 from app.prompts import (
     REACT_ANALYZE_PROMPT,
-    REACT_OBSERVE_PROMPT,
     REACT_THINK_PROMPT,
     sanitize_untrusted_document,
 )
@@ -60,11 +58,11 @@ class LegalDefectAnalyzer:
     Layer 3: ReAct-based legal reasoning and defect explanation.
 
     Instead of a single monolithic LLM prompt, this analyzer uses a
-    3-step Reasoning-then-Action (ReAct) pipeline:
+    2-step Reasoning-then-Action (ReAct) pipeline:
 
-    1. THINK  — LLM reasons about requirements (no document text yet)
-    2. OBSERVE — LLM reads document + regex findings, cross-checks
-    3. ANALYZE — LLM reconciles and produces final report
+    1. THINK   — LLM reasons about requirements (no document text yet)
+    2. ANALYZE — LLM reads document + regex findings, cross-checks, and
+                 produces the final report
 
     This dramatically improves accuracy because:
     - The LLM first builds an independent mental model of requirements
@@ -107,28 +105,20 @@ class LegalDefectAnalyzer:
         # ==================================================================
         # STEP 1: THINK — Reason about requirements
         # ==================================================================
-        print("[ReAct] Step 1/3: THINK — Reasoning about requirements...")
+        print("[ReAct] Step 1/2: THINK — Reasoning about requirements...")
         if think_output is None:
             think_output = await self.think(classification)
         reasoning_trace["think"] = think_output
         print(f"[ReAct] THINK complete ({len(think_output)} chars)")
 
         # ==================================================================
-        # STEP 2: OBSERVE — Cross-check document against reasoning
+        # STEP 2: ANALYZE — Check the document and produce the final report.
+        # (A separate OBSERVE call used to sit here; the small model spent its
+        # whole token budget thinking through it and usually fell back.)
         # ==================================================================
-        print("[ReAct] Step 2/3: OBSERVE — Cross-checking document...")
-        observe_output = await self._step_observe(
-            classification, validation, think_output, document_text
-        )
-        reasoning_trace["observe"] = observe_output
-        print(f"[ReAct] OBSERVE complete ({len(observe_output)} chars)")
-
-        # ==================================================================
-        # STEP 3: ANALYZE — Reconcile and produce final report
-        # ==================================================================
-        print("[ReAct] Step 3/3: ANALYZE — Producing final report...")
+        print("[ReAct] Step 2/2: ANALYZE — Producing final report...")
         analyze_output = await self._step_analyze(
-            classification, validation, law_context, think_output, observe_output
+            classification, validation, law_context, think_output, document_text
         )
         reasoning_trace["analyze"] = analyze_output
         print(f"[ReAct] ANALYZE complete ({len(analyze_output)} chars)")
@@ -186,17 +176,9 @@ class LegalDefectAnalyzer:
 
         return await self._invoke_llm(prompt)
 
-    async def _step_observe(
-        self,
-        classification: DocumentClassification,
-        validation: StatutoryValidationResult,
-        think_output: str,
-        document_text: str,
-    ) -> str:
-        """
-        STEP 2: OBSERVE — LLM reads document text and cross-checks
-        each requirement against the text AND the regex findings.
-        """
+    @staticmethod
+    def _regex_findings(validation: StatutoryValidationResult) -> Dict[str, str]:
+        """Layer 2 findings as prompt text."""
         # Format present elements
         present_str = ""
         if validation.present_elements:
@@ -235,28 +217,7 @@ class LegalDefectAnalyzer:
         else:
             nc_str = "  (none identified)"
 
-        # Truncate document text for prompt — keep enough for meaningful analysis
-        doc_text_for_prompt = sanitize_untrusted_document(
-            document_text[:6000] if document_text else "(no document text available)"
-        )
-
-        prompt = REACT_OBSERVE_PROMPT.format(
-            document_type=classification.document_type,
-            think_output=think_output,
-            compliance_score=format_score(validation.compliance_score),
-            passed=validation.passed,
-            total_checks=validation.total_checks,
-            present_elements=present_str,
-            missing_elements=missing_str,
-            non_compliance=nc_str,
-            document_text=doc_text_for_prompt,
-        )
-
-        try:
-            return await self._invoke_llm(prompt)
-        except Exception as e:
-            print(f"[ReAct] OBSERVE step error: {e}")
-            return self._fallback_observe(validation)
+        return {"present_elements": present_str, "missing_elements": missing_str, "non_compliance": nc_str}
 
     async def _step_analyze(
         self,
@@ -264,11 +225,11 @@ class LegalDefectAnalyzer:
         validation: StatutoryValidationResult,
         law_context: IndianLawContext,
         think_output: str,
-        observe_output: str,
+        document_text: str,
     ) -> str:
         """
-        STEP 3: ANALYZE — LLM reconciles THINK + OBSERVE outputs
-        with law context to produce the final defect report.
+        STEP 2: ANALYZE — LLM checks the document against the THINK checklist and
+        the regex findings, with law context, and writes the final defect report.
         """
         # Format law context
         acts_str = (
@@ -308,7 +269,12 @@ class LegalDefectAnalyzer:
         prompt = REACT_ANALYZE_PROMPT.format(
             document_type=classification.document_type,
             think_output=think_output,
-            observe_output=observe_output,
+            passed=validation.passed,
+            total_checks=validation.total_checks,
+            **self._regex_findings(validation),
+            document_text=sanitize_untrusted_document(
+                document_text[:6000] if document_text else "(no document text available)"
+            ),
             applicable_acts=acts_str,
             applicable_sections=sections_str,
             precedents=precedents_str,
@@ -321,9 +287,7 @@ class LegalDefectAnalyzer:
             return await self._invoke_llm(prompt)
         except Exception as e:
             print(f"[ReAct] ANALYZE step error: {e}")
-            return self._fallback_analyze(
-                classification, validation, law_context, observe_output
-            )
+            return self._fallback_analyze(classification, validation, law_context)
 
     # ======================================================================
     # LLM Invocation
@@ -355,37 +319,11 @@ class LegalDefectAnalyzer:
             f"Falling back to rule-based checklist.*"
         )
 
-    def _fallback_observe(self, validation: StatutoryValidationResult) -> str:
-        """Generate a basic OBSERVE output without LLM."""
-        parts = [
-            "**OBSERVATIONS — Based on Automated Checklist:**\n",
-            f"Compliance Score: {format_score(validation.compliance_score)}\n",
-        ]
-
-        if validation.present_elements:
-            parts.append("**Elements Found:**")
-            for item in validation.present_elements:
-                parts.append(f"- ✅ {item['element']}")
-
-        if validation.missing_elements:
-            parts.append("\n**Elements Missing:**")
-            for item in validation.missing_elements:
-                parts.append(f"- ❌ {item['element']}: {item['description']}")
-
-        parts.append(
-            "\n*Note: LLM cross-checking was unavailable. "
-            "These findings are based solely on regex pattern matching "
-            "and may contain false positives or miss semantic nuances.*"
-        )
-
-        return "\n".join(parts)
-
     def _fallback_analyze(
         self,
         classification: DocumentClassification,
         validation: StatutoryValidationResult,
         law_context: IndianLawContext,
-        observe_output: str,
     ) -> str:
         """Generate a basic ANALYZE output without LLM as final fallback."""
         parts = []
@@ -485,18 +423,6 @@ class LegalDefectAnalyzer:
             )
             parts.append("")
             parts.append(reasoning_trace["think"])
-            parts.append("")
-            parts.append("</details>")
-            parts.append("")
-
-        if "observe" in reasoning_trace:
-            parts.append("<details>")
-            parts.append(
-                "<summary>🔍 <strong>Reasoning Trace — OBSERVE Step</strong> "
-                "(click to expand)</summary>"
-            )
-            parts.append("")
-            parts.append(reasoning_trace["observe"])
             parts.append("")
             parts.append("</details>")
             parts.append("")

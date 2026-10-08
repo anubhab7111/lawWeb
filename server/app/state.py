@@ -71,7 +71,7 @@ class DocumentValidationInfo(TypedDict):
     state_specific_notes: List[str]
 
     # ReAct Reasoning Trace
-    reasoning_trace: Optional[dict]  # {"think": str, "observe": str, "analyze": str}
+    reasoning_trace: Optional[dict]  # {"think": str, "analyze": str}
 
 
 class ChatState(TypedDict):
