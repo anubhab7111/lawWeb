@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 _ONTOLOGY_PATH = Path(__file__).resolve().parent.parent / "data" / "legal_ontology.json"
 
@@ -111,18 +111,6 @@ def _load_ontology() -> dict:
         return {"doctrines": [], "concordance": []}
 
 
-@lru_cache()
-def doctrine_names() -> List[str]:
-    return [d["doctrine"] for d in _load_ontology()["doctrines"]]
-
-
-def _doctrine_by_name(name: str) -> Optional[dict]:
-    for d in _load_ontology()["doctrines"]:
-        if d["doctrine"] == name:
-            return d
-    return None
-
-
 def concordance_pairs(act_hint: str, section: str) -> List[Tuple[str, str]]:
     """Old↔new code equivalents for a cited section, both directions."""
     out: List[Tuple[str, str]] = []
@@ -209,49 +197,52 @@ def parse_legal_query(query: str) -> ParsedLegalQuery:
     return parsed
 
 
-async def parse_legal_query_llm(
-    query: str,
-    llm_invoke: Callable[[str], Awaitable[str]],
-) -> ParsedLegalQuery:
-    """
-    Deterministic parse, plus a fast-LLM assist for queries the ontology
-    aliases missed: the model picks matching doctrine names from the known
-    list (choose-from-list, reliable for small models). Failures degrade
-    silently to the deterministic result.
-    """
+# Cosine (BGE-M3) between a query and a doctrine's "name: aliases" text above which
+# the doctrine is taken. Picked on 112 ontology-miss questions (ILSIC dev, ground
+# truth, live chat): at 0.6 the match agreed with the fast-LLM pick 4/5 and caught
+# 2 the LLM gave up on; the LLM gave up on 69/112 after ~19 s each.
+DOCTRINE_MATCH_MIN_COS = 0.6
+_doctrine_vectors = None
+
+
+def _add_doctrine(parsed: ParsedLegalQuery, d: dict) -> None:
+    parsed.doctrines.append(d["doctrine"])
+    if d.get("domain") and d["domain"] not in parsed.domains:
+        parsed.domains.append(d["domain"])
+    for act, sec in d.get("sections", []):
+        if (act, sec) not in parsed.pinned_sections:
+            parsed.pinned_sections.append((act, sec))
+    parsed.landmark_cases.extend(d.get("landmark_cases", []))
+    parsed.expansion_terms.append(d["doctrine"])
+    if parsed.query_type == "general":
+        parsed.query_type = "doctrine"
+    parsed.pinned_sections = parsed.pinned_sections[:8]
+
+
+async def parse_legal_query_embedding(query: str) -> ParsedLegalQuery:
+    """Deterministic parse, plus the closest ontology doctrine by embedding for
+    queries the aliases missed. Failures degrade to the deterministic result."""
+    global _doctrine_vectors
     parsed = parse_legal_query(query)
     if parsed.doctrines or parsed.pinned_sections:
         return parsed
-
-    names = doctrine_names()
-    prompt = (
-        "You classify Indian legal questions. From this list of legal "
-        "doctrines, pick the 1-2 that best match the user's question. "
-        "Reply with ONLY the exact doctrine name(s), one per line, or NONE.\n\n"
-        f"Doctrines: {', '.join(names)}\n\nQuestion: {query}\n"
-    )
     try:
-        reply = await llm_invoke(prompt)
-        for line in reply.strip().splitlines()[:2]:
-            d = _doctrine_by_name(line.strip().strip('"').strip("-• ").lower())
-            if d is None:
-                # tolerate case differences
-                for name in names:
-                    if name.lower() == line.strip().lower():
-                        d = _doctrine_by_name(name)
-                        break
-            if d:
-                parsed.doctrines.append(d["doctrine"])
-                if d.get("domain") and d["domain"] not in parsed.domains:
-                    parsed.domains.append(d["domain"])
-                for act, sec in d.get("sections", []):
-                    if (act, sec) not in parsed.pinned_sections:
-                        parsed.pinned_sections.append((act, sec))
-                parsed.landmark_cases.extend(d.get("landmark_cases", []))
-                parsed.expansion_terms.append(d["doctrine"])
-        if parsed.doctrines and parsed.query_type == "general":
-            parsed.query_type = "doctrine"
-        parsed.pinned_sections = parsed.pinned_sections[:8]
+        import numpy as np
+
+        from app.tools.base_legal_rag import _get_shared_embeddings
+
+        emb = await _get_shared_embeddings()
+        doctrines = _load_ontology()["doctrines"]
+        if _doctrine_vectors is None:
+            D = np.asarray(emb.embed_documents(
+                [f"{d['doctrine']}: {', '.join(d.get('aliases', []))}" for d in doctrines]
+            ), dtype=np.float32)
+            _doctrine_vectors = D / np.linalg.norm(D, axis=1, keepdims=True)
+        v = np.asarray(emb.embed_query(query), dtype=np.float32)
+        scores = _doctrine_vectors @ (v / np.linalg.norm(v))
+        best = int(np.argmax(scores))
+        if scores[best] >= DOCTRINE_MATCH_MIN_COS:
+            _add_doctrine(parsed, doctrines[best])
     except Exception as e:
-        print(f"[parser] LLM doctrine assist failed ({e}) — deterministic only.")
+        print(f"[parser] embedding doctrine match failed ({e}) — deterministic only.")
     return parsed

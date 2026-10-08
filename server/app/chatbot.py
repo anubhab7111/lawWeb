@@ -1665,19 +1665,6 @@ async def gq_retrieve(state: ChatState) -> ChatState:
 
     is_multi_offense = _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS) >= 2
 
-    # Measures the wall-clock cost of the pre-retrieval query-parse LLM hop
-    # (see Phase 2, docs/superpowers/specs/2026-09-22-chatbot-agentic-
-    # optimization-design.md) — nobody had numbers on whether this serial
-    # hop, paid on every primary statute query, is worth its latency.
-    query_parse_llm_seconds: List[float] = []
-
-    async def _fast_llm_invoke(prompt: str) -> str:
-        t0 = time.monotonic()
-        try:
-            return await _invoke_fast_text(prompt, timeout=25.0)
-        finally:
-            query_parse_llm_seconds.append(round(time.monotonic() - t0, 2))
-
     jobs: Dict[str, Any] = {}
     statute_queries: List[str] = []
     if "statute_context" in tools:
@@ -1699,10 +1686,8 @@ async def gq_retrieve(state: ChatState) -> ChatState:
                 domain_hint=(
                     ["criminal"] if domain_hint == "criminal" and not widen else None
                 ),
-                # Only the primary query pays for the LLM query parser.
-                fast_llm_invoke=(
-                    _fast_llm_invoke if is_primary and not widen else None
-                ),
+                # Only the primary query gets the embedding doctrine match.
+                doctrine_assist=is_primary and not widen,
                 # Sub-questions add statutes; authorities come from the first
                 # query only (each extra case-law hop cost ~10s of CPU reranking).
                 with_case_law=i == 0,
@@ -1743,9 +1728,6 @@ async def gq_retrieve(state: ChatState) -> ChatState:
                 **(state.get("trace") or {}).get("retrieval", {}),
                 "queries": statute_queries,
                 "tools": tools,
-                "query_parse_llm_seconds": (
-                    query_parse_llm_seconds[0] if query_parse_llm_seconds else None
-                ),
             },
         ),
     }
