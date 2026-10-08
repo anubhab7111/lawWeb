@@ -47,3 +47,12 @@ def test_falls_back_to_keywords_when_embedding_fails(monkeypatch):
 
     monkeypatch.setattr("app.tools.base_legal_rag._get_shared_embeddings", broken)
     assert asyncio.run(crime_reporter.classify_crime_type("my phone was stolen")) == "theft"
+
+
+def test_threat_to_kill_scored_as_murder_resolves_to_threat():
+    from app.tools.crime_reporter import resolve_family
+
+    assert resolve_family("Murder", "My neighbour keeps threatening to kill me") == "threat"
+    assert resolve_family("Murder", "He threatened us for weeks and my brother was shot dead") == "murder"
+    assert resolve_family("Murder", "The child was murdered after prior threats") == "murder"
+    assert resolve_family("Murder", "My brother was killed by a gang") == "murder"

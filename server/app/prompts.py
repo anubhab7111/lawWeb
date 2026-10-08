@@ -538,6 +538,8 @@ SERIOUS_CRIME_HELPLINES = {
     "domestic_violence": _EMERGENCY + _WOMEN + "A Protection Officer or the police can help you get a "
     "protection order under the Domestic Violence Act.\n\n",
     "murder": _EMERGENCY + "Do not disturb the scene, and report it to the police immediately.\n\n",
+    "threat": _EMERGENCY + "Keep the messages, call recordings and the names of anyone who heard the "
+    "threat; they are evidence for the police complaint.\n\n",
     "kidnapping": _EMERGENCY + "Report a missing or abducted person to the police immediately — there is "
     "no waiting period. Child Helpline: 1098.\n\n",
     "assault": _EMERGENCY + "Get your injuries treated and ask for a medical certificate; it is "

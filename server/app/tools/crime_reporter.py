@@ -155,6 +155,8 @@ CRIME_KEYWORDS: Dict[str, List[str]] = {
         "killed",
         "homicide",
         "dead body",
+        "dead",
+        "died",
     ],
     "kidnapping": [
         "kidnapping",
@@ -244,6 +246,11 @@ def _load_classifier() -> Optional[Tuple[np.ndarray, np.ndarray, List[str]]]:
 
 def resolve_family(family: str, description: str) -> str:
     text = description.lower()
+    if family == "Murder":
+        # Bail data files threats under Extortion, so "threatening to kill me" scores as
+        # Murder; with no sign that anyone died it is criminal intimidation.
+        died = count_words(text, CRIME_KEYWORDS["murder"])
+        return "threat" if not died and count_words(text, CRIME_KEYWORDS["threat"]) else "murder"
     return max(FAMILY_TYPES[family], key=lambda t: count_words(text, CRIME_KEYWORDS.get(t, [])))
 
 

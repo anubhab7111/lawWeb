@@ -53,3 +53,11 @@ def test_every_pinned_crime_section_belongs_to_its_crime_type():
     for crime_type, section in CRIME_TYPE_SECTIONS.items():
         assert _ipc_crime_type(section) == crime_type
     assert "murder" not in CRIME_TYPE_SECTIONS
+
+
+def test_every_pinned_crime_section_has_a_bns_equivalent():
+    from app.tools.criminal_rag import CRIME_TYPE_SECTIONS
+    from app.tools.fact_statutes import _translation
+
+    ipc_to_bns = _translation()["ipc_bns"]["old_to_new"]
+    assert [s for s in CRIME_TYPE_SECTIONS.values() if s not in ipc_to_bns] == []
