@@ -434,13 +434,39 @@ CRIME_TYPE_SECTIONS = {
 }
 
 
+def _fits_crime_type_pair(section_type: str, crime_type: str) -> bool:
+    return section_type == crime_type or any({section_type, crime_type} <= g for g in RELATED_CRIME_TYPES)
+
+
 def _fits_crime_type(section: str, crime_type: Optional[str]) -> bool:
     """A classifier-suggested IPC section from an unrelated crime family (cheating on a
     rape report) is noise; unknown or "general" on either side always fits."""
     section_type = _ipc_crime_type(section)
-    if not section_type or not crime_type or crime_type == "general" or section_type == crime_type:
+    if not section_type or not crime_type or crime_type == "general":
         return True
-    return any({section_type, crime_type} <= group for group in RELATED_CRIME_TYPES)
+    return _fits_crime_type_pair(section_type, crime_type)
+
+
+def _section_crime_types(act_name: str, section: str) -> set:
+    """Crime types of a retrieved section; a BNS section takes those of its IPC sources."""
+    from app.tools.fact_statutes import _translation
+
+    if act_name == "Indian Penal Code":
+        ipc = [str(section)]
+    elif act_name.startswith("Bharatiya Nyaya Sanhita"):
+        ipc = _translation()["ipc_bns"]["new_to_old"].get(str(section), [])
+    else:
+        return set()
+    return {t for t in map(_ipc_crime_type, ipc) if t}
+
+
+def _fits_report_lead(section: str, prob: float, crime_type: Optional[str]) -> bool:
+    """A classifier lead on a short report from a merely related crime (a threat section
+    on a rape report) needs a confident classifier."""
+    if not _fits_crime_type(section, crime_type):
+        return False
+    return _ipc_crime_type(section) in (None, crime_type) or crime_type in (None, "", "general") \
+        or prob >= CLASSIFIER_RELATED_MIN_PROB
 
 
 def _is_offence_section(act_name: str, section: str) -> bool:
@@ -449,13 +475,27 @@ def _is_offence_section(act_name: str, section: str) -> bool:
 
 _SUBSECTION_RE = re.compile(r"\((\d{1,2})\)\s*(?=[A-Z])")
 _GAZETTE_HEADER_RE = re.compile(r"Sec\. \d+\] THE GAZETTE OF INDIA EXTRAORDINARY \d*_*")
+# The PDF extracts each page's margin notes ("Rape. Punishment for rape.") just before
+# the next page header, often mid-clause.
+_MARGIN_NOTE_RE = re.compile(r"(?:^|(?<=\s))[A-Z][^.;:()]{0,80}\.\s*$")
+_STATUTE_WORDS_RE = re.compile(r"\b(shall|[Ww]hoever|punished)\b")
+
+
+def _strip_page_breaks(text: str) -> str:
+    pages = _GAZETTE_HEADER_RE.split(text)
+    for i, page in enumerate(pages[:-1]):
+        while (m := _MARGIN_NOTE_RE.search(page)) and not _STATUTE_WORDS_RE.search(m.group(0)) \
+                and len(m.group(0).split()) <= 12:
+            page = page[:m.start()].rstrip()
+        pages[i] = page
+    return " ".join(p.strip() for p in pages)
 
 
 def _section_punishment(text: str) -> str:
     """Every subsection's punishment with its condition. BNS folds several IPC sections
     into one (351(2) intimidation: 2 years; 351(3) threat to kill: 7 years), and the first
     clause alone understates the graver cases."""
-    parts = _SUBSECTION_RE.split(_GAZETTE_HEADER_RE.sub(" ", text))
+    parts = _SUBSECTION_RE.split(_strip_page_breaks(text))
     clauses = []
     for num, body in zip(parts[1::2], parts[2::2]):
         punishment = _extract_punishment(body, max_len=160)
@@ -484,6 +524,8 @@ CLASSIFIER_TOP_N = 10
 CLASSIFIER_FIRST = 5
 CLASSIFIER_LONG_QUERY_WORDS = 40
 CLASSIFIER_SHORT_MIN_PROB = 0.15
+CLASSIFIER_RELATED_MIN_PROB = 0.3
+REPORT_NOISE_MIN_SCORE = 0.4
 
 
 class CriminalRAGSystem(BaseLegalRAGSystem):
@@ -601,6 +643,18 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 seen.add(key)
                 out.append(m)
         return out
+
+    @staticmethod
+    def _fits_report(chunk, crime_type: str) -> bool:
+        """On a short report with a known crime type, a reranked section must be that
+        crime's own, or score well and come from a related or untyped offence (cheating
+        on a burglary report and rash driving on a lost bike are noise)."""
+        types = _section_crime_types(chunk.act_name, chunk.section_number)
+        if crime_type in types:
+            return True
+        if types and not any(_fits_crime_type_pair(t, crime_type) for t in types):
+            return False
+        return chunk.score >= REPORT_NOISE_MIN_SCORE
 
     def _full_section_text(self, act_name: str, section: str, fallback: str) -> str:
         """A long section is indexed as parts (…_p1, …_p2); later subsections, and their
@@ -916,13 +970,14 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 (a, s) for a, s, p in classified
                 if a == "Indian Penal Code" and (not short or p >= CLASSIFIER_SHORT_MIN_PROB)
                 and (not offences_only or _is_offence_section(a, s))
-                and not (offences_only and short and not _fits_crime_type(s, crime_type))
+                and not (offences_only and short and not _fits_report_lead(s, p, crime_type))
             ][:CLASSIFIER_FIRST]
             # Short reports ("someone snatched my phone") give retrieval little to match
             # on, so the detected crime type's own penal section leads.
             core = CRIME_TYPE_SECTIONS.get(crime_type) if offences_only and short else None
             if core and ("Indian Penal Code", core) not in lead_sections:
                 lead_sections = [("Indian Penal Code", core)] + lead_sections[:CLASSIFIER_FIRST - 1]
+            typed_report = offences_only and short and crime_type not in ("", "general")
             reranked_score = {(c.act_name, c.section_number): c.score for c in chunks}
             lead = []
             for pair in lead_sections:
@@ -962,6 +1017,8 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 )
                 is_lead = (chunk.act_name, sec_num) in lead_rank
                 if requires_punishment and not is_lead and (not punishment or len(punishment) < 10):
+                    continue
+                if not is_lead and typed_report and not self._fits_report(chunk, crime_type):
                     continue
 
                 matches.append(

@@ -56,3 +56,11 @@ def test_threat_to_kill_scored_as_murder_resolves_to_threat():
     assert resolve_family("Murder", "He threatened us for weeks and my brother was shot dead") == "murder"
     assert resolve_family("Murder", "The child was murdered after prior threats") == "murder"
     assert resolve_family("Murder", "My brother was killed by a gang") == "murder"
+
+
+def test_killing_an_animal_scored_as_murder_resolves_to_property_damage():
+    from app.tools.crime_reporter import resolve_family
+
+    assert resolve_family("Murder", "Someone killed my dog by poisoning it") == "property_damage"
+    assert resolve_family("Murder", "my neighbour beat my pet dog to death with a stick") == "property_damage"
+    assert resolve_family("Murder", "They killed my brother and his dog") == "murder"
