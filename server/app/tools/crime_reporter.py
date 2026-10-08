@@ -244,13 +244,29 @@ def _load_classifier() -> Optional[Tuple[np.ndarray, np.ndarray, List[str]]]:
     return z["W"], z["b"], [str(label) for label in z["labels"]]
 
 
+ANIMAL_WORDS = [
+    "dog", "dogs", "puppy", "cat", "cats", "kitten", "cow", "cows", "buffalo", "goat", "goats",
+    "horse", "ox", "bull", "cattle", "pet", "animal", "animals", "hen", "hens", "sheep",
+]
+HUMAN_VICTIM_WORDS = [
+    "son", "daughter", "brother", "sister", "father", "mother", "husband", "wife", "child",
+    "baby", "uncle", "aunt", "cousin", "friend", "grandfather", "grandmother", "man", "woman",
+    "boy", "girl", "person", "people",
+]
+
+
 def resolve_family(family: str, description: str) -> str:
     text = description.lower()
     if family == "Murder":
         # Bail data files threats under Extortion, so "threatening to kill me" scores as
         # Murder; with no sign that anyone died it is criminal intimidation.
         died = count_words(text, CRIME_KEYWORDS["murder"])
-        return "threat" if not died and count_words(text, CRIME_KEYWORDS["threat"]) else "murder"
+        if not died and count_words(text, CRIME_KEYWORDS["threat"]):
+            return "threat"
+        # Killing someone's animal is mischief (IPC 428/429, BNS 325), not murder.
+        if count_words(text, ANIMAL_WORDS) and not count_words(text, HUMAN_VICTIM_WORDS):
+            return "property_damage"
+        return "murder"
     return max(FAMILY_TYPES[family], key=lambda t: count_words(text, CRIME_KEYWORDS.get(t, [])))
 
 

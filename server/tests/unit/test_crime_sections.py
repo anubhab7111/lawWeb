@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.tools.criminal_rag import CriminalRAGSystem, SectionMatch, _fits_crime_type, _is_offence_section
+from app.tools.criminal_rag import (
+    CriminalRAGSystem, SectionMatch, _fits_crime_type, _fits_report_lead, _is_offence_section, _strip_page_breaks,
+)
 
 
 def _match(act, section, title="t"):
@@ -84,3 +86,31 @@ def test_single_punishment_section_keeps_the_plain_clause():
 
     text = "85. Whoever subjects a woman to cruelty shall be punished with imprisonment up to three years."
     assert _section_punishment(text) == "imprisonment up to three years"
+
+
+def test_reranked_section_on_a_short_report_must_fit_its_crime_type():
+    chunk = lambda act, sec, score: SimpleNamespace(act_name=act, section_number=sec, score=score)
+    bns = "Bharatiya Nyaya Sanhita BNS"
+    fits = CriminalRAGSystem._fits_report
+    assert not fits(chunk(bns, "318", 1.0), "theft")  # cheating on a burglary report
+    assert fits(chunk(bns, "305", 0.1), "theft")  # theft in a building
+    assert not fits(chunk(bns, "281", 0.14), "theft")  # untyped (rash driving), low score
+    assert fits(chunk(bns, "304", 1.0), "theft")  # snatching: untyped, confident
+    assert fits(chunk(bns, "325", 0.05), "property_damage")  # killing an animal
+
+
+def test_related_crime_classifier_lead_needs_a_confident_classifier():
+    assert not _fits_report_lead("503", 0.16, "rape")
+    assert _fits_report_lead("503", 0.35, "rape")
+    assert _fits_report_lead("376", 0.16, "rape")
+    assert _fits_report_lead("504", 0.16, "threat")
+    assert not _fits_report_lead("420", 0.9, "rape")
+
+
+def test_margin_notes_before_a_page_header_are_dropped():
+    text = ("(2) Whoever,— (a) being a police officer, commits rape,— Rape. Punishment for rape. "
+            "Sec. 1] THE GAZETTE OF INDIA EXTRAORDINARY 23____ (i) within the limits of the police station")
+    assert _strip_page_breaks(text) == ("(2) Whoever,— (a) being a police officer, commits rape,— "
+                                        "(i) within the limits of the police station")
+    kept = "(3) Whoever commits theft shall be punished. Sec. 2] THE GAZETTE OF INDIA EXTRAORDINARY 24 next"
+    assert _strip_page_breaks(kept) == "(3) Whoever commits theft shall be punished. next"
