@@ -20,14 +20,14 @@ query_type shapes the mix:
 from __future__ import annotations
 
 import re
-from typing import Awaitable, Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from app.tools.base_legal_rag import LegalChunk, LegalContext
 from app.tools.case_law_rag import CaseRecord, get_case_law_rag_system
 from app.tools.legal_query_parser import (
     ParsedLegalQuery,
     parse_legal_query,
-    parse_legal_query_llm,
+    parse_legal_query_embedding,
 )
 from app.tools.unified_legal_rag import get_unified_rag_system
 
@@ -243,7 +243,7 @@ async def retrieve_statutes(
     query: str,
     k: int = 8,
     domains_hint: Optional[List[str]] = None,
-    llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
+    doctrine_assist: bool = False,
     acts: Optional[List[str]] = None,
     min_score: Optional[float] = None,
     candidate_pool: int = 30,
@@ -259,8 +259,8 @@ async def retrieve_statutes(
     if not await rag.initialize():
         return LegalContext(domain="unified", query=query), ParsedLegalQuery()
 
-    if llm_invoke is not None:
-        parsed = await parse_legal_query_llm(query, llm_invoke)
+    if doctrine_assist:
+        parsed = await parse_legal_query_embedding(query)
     else:
         parsed = parse_legal_query(query)
 

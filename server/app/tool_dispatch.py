@@ -11,7 +11,7 @@ fixed everywhere at once.
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from app.config import get_settings
 from app.text_match import any_word
@@ -295,7 +295,7 @@ async def invoke_statute_context(
     query: str,
     k: int = 8,
     domain_hint: Optional[list] = None,
-    fast_llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
+    doctrine_assist: bool = False,
     with_case_law: bool = True,
 ) -> ToolInvocationResult:
     """
@@ -320,7 +320,7 @@ async def invoke_statute_context(
             query,
             k=k,
             domains_hint=domain_hint,
-            llm_invoke=fast_llm_invoke,
+            doctrine_assist=doctrine_assist,
         )
         if not context.chunks:
             return ToolInvocationResult(
