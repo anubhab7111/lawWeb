@@ -423,11 +423,11 @@ RELATED_CRIME_TYPES = [
 ]
 
 
-# The penal section for each crime_reporter type (mapped to BNS by _prefer_bns). No murder
-# pin: "threatening to kill me" is typed murder, and citing § 302 for a threat is worse
-# than letting retrieval decide.
+# The penal section for each crime_reporter type (mapped to BNS by _prefer_bns). Threat pins
+# 503, not 506: the comparative table maps only 503/507 to BNS 351. No murder pin: a threat
+# misread as murder would cite § 302, which is worse than letting retrieval decide.
 CRIME_TYPE_SECTIONS = {
-    "theft": "379", "robbery": "392", "assault": "323", "threat": "506", "fraud": "420",
+    "theft": "379", "robbery": "392", "assault": "323", "threat": "503", "fraud": "420",
     "harassment": "354", "kidnapping": "363", "rape": "376",
     "domestic_violence": "498A", "dowry": "304B", "property_damage": "427",
     "land_dispute": "447", "arson": "436",
