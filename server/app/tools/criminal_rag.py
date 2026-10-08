@@ -447,6 +447,28 @@ def _is_offence_section(act_name: str, section: str) -> bool:
     return _is_offence_act(act_name) and not (act_name == "Indian Penal Code" and str(section) in STRUCK_DOWN_IPC)
 
 
+_SUBSECTION_RE = re.compile(r"\((\d{1,2})\)\s*(?=[A-Z])")
+_GAZETTE_HEADER_RE = re.compile(r"Sec\. \d+\] THE GAZETTE OF INDIA EXTRAORDINARY \d*_*")
+
+
+def _section_punishment(text: str) -> str:
+    """Every subsection's punishment with its condition. BNS folds several IPC sections
+    into one (351(2) intimidation: 2 years; 351(3) threat to kill: 7 years), and the first
+    clause alone understates the graver cases."""
+    parts = _SUBSECTION_RE.split(_GAZETTE_HEADER_RE.sub(" ", text))
+    clauses = []
+    for num, body in zip(parts[1::2], parts[2::2]):
+        punishment = _extract_punishment(body, max_len=160)
+        if punishment:
+            condition = re.split(r"\bshall\b", body, maxsplit=1)[0].strip().rstrip(",")
+            if len(condition) > 160:
+                condition = condition[:160].rsplit(" ", 1)[0] + "..."
+            clause = f"({num}) {condition}: {punishment}"
+            if clause not in clauses:  # consecutive index parts overlap
+                clauses.append(clause)
+    return "; ".join(clauses) if len(clauses) > 1 else _extract_punishment(text)
+
+
 _CRIMINAL_ACT_NAMES = {
     "Indian Penal Code", "Bharatiya Nyaya Sanhita BNS", "NDPS Act", "Juvenile Justice Act",
     "Prevention of Money Laundering Act PMLA", "Unlawful Activities Prevention Act UAPA", "Arms Act",
@@ -569,7 +591,8 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                     c = chunks[cids[0]]
                     m = replace(
                         m, act_name=c.act_name, section=bns, title=f"{c.title} (formerly IPC § {m.section})",
-                        punishment=_extract_punishment(c.text) or m.punishment, definition=c.text,
+                        punishment=_section_punishment(self._full_section_text(c.act_name, bns, c.text)) or m.punishment,
+                        definition=c.text,
                     )
                 else:
                     m = replace(m, title=f"{m.title} (now BNS § {bns}; offences before 1 July 2024 stay under IPC)")
@@ -578,6 +601,18 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 seen.add(key)
                 out.append(m)
         return out
+
+    def _full_section_text(self, act_name: str, section: str, fallback: str) -> str:
+        """A long section is indexed as parts (…_p1, …_p2); later subsections, and their
+        punishments, are only in the later parts."""
+        from app.tools.unified_legal_rag import get_unified_rag_system
+
+        chunks = get_unified_rag_system()._chunks
+        cids = [c for c in self._pinned_chunk_ids([(act_name, section)]) if c in chunks]
+        if len(cids) < 2:
+            return fallback
+        part = lambda cid: int(cid.rsplit("_p", 1)[1]) if re.search(r"_p\d+$", cid) else 0
+        return " ".join(chunks[c].text for c in sorted(cids, key=part))
 
     def _pinned_chunk_ids(self, sections: List[tuple]) -> List[str]:
         """Chunk ids for the given (act, section) pairs."""
@@ -919,7 +954,8 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                     in self.PUNISHMENT_FILTERED_ACTS
                 )
 
-                punishment = _extract_punishment(chunk.text) or (
+                full_text = self._full_section_text(chunk.act_name, sec_num, chunk.text)
+                punishment = _section_punishment(full_text) or (
                     chunk.text[:250]
                     if chunk.has_punishment or _CHARGEABLE_PUNISHMENT_RE.search(chunk.text)
                     else ""

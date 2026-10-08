@@ -343,7 +343,7 @@ CRIME_REPORT_PROMPT = """Indian law assistant. User reporting a crime. Respond w
 
 **Statute:** [Cite an Act and section (name the Act, e.g. "Bharatiya Nyaya Sanhita § 303") from the data below ONLY if it genuinely matches what the user described — same act, same kind of conduct. The data below comes from an automated search and is not always a good match. If none of it fits, write "No matching section found for this description" instead of citing an unrelated one.]
 
-**Punishment:** [Copy the punishment for the cited section from the data below, only if a matching section was cited above. If no section was cited, write "N/A".]
+**Punishment:** [Copy the punishment for the cited section from the data below, only if a matching section was cited above. If the data lists several sub-sections, copy the one whose condition fits the facts and name it, e.g. "§ 351(3): ...". If no section was cited, write "N/A".]
 
 **Further Steps:** [Practical next steps. If a crime clearly occurred: call 100/112, file an FIR, preserve evidence. If the description is ambiguous about whether a crime occurred at all (e.g. property reported "lost" rather than "stolen"), say so plainly and suggest first checking with local police/lost-and-found, filing a report only if theft is suspected.]
 

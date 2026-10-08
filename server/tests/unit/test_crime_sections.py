@@ -61,3 +61,26 @@ def test_every_pinned_crime_section_has_a_bns_equivalent():
 
     ipc_to_bns = _translation()["ipc_bns"]["old_to_new"]
     assert [s for s in CRIME_TYPE_SECTIONS.values() if s not in ipc_to_bns] == []
+
+
+def test_every_subsection_punishment_is_listed_with_its_condition():
+    from app.tools.criminal_rag import _section_punishment
+
+    text = ("351.(1) Whoever threatens another commits criminal intimidation. "
+            "(2) Whoever commits the offence of criminal intimidation shall be punished with imprisonment "
+            "which may extend to two years. (3) Whoever commits the offence of criminal intimidation by "
+            "threatening to cause death shall be punished with imprisonment which may extend to seven years. "
+            "Sec. 1] THE GAZETTE OF INDIA EXTRAORDINARY 97___ "
+            "(2) Whoever commits the offence of criminal intimidation shall be punished with imprisonment "
+            "which may extend to two years.")
+    out = _section_punishment(text)
+    assert out.count("(2)") == 1 and "GAZETTE" not in out
+    assert "(3) Whoever commits the offence of criminal intimidation by threatening to cause death: " \
+           "imprisonment which may extend to seven years" in out
+
+
+def test_single_punishment_section_keeps_the_plain_clause():
+    from app.tools.criminal_rag import _section_punishment
+
+    text = "85. Whoever subjects a woman to cruelty shall be punished with imprisonment up to three years."
+    assert _section_punishment(text) == "imprisonment up to three years"
