@@ -629,6 +629,7 @@ class BaseLegalRAGSystem(ABC):
                     print(f"[{self.domain_name}] Loading cached vector store …")
                     await self._load_vectorstore()
                     self._load_chunk_cache()
+                    self._warn_if_chunk_cache_mismatch()
 
                 if self.vector_store is None:
                     print(
@@ -1342,6 +1343,20 @@ class BaseLegalRAGSystem(ABC):
                 f,
             )
         print(f"[{self.domain_name}] FAISS index saved to {self._faiss_dir}")
+
+    def _warn_if_chunk_cache_mismatch(self):
+        """sections.json from a different build than the FAISS files (e.g. only the FAISS
+        files copied into a worktree) silently drops every dense hit it can't resolve."""
+        if self.vector_store is None:
+            return
+        doc_ids = {d.metadata.get("chunk_id") for d in self.vector_store.docstore._dict.values()}
+        missing = len(doc_ids - self._chunks.keys())
+        if missing:
+            print(
+                f"[{self.domain_name}] WARNING: {missing}/{len(doc_ids)} indexed chunks are missing "
+                f"from {self._cache_path} — their dense hits are dropped. Copy the matching "
+                f"sections.json or run: python rebuild_rag_indices.py --domain {self.domain_name}"
+            )
 
     async def _load_vectorstore(self):
         """Load FAISS index from disk."""
