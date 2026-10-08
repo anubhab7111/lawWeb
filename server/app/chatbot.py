@@ -2285,6 +2285,11 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             except Exception:
                 return None
 
+        # THINK needs only the classification, so the LLM runs it while law
+        # context is retrieved.
+        analyzer = get_legal_defect_analyzer(get_llm())
+        think_task = asyncio.create_task(analyzer.think(classification))
+
         indian_kanoon, crime_rag, civil_rag = await asyncio.gather(
             init_ik(), init_rag(), init_civil()
         )
@@ -2307,13 +2312,12 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         # ================================================================
         # Layer 3: Legal Reasoning & Defect Explanation (LLM)
         # ================================================================
-        llm = get_llm()
-        analyzer = get_legal_defect_analyzer(llm)
         result = await analyzer.analyze_defects(
             classification=classification,
             validation=validation,
             law_context=law_context,
             document_text=document_content[:5000],
+            think_output=await think_task,
         )
 
         response = result["formatted_response"]

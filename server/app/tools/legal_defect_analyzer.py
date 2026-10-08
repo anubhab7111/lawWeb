@@ -18,7 +18,7 @@ the following potential issues were identified…"
 """
 
 import asyncio
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
 from app.tools.document_classifier import DocumentClassification
 from app.tools.statutory_validator import StatutoryValidationResult, format_score
@@ -33,6 +33,10 @@ from app.prompts import (
 # ============================================================================
 # Disclaimer Templates
 # ============================================================================
+
+# THINK sees only the document type, sub-type and jurisdiction, never the document,
+# so its output is reused for every later document of the same kind.
+_THINK_CACHE: Dict[tuple, str] = {}
 
 DISCLAIMER_HEADER = (
     "**⚠️ Disclaimer:** This analysis is for informational and educational purposes only. "
@@ -84,6 +88,7 @@ class LegalDefectAnalyzer:
         validation: StatutoryValidationResult,
         law_context: IndianLawContext,
         document_text: str = "",
+        think_output: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Perform comprehensive legal defect analysis using the ReAct pipeline.
@@ -103,7 +108,8 @@ class LegalDefectAnalyzer:
         # STEP 1: THINK — Reason about requirements
         # ==================================================================
         print("[ReAct] Step 1/3: THINK — Reasoning about requirements...")
-        think_output = await self._step_think(classification)
+        if think_output is None:
+            think_output = await self.think(classification)
         reasoning_trace["think"] = think_output
         print(f"[ReAct] THINK complete ({len(think_output)} chars)")
 
@@ -148,6 +154,21 @@ class LegalDefectAnalyzer:
     # ReAct Step Implementations
     # ======================================================================
 
+    async def think(self, classification: DocumentClassification) -> str:
+        """THINK step, cached per document kind; fallbacks are not cached."""
+        key = (
+            classification.document_type,
+            classification.sub_type,
+            tuple(classification.jurisdiction_hints or ()),
+        )
+        if key not in _THINK_CACHE:
+            try:
+                _THINK_CACHE[key] = await self._step_think(classification)
+            except Exception as e:
+                print(f"[ReAct] THINK step error: {e}")
+                return self._fallback_think(classification)
+        return _THINK_CACHE[key]
+
     async def _step_think(self, classification: DocumentClassification) -> str:
         """
         STEP 1: THINK — LLM reasons about what the document requires.
@@ -163,11 +184,7 @@ class LegalDefectAnalyzer:
             ),
         )
 
-        try:
-            return await self._invoke_llm(prompt)
-        except Exception as e:
-            print(f"[ReAct] THINK step error: {e}")
-            return self._fallback_think(classification)
+        return await self._invoke_llm(prompt)
 
     async def _step_observe(
         self,
