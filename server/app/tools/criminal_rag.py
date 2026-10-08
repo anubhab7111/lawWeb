@@ -39,6 +39,7 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from app.text_match import any_word
+from app.tools.crime_reporter import ANIMAL_WORDS
 from typing import List, Optional
 
 import numpy as np
@@ -975,6 +976,8 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             # Short reports ("someone snatched my phone") give retrieval little to match
             # on, so the detected crime type's own penal section leads.
             core = CRIME_TYPE_SECTIONS.get(crime_type) if offences_only and short else None
+            if core and crime_type == "property_damage" and any_word(query, ANIMAL_WORDS):
+                core = "429"  # killing or maiming an animal (BNS 325), not general mischief
             if core and ("Indian Penal Code", core) not in lead_sections:
                 lead_sections = [("Indian Penal Code", core)] + lead_sections[:CLASSIFIER_FIRST - 1]
             typed_report = offences_only and short and crime_type not in ("", "general")

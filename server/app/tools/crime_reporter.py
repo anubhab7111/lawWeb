@@ -251,7 +251,7 @@ ANIMAL_WORDS = [
 HUMAN_VICTIM_WORDS = [
     "son", "daughter", "brother", "sister", "father", "mother", "husband", "wife", "child",
     "baby", "uncle", "aunt", "cousin", "friend", "grandfather", "grandmother", "man", "woman",
-    "boy", "girl", "person", "people",
+    "boy", "girl", "person", "people", "victim", "victims", "student", "body",
 ]
 
 
