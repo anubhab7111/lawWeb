@@ -177,24 +177,15 @@ Think through the following, step by step:
 
 5. **JURISDICTION-SPECIFIC NOTES:** If jurisdiction hints are available ({jurisdiction}), note any state-specific requirements (stamp duty rates, local registration rules, etc.).
 
-FORMAT your response as structured reasoning:
+FORMAT your response as five short sections of one-line bullets (element — Act/Section — consequence if missing):
 
 **THOUGHT 1 — Governing Law:**
-[Your reasoning about which statutes apply]
-
 **THOUGHT 2 — Mandatory Elements Checklist:**
-[Your reasoned checklist with Act/Section for each]
-
 **THOUGHT 3 — Formal Requirements:**
-[Your reasoning about procedural requirements]
-
 **THOUGHT 4 — Common Pitfalls:**
-[Your reasoning about frequent defects]
-
 **THOUGHT 5 — Jurisdiction Notes:**
-[Your reasoning about state-specific requirements]
 
-Be thorough and precise. Use Indian legal English. This reasoning will be used to evaluate the actual document in the next step."""
+Keep the whole response under 300 words: no introductions, no paragraphs, no repetition. Use Indian legal English. This checklist will be used to evaluate the actual document in the next step."""
 
 
 # STEP 2: OBSERVE — Cross-check document against reasoned requirements
@@ -238,24 +229,15 @@ Read the document text carefully and for EACH requirement you identified in your
 
 3. **NOTE** any elements you identified in THINK that the regex checklist didn't cover at all.
 
-FORMAT your response as structured observations:
+FORMAT your response as one line per element:
 
-**OBSERVATION 1 — [Element Name]:**
-- Requirement: [What's needed, from your THINK step]
-- Regex finding: [PRESENT/MISSING]
-- My observation: [What I actually see in the document text]
-- Verdict: [CONFIRMED PRESENT / CONFIRMED MISSING / FALSE NEGATIVE / SUPERFICIAL MATCH]
-- Evidence: [Quote the relevant text from the document, or note its absence]
+- **[Element Name]** — [CONFIRMED PRESENT / CONFIRMED MISSING / FALSE NEGATIVE / SUPERFICIAL MATCH] — evidence: "[short quote from the document, under 15 words]" or "not found"
 
-[Repeat for each element]
+Then, only if there are any:
+**Regex corrections:** one line each.
+**Additional issues:** one line each.
 
-**OBSERVATION — Regex Corrections:**
-[List any false positives or false negatives you identified, with explanation]
-
-**OBSERVATION — Additional Issues:**
-[Any problems you noticed that neither your THINK step nor the regex caught]
-
-Be meticulous. Quote directly from the document text as evidence. Do not assume — if you cannot find clear evidence, mark it as MISSING."""
+Keep the whole response under 350 words. Do not assume — if you cannot find clear evidence, mark it as MISSING."""
 
 
 # STEP 3: ANALYZE — Reconcile and produce final defect report
