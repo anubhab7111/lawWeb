@@ -173,7 +173,7 @@ Think through the following, step by step:
    - Notarisation requirements
    - Execution formalities
 
-4. **COMMON DRAFTING PITFALLS:** What are the most frequent defects courts have flagged in this document type? Reference specific judgments where possible.
+4. **COMMON DRAFTING PITFALLS:** What are the most frequent defects courts have flagged in this document type? Do not name court cases — verified precedents are added in the next step.
 
 5. **JURISDICTION-SPECIFIC NOTES:** If jurisdiction hints are available ({jurisdiction}), note any state-specific requirements (stamp duty rates, local registration rules, etc.).
 
