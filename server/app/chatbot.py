@@ -71,7 +71,6 @@ from app.prompts import (
     ROUTE_TIEBREAK_PROMPT,
     ROUTE_TIEBREAK_UNSURE,
     STATUTE_CONTEXT_BLOCK,
-    STATUTE_QUERY_REWRITE_PROMPT,
     sanitize_untrusted_document,
 )
 from app.routing_keywords import CRIME_TYPE_KEYWORDS
@@ -1798,34 +1797,14 @@ def _route_after_grade(state: ChatState) -> Literal["gq_rewrite", "gq_generate"]
 
 
 async def gq_rewrite(state: ChatState) -> ChatState:
-    """Second-chance query for weak/empty retrieval: restate the question as a
-    statute-oriented keyword query (falls back to the original on any
-    failure — the widened, unfiltered search still runs)."""
+    """Second chance for weak/empty retrieval: gq_retrieve re-runs the same query
+    widened (no domain filter, larger k). A fast-LLM keyword rewrite used to sit
+    here; qwen3:4b gave up on it 19/19 times after ~18 s each."""
     await emit_event(
         "status", stage="retrieval", label="Broadening the search…"
     )
-    original = state.get("retrieval_query") or state["current_input"]
-    rewritten = original
-    try:
-        candidate = (
-            await _invoke_fast_text(
-                STATUTE_QUERY_REWRITE_PROMPT.format(question=original[:1000]),
-                timeout=25.0,
-            )
-        ).strip().strip('"').strip()
-        if (
-            candidate
-            and candidate != _INCOMPLETE_GENERATION_NOTE
-            and len(candidate) <= 300
-            and "\n" not in candidate
-        ):
-            rewritten = candidate
-    except Exception as e:
-        logger.warning("Retrieval rewrite failed (%s) — reusing the original query", e)
-    logger.info("Retrieval rewrite: %.120r -> %.120r", original, rewritten)
     return {
         **state,
-        "retrieval_query": rewritten,
         "retrieval_attempts": 1,
         "sub_questions": [],
     }

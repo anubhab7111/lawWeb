@@ -433,12 +433,6 @@ CONCISE_ANSWER_SUFFIX = """
 
 **Answer directly and concisely** — under 300 words, short bullet points, no long deliberation before you answer. Cover the key rule, the provision that supports it and the main exception or caveat."""
 
-# Second-chance retrieval query, used when the first statute retrieval came
-# back empty or weak. Output must be a single line.
-STATUTE_QUERY_REWRITE_PROMPT = """Rewrite this legal question as ONE short keyword query for searching Indian bare acts. Name the Act(s) most likely to govern it, the section topics and the core legal concepts; drop chatty wording. Do not answer the question. Output only the query, on a single line.
-
-Question: {question}"""
-
 # One targeted question for queries the router cannot place. The shared prefix
 # lets the router recognise its own previous turn and never ask twice in a row.
 CLARIFY_PREFIX = "Just so I point you the right way — "
