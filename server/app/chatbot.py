@@ -1201,9 +1201,9 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
         prompt = DOCUMENT_ANALYSIS_PROMPT.format(
             document_text=sanitize_untrusted_document(doc_text)
         )
-        analysis = await invoke_llm_safely(llm, prompt, stream=True)
-
         # Compulsory RAG: always prepend disclaimer when using fallback path
+        await emit_text(DOC_RAG_UNAVAILABLE_DISCLAIMER)
+        analysis = await invoke_llm_safely(llm, prompt, stream=True)
         analysis = DOC_RAG_UNAVAILABLE_DISCLAIMER + analysis
 
         return {
@@ -1279,10 +1279,12 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     )
 
     await emit_text(disclaimer_prefix)
+    fell_back = False
     try:
         final_response = await invoke_llm_safely(llm, prompt, stream=True)
     except Exception as e:
         logger.error("LLM error in crime report: %s", e)
+        fell_back = True
         final_response = CRIME_REPORT_FALLBACK.format(
             crime_name=identified_crime.replace("_", " ").title()
         )
@@ -1292,6 +1294,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
         final_response = disclaimer_prefix + final_response
     if serious:
         final_response = SERIOUS_CRIME_HELPLINES[identified_crime] + final_response
+    if serious or fell_back:
         await emit_event("replace", content=final_response)
 
     return {
@@ -2192,6 +2195,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         # ================================================================
         # Layer 1: Document Classification (deterministic)
         # ================================================================
+        await emit_event("status", stage="classify", label="Reading the document…")
         classification = await classify_document(document_content)
 
         logger.info(
@@ -2204,6 +2208,9 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         # ================================================================
         validator = get_statutory_validator()
         validation = validator.validate(document_content, classification.document_type)
+        await emit_event(
+            "status", stage="retrieval", label="Checking the law that applies…"
+        )
 
         logger.info(
             f"[Layer 2] Statutory validation: {validation.passed}/{validation.total_checks} passed, "
@@ -2273,15 +2280,20 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         # ================================================================
         # Layer 3: Legal Reasoning & Defect Explanation (LLM)
         # ================================================================
+        await emit_event("status", stage="generation", label="Writing the analysis…")
         result = await analyzer.analyze_defects(
             classification=classification,
             validation=validation,
             law_context=law_context,
             document_text=document_content[:5000],
             think_output=await think_task,
+            stream=True,
         )
 
         response = result["formatted_response"]
+        # The streamed prefix + analysis + suffix already equal this unless the
+        # analysis fell back; either way the client ends on the exact report.
+        await emit_event("replace", content=response)
 
         logger.info(
             f"[Layer 3] Analysis complete. Defects: {result['defect_count']}, "
@@ -2361,11 +2373,13 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             )
 
             response = "\n".join(fallback_parts)
+            await emit_event("replace", content=response)
         except Exception:
             response = (
                 "I apologize, but I encountered an error while validating your document. "
                 "Please try again or consult a qualified legal practitioner for document review."
             )
+            await emit_event("replace", content=response)
 
         return {
             **state,
