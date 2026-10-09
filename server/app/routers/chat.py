@@ -360,16 +360,15 @@ async def chat(
         raise _server_error("Chat processing error", e)
 
 
-@router.post("/stream", dependencies=[Depends(chat_rate_limit)])
-async def chat_stream(
-    request: ChatRequest,
-    user: Optional[User] = Depends(get_current_user_optional),
-):
-    """
-    Streaming chat endpoint using Server-Sent Events.
-    Streams LLM response tokens as they are generated.
-    """
-    session_id = request.session_id or str(uuid.uuid4())
+def _sse_chat_response(
+    user: Optional[User],
+    session_id: str,
+    message: str,
+    document_content: Optional[str] = None,
+    document_type: Optional[str] = None,
+) -> StreamingResponse:
+    """Run one chat turn through chatbot.stream_chat as Server-Sent Events,
+    persisting the turn when it finishes or is stopped."""
 
     async def event_generator():
         try:
@@ -383,8 +382,10 @@ async def chat_stream(
                 await _seed_from_db_if_needed(db_session, chatbot, user, resolved_session_id)
 
             async for event in chatbot.stream_chat(
-                message=request.message,
+                message=message,
                 session_id=_memory_key(user, resolved_session_id),
+                document_content=document_content,
+                document_type=document_type,
             ):
                 if "session_id" in event:
                     event["session_id"] = resolved_session_id
@@ -400,11 +401,11 @@ async def chat_stream(
                             db_session,
                             user,
                             resolved_session_id,
-                            user_message=event.get("query_en") or request.message,
+                            user_message=event.get("query_en") or message,
                             assistant_message=event.get("response_en")
                             or event.get("response", ""),
                             language=language,
-                            user_message_display=request.message if is_translated else None,
+                            user_message_display=message if is_translated else None,
                             assistant_message_display=(
                                 event.get("response") if is_translated else None
                             ),
@@ -423,6 +424,18 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/stream", dependencies=[Depends(chat_rate_limit)])
+async def chat_stream(
+    request: ChatRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+):
+    """
+    Streaming chat endpoint using Server-Sent Events.
+    Streams LLM response tokens as they are generated.
+    """
+    return _sse_chat_response(user, request.session_id or str(uuid.uuid4()), request.message)
 
 
 class StopStreamRequest(BaseModel):
@@ -598,6 +611,46 @@ async def validate_document_text(
         )
     except Exception as e:
         raise _server_error("Validation error", e)
+
+
+@router.post("/validate-document/stream", dependencies=[Depends(chat_rate_limit)])
+async def validate_document_stream(
+    file: Optional[UploadFile] = File(
+        default=None, description="Document file (PDF, DOCX, TXT, JPG, PNG)"
+    ),
+    document_text: Optional[str] = Form(default=None, description="Document text, if no file"),
+    message: str = Form(
+        default="Please validate this document for statutory compliance",
+        description="User message",
+    ),
+    session_id: Optional[str] = Form(default=None, description="Session ID"),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
+    """
+    Statutory compliance validation streamed as Server-Sent Events (same events as
+    /stream): the report header arrives first, then the analysis as it is written.
+    """
+    doc_type = "text"
+    if file is not None:
+        max_size = get_settings().max_document_size_mb * 1024 * 1024
+        file_bytes = await read_upload_within_limit(file, max_size)
+        document_text, doc_type = await get_document_extractor().extract_text(
+            file_bytes, file.filename or "document.txt"
+        )
+    if not document_text or len(document_text.strip()) < 10:
+        raise HTTPException(status_code=422, detail="Could not extract text from the document.")
+
+    # Force validation intent by including keyword in message
+    validation_message = (
+        message if "validate" in message.lower() else f"Please validate this document: {message}"
+    )
+    return _sse_chat_response(
+        user,
+        session_id or str(uuid.uuid4()),
+        validation_message,
+        document_content=document_text,
+        document_type=doc_type,
+    )
 
 
 @router.post("/validate-document/upload", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])

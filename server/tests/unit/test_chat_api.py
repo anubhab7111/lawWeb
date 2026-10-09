@@ -28,6 +28,7 @@ class FakeBot:
                 "language": "en", "intent": "general_query"}
 
     async def stream_chat(self, message, session_id, **kwargs):
+        self.stream_calls = getattr(self, "stream_calls", []) + [(message, kwargs)]
         if self.stream_exc:
             raise self.stream_exc
         for event in self.events:
@@ -105,6 +106,30 @@ def test_stream_busy_becomes_an_error_event_with_a_useful_message(client_for):
                       ).post("/api/chat/stream", json={"message": "q"})
     got = _sse(resp)
     assert got == [{"type": "error", "content": "The assistant is busy right now."}]
+
+
+def test_validate_document_stream_sends_the_document_with_validation_intent(client_for):
+    events = [
+        {"type": "status", "stage": "classify", "label": "Reading the document…"},
+        {"type": "token", "content": "## 📄 Document Classification"},
+        {"type": "replace", "content": "Full report"},
+        {"type": "done", "session_id": "s", "intent": "document_analysis",
+         "response": "Full report", "response_en": "Full report", "query_en": "q", "language": "en"},
+    ]
+    bot = FakeBot(events=events)
+    text = "This rent agreement is made between the landlord and the tenant."
+    resp = client_for(bot).post("/api/chat/validate-document/stream",
+                                data={"document_text": text, "message": "Is this valid?"})
+    assert resp.status_code == 200
+    assert [e["type"] for e in _sse(resp)] == ["status", "token", "replace", "done"]
+    message, kwargs = bot.stream_calls[0]
+    assert "validate" in message.lower()
+    assert kwargs["document_content"] == text
+
+
+def test_validate_document_stream_rejects_an_empty_document(client_for):
+    resp = client_for(FakeBot()).post("/api/chat/validate-document/stream", data={"document_text": " "})
+    assert resp.status_code == 422
 
 
 def test_app_lifespan_initialises_the_checkpointer_and_registers_the_cleanup_job(monkeypatch):

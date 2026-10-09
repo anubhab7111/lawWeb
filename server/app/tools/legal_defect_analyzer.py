@@ -87,6 +87,7 @@ class LegalDefectAnalyzer:
         law_context: IndianLawContext,
         document_text: str = "",
         think_output: Optional[str] = None,
+        stream: bool = False,
     ) -> Dict[str, Any]:
         """
         Perform comprehensive legal defect analysis using the ReAct pipeline.
@@ -117,9 +118,15 @@ class LegalDefectAnalyzer:
         # whole token budget thinking through it and usually fell back.)
         # ==================================================================
         print("[ReAct] Step 2/2: ANALYZE — Producing final report...")
+        if stream:
+            from app.chatbot import emit_text
+
+            await emit_text(self._format_prefix(classification, validation, reasoning_trace) + "\n")
         analyze_output = await self._step_analyze(
-            classification, validation, law_context, think_output, document_text
+            classification, validation, law_context, think_output, document_text, stream=stream
         )
+        if stream:
+            await emit_text("\n" + self._format_suffix(law_context))
         reasoning_trace["analyze"] = analyze_output
         print(f"[ReAct] ANALYZE complete ({len(analyze_output)} chars)")
 
@@ -226,6 +233,7 @@ class LegalDefectAnalyzer:
         law_context: IndianLawContext,
         think_output: str,
         document_text: str,
+        stream: bool = False,
     ) -> str:
         """
         STEP 2: ANALYZE — LLM checks the document against the THINK checklist and
@@ -284,7 +292,7 @@ class LegalDefectAnalyzer:
         )
 
         try:
-            return await self._invoke_llm(prompt)
+            return await self._invoke_llm(prompt, stream=stream)
         except Exception as e:
             print(f"[ReAct] ANALYZE step error: {e}")
             return self._fallback_analyze(classification, validation, law_context)
@@ -293,11 +301,12 @@ class LegalDefectAnalyzer:
     # LLM Invocation
     # ======================================================================
 
-    async def _invoke_llm(self, prompt: str) -> str:
-        """Invoke the LLM with a prompt and return the response content."""
+    async def _invoke_llm(self, prompt: str, stream: bool = False) -> str:
+        """Invoke the LLM with a prompt and return the response content. A give-up
+        is not streamed: the caller falls back and the handler replaces the text."""
         from app.chatbot import _INCOMPLETE_GENERATION_NOTE, invoke_llm_safely
 
-        text = await invoke_llm_safely(self.llm, prompt, stream=False)
+        text = await invoke_llm_safely(self.llm, prompt, stream=stream, notify_incomplete=False)
         if text == _INCOMPLETE_GENERATION_NOTE:
             raise RuntimeError("LLM did not finish this step")
         return text
@@ -374,6 +383,16 @@ class LegalDefectAnalyzer:
         reasoning_trace: Dict[str, str],
     ) -> str:
         """Format the complete response with all layers and reasoning trace."""
+        prefix = self._format_prefix(classification, validation, reasoning_trace)
+        return f"{prefix}\n{llm_analysis}\n{self._format_suffix(law_context)}"
+
+    def _format_prefix(
+        self,
+        classification: DocumentClassification,
+        validation: StatutoryValidationResult,
+        reasoning_trace: Dict[str, str],
+    ) -> str:
+        """Everything before the ANALYZE text, ending with its heading."""
         parts = []
 
         # Header with disclaimer
@@ -427,10 +446,13 @@ class LegalDefectAnalyzer:
             parts.append("</details>")
             parts.append("")
 
-        # Main Analysis (ANALYZE step output)
+        # Main Analysis (ANALYZE step output) follows the heading.
         parts.append("## ⚖️ Legal Analysis")
-        parts.append(llm_analysis)
-        parts.append("")
+        return "\n".join(parts)
+
+    def _format_suffix(self, law_context: IndianLawContext) -> str:
+        """Everything after the ANALYZE text."""
+        parts = [""]
 
         # Applicable Law
         if law_context.applicable_acts:
