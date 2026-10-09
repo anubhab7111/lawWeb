@@ -1,6 +1,9 @@
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -13,7 +16,7 @@ from app.tools.statutory_validator import StatutoryValidationResult
 
 class StreamingLLM:
     def __init__(self, words=None, fail=False):
-        self.words = words or ["The ", "rent ", "clause ", "is ", "present."]
+        self.words = words or ["The ", "rent ", "clause ", "is ", "present. ", "See ", "Fake ", "v. ", "Party ", "(2001)."]
         self.fail = fail
 
     async def astream(self, messages):
@@ -22,6 +25,15 @@ class StreamingLLM:
         yield type("Chunk", (), {"content": "thinking</think>"})()
         for w in self.words:
             yield type("Chunk", (), {"content": w})()
+
+
+@pytest.fixture(autouse=True)
+def no_case_index(monkeypatch):
+    """The analyzer strips unverified case names via the case-law index; stub it."""
+    import app.tools.case_law_rag as clr
+
+    monkeypatch.setattr(clr, "get_case_law_rag_system",
+                        lambda: SimpleNamespace(initialized=True, find_case=lambda name: None))
 
 
 CLASSIFICATION = DocumentClassification(document_type="Rent Agreement", confidence=0.9, jurisdiction_hints=["Delhi"])
@@ -55,7 +67,9 @@ def test_streamed_report_equals_the_final_report():
     result, items = _stream(StreamingLLM())
     assert all(isinstance(i, str) for i in items)
     streamed = "".join(items)
-    assert streamed == result["formatted_response"]
+    assert "Fake v. Party" in streamed  # streamed as written...
+    assert "Fake v. Party" not in result["formatted_response"]  # ...removed from the final report
+    assert streamed.replace(" See Fake v. Party (2001).", "") == result["formatted_response"]
     assert "The rent clause is present." in streamed
     assert streamed.index("## ⚖️ Legal Analysis") < streamed.index("The rent") < streamed.index("Transfer of Property")
 
@@ -129,7 +143,7 @@ def test_handler_streams_status_then_report_and_ends_on_the_exact_report(monkeyp
     events = [i for i in items if isinstance(i, dict)]
     assert [e["stage"] for e in events if e["type"] == "status"] == ["classify", "retrieval", "generation"]
     assert events[-1] == {"type": "replace", "content": state["response"]}
-    assert "".join(i for i in items if isinstance(i, str)) == state["response"]
+    assert "Fake v. Party" not in state["response"]
 
 
 def test_handler_replaces_the_stream_when_the_analysis_falls_back(monkeypatch):

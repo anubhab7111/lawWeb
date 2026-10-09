@@ -17,7 +17,7 @@ the following potential issues were identified…"
 """
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.document_classifier import DocumentClassification
 from app.tools.statutory_validator import StatutoryValidationResult, format_score
@@ -125,6 +125,9 @@ class LegalDefectAnalyzer:
         analyze_output = await self._step_analyze(
             classification, validation, law_context, think_output, document_text, stream=stream
         )
+        analyze_output, removed = await self._strip_unverified_cases(analyze_output)
+        if removed:
+            print(f"[ReAct] removed unverified case names: {removed}")
         if stream:
             await emit_text("\n" + self._format_suffix(law_context))
         reasoning_trace["analyze"] = analyze_output
@@ -300,6 +303,20 @@ class LegalDefectAnalyzer:
     # ======================================================================
     # LLM Invocation
     # ======================================================================
+
+    @staticmethod
+    async def _strip_unverified_cases(text: str) -> Tuple[str, List[str]]:
+        """Only cases in the indexed landmark corpus may stay in the report; if
+        the corpus is unavailable nothing can be verified, so every case goes."""
+        from app.tools.case_citation_verifier import strip_unverified_cases
+        from app.tools.case_law_rag import get_case_law_rag_system
+
+        rag = get_case_law_rag_system()
+        try:
+            ready = rag.initialized or await rag.initialize()
+        except Exception:
+            ready = False
+        return strip_unverified_cases(text, rag.find_case if ready else (lambda name: None))
 
     async def _invoke_llm(self, prompt: str, stream: bool = False) -> str:
         """Invoke the LLM with a prompt and return the response content. A give-up
