@@ -499,16 +499,6 @@ class LegalDefectAnalyzer:
                 parts.append(f"- {p}")
             parts.append("")
 
-        if law_context.references:
-            parts.append("## 🔍 Relevant Legal References")
-            for ref in law_context.references[:5]:
-                parts.append(f"- **{ref.title}**")
-                if ref.excerpt:
-                    parts.append(f"  {ref.excerpt[:200]}...")
-                if ref.url:
-                    parts.append(f"  [View source]({ref.url})")
-            parts.append("")
-
         # Footer disclaimer
         parts.append(DISCLAIMER_FOOTER)
 

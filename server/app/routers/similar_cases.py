@@ -71,7 +71,6 @@ async def _run_search(document_text: str) -> dict:
             }
             for c in supreme_court_cases
         ],
-        "relevantHighCourtCasesText": "",
         "relevantStatutes": [
             {
                 "actName": c.act_name,

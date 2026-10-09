@@ -21,7 +21,6 @@ class DocumentAnalysisResult:
     document_type: str  # pdf, docx, image_ocr, pdf_ocr, etc.
     summary: str
     key_points: List[str]
-    legal_references: List[Dict[str, Any]]
     crime_context: Optional[Dict[str, Any]]
     confidence: float
     warnings: List[str]
@@ -65,8 +64,6 @@ class DocumentAnalysisPipeline:
         # Step 2: Extract legal entities and keywords
         legal_keywords = self._extract_legal_keywords(document_text)
 
-        legal_references = []
-
         # Step 3: Query Crime RAG if crime-related (if available)
         crime_context = None
         if doc_category.get("is_crime_related") and self.crime_rag:
@@ -82,7 +79,6 @@ class DocumentAnalysisPipeline:
             document_text=document_text,
             document_type=document_type,
             user_query=user_query,
-            legal_references=legal_references,
             crime_context=crime_context,
             doc_category=doc_category,
         )
@@ -92,7 +88,6 @@ class DocumentAnalysisPipeline:
             document_type=document_type,
             summary=analysis["summary"],
             key_points=analysis["key_points"],
-            legal_references=legal_references,
             crime_context=crime_context,
             confidence=analysis.get("confidence", 0.8),
             warnings=warnings,
@@ -216,7 +211,6 @@ class DocumentAnalysisPipeline:
         document_text: str,
         document_type: str,
         user_query: str,
-        legal_references: List[Dict[str, Any]],
         crime_context: Optional[Dict[str, Any]],
         doc_category: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -224,12 +218,6 @@ class DocumentAnalysisPipeline:
 
         # Build context for LLM
         context_parts = []
-
-        # Add local legal references if available
-        if legal_references:
-            context_parts.append("**Relevant Legal References:**")
-            for ref in legal_references[:3]:
-                context_parts.append(f"- {ref['title']}: {ref['excerpt'][:200]}...")
 
         # Add crime context if available
         if crime_context and crime_context.get("relevant_passages"):

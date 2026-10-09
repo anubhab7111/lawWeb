@@ -33,6 +33,8 @@ def test_verify_clean_layout(tmp_path):
     init_layout(tmp_path)
     (tmp_path / "myenv").mkdir()
     (tmp_path / "myenv" / "x").write_text("x")
+    (tmp_path / "indiankanoon").mkdir()
+    (tmp_path / "indiankanoon" / "cache.json").write_text("{}")
     for d in ("_legacy", "tools", "builds", "iltur", "quarantine"):
         (tmp_path / d / "keep.txt").write_text("x")
     for d in ("statutes", "case_law", "manifest"):

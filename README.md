@@ -6,7 +6,7 @@ A full-stack platform for Indian law: an AI legal chatbot grounded in bare acts 
 
 ## Features
 
-- **Legal chatbot** (`/api/chat`, streaming SSE) — LangGraph workflow with intent routing into domain RAG tools (criminal / civil / constitutional) built over Indian bare acts (IPC, BNS, BNSS, BSA, Constitution, and ~40 more in `server/app/data/bare_acts/`), plus Indian Kanoon case-law lookup.
+- **Legal chatbot** (`/api/chat`, streaming SSE) — LangGraph workflow with intent routing into domain RAG tools (criminal / civil / constitutional) built over Indian bare acts (IPC, BNS, BNSS, BSA, Constitution, and ~40 more in `server/app/data/bare_acts/`), plus a local case-law index of landmark and Supreme Court judgments.
 - **Document analysis & validation** — upload PDF/DOCX/images (OCR via Tesseract); a 3-layer pipeline classifies the document, checks statutory requirements, and flags legal defects.
 - **Crime reporting guidance** — structured steps for reporting, by detected crime type.
 - **Lawyer directory & bookings** — ~1,000 Indian lawyers (server-side filtering/paging, semantic recommendation), JWT auth, appointment slots, and idempotent Braintree (sandbox) checkout. Prices display in the charged currency (`CURRENCY`, default USD).
