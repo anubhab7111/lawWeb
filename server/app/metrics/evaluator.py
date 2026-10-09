@@ -262,8 +262,7 @@ class MetricsEvaluator:
         chatbot uses: ``retrieve_statutes`` (doctrine pins + hybrid fill +
         confidence gate), not the raw unified index. This is what makes
         Hit-Rate/MRR and the judge's ``context`` reflect what the chatbot
-        actually retrieved and answered from. Indian Kanoon uses the ground
-        truth domain to pick ``context_type``.
+        actually retrieved and answered from.
 
         Returns
         -------
@@ -272,8 +271,6 @@ class MetricsEvaluator:
         sections: List[str] = []
         pairs: List[Tuple[str, str]] = []
         ctx_parts: List[str] = []
-
-        domain = gt_entry.get("domain", "unknown")
 
         # ── 1. Production statute retrieval (pins + hybrid + gate) ─────
         try:
@@ -302,38 +299,6 @@ class MetricsEvaluator:
                 )
         except Exception as exc:
             logger.warning("Statute retrieval failed during evaluation: %s", exc)
-
-        # ── 2. Indian Kanoon (case law & statutes API) ────────────────
-        # Map ground-truth domain → Indian Kanoon context_type
-        ik_context_map = {
-            "constitutional": "constitution",
-            "criminal": "ipc",
-            "criminal_procedure": "crpc",
-            "contract_law": "statute",
-            "property_law": "statute",
-            "family_law": "statute",
-            "evidence_law": "statute",
-            "technology_law": "general",
-        }
-        ik_context_type = ik_context_map.get(domain, "general")
-
-        try:
-            from app.tools.indian_kanoon import get_indian_kanoon_tool
-
-            ik_tool = get_indian_kanoon_tool()
-            await ik_tool.initialize()
-            result = await ik_tool.answer_legal_query(
-                query, context_type=ik_context_type
-            )
-            ik_results = result.get("results", [])
-
-            for doc in ik_results[:5]:
-                excerpt = getattr(doc, "excerpt", "") or ""
-                title = getattr(doc, "title", "") or ""
-                if excerpt or title:
-                    ctx_parts.append(f"{title}\n{excerpt[:500]}")
-        except Exception as exc:
-            logger.warning("Indian Kanoon retrieval failed during evaluation: %s", exc)
 
         return sections, "\n\n".join(ctx_parts), pairs
 

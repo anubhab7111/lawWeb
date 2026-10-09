@@ -248,7 +248,7 @@ async def compute_faithfulness(
 
     Args:
         answer:             The chatbot's generated response.
-        retrieved_context:  All RAG / Indian Kanoon context that was passed
+        retrieved_context:  All retrieved RAG context that was passed
                             to the LLM when generating the answer.
         judge:              Optional :class:`~app.metrics.llm_judge.LLMJudge`
                             instance.  Uses the module singleton if ``None``.
@@ -456,7 +456,7 @@ async def compute_all_generation_metrics(
     Args:
         query:             User's legal question.
         answer:            Chatbot's generated response.
-        retrieved_context: Full RAG / Indian Kanoon context fed to the LLM.
+        retrieved_context: Full RAG context fed to the LLM.
         reference_answer:  Gold-standard answer for context recall evaluation.
         judge:             Optional shared :class:`~app.metrics.llm_judge.LLMJudge`.
 

@@ -3,17 +3,15 @@ Indian Law RAG Tool (Layer 2 — Tool 3: retrieve_indian_law_context)
 
 RAG-based retrieval of Indian legal context for document validation.
 Searches across:
-- Bare Acts (via Indian Kanoon API)
 - State-specific Stamp Acts
 - Case law and judicial precedents
 - Statutory requirements and forms
 
-Uses the existing IndianKanoonTool + CrimeRAGSystem as underlying data sources
-but provides a validation-focused interface.
+Uses local domain RAG systems and static legal mappings to provide a
+validation-focused interface.
 """
 
 import re
-import asyncio
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
@@ -313,21 +311,18 @@ class IndianLawRAGTool:
 
     Combines:
     1. Static law mapping (acts, sections, precedents per document type)
-    2. Indian Kanoon API for live statute and case law retrieval
-    3. Domain-specific FAISS RAG (criminal / civil / constitutional)
+    2. Domain-specific FAISS RAG (criminal / civil / constitutional)
 
     This tool feeds into Layer 3 (LLM-based defect explanation).
     """
 
     def __init__(
         self,
-        indian_kanoon_tool=None,
         crime_rag=None,  # Legacy; kept for backward compatibility
         criminal_rag=None,  # CriminalRAGSystem
         civil_rag=None,  # CivilRAGSystem
         constitutional_rag=None,  # ConstitutionalRAGSystem
     ):
-        self.indian_kanoon = indian_kanoon_tool
         # Prefer new domain-specific instances; fall back to legacy crime_rag
         self.criminal_rag = criminal_rag or crime_rag
         self.civil_rag = civil_rag
@@ -370,19 +365,12 @@ class IndianLawRAGTool:
                 document_type, jurisdiction_hints
             )
 
-        # 3. Search Indian Kanoon for missing elements (async, non-blocking)
-        if self.indian_kanoon and missing_elements:
-            api_refs = await self._search_missing_elements_context(
-                document_type, missing_elements
-            )
-            context.references.extend(api_refs)
-
-        # 4. Search FAISS RAG for additional legal context
+        # 3. Search local RAG for additional legal context
         if self.crime_rag and document_text:
             rag_refs = await self._search_rag_context(document_type, document_text)
             context.references.extend(rag_refs)
 
-        # 5. Add static references for missing elements
+        # 4. Add static references for missing elements
         static_refs = self._build_static_references(
             document_type, missing_elements, non_compliance
         )
@@ -467,60 +455,6 @@ class IndianLawRAGTool:
                 notes.append(note)
 
         return notes
-
-    async def _search_missing_elements_context(
-        self,
-        document_type: str,
-        missing_elements: List[Dict[str, Any]],
-    ) -> List[LawReference]:
-        """Search Indian Kanoon for context on missing mandatory elements."""
-        references = []
-
-        if not self.indian_kanoon:
-            return references
-
-        # Build targeted search queries from missing elements
-        search_tasks = []
-        for element in missing_elements[:3]:  # Limit to 3 to avoid API overload
-            statute_ref = element.get("statute_reference", "")
-            element_name = element.get("element", "")
-            query = (
-                f"{element_name} {statute_ref} {document_type} mandatory requirement"
-            )
-            search_tasks.append(self._search_single_element(query, element_name))
-
-        # Execute searches in parallel
-        if search_tasks:
-            results = await asyncio.gather(*search_tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, list):
-                    references.extend(result)
-
-        return references
-
-    async def _search_single_element(
-        self, query: str, element_name: str
-    ) -> List[LawReference]:
-        """Search Indian Kanoon for a single element."""
-        refs = []
-        try:
-            result = await self.indian_kanoon.answer_legal_query(query, "statute")
-            for doc in result.get("results", [])[:2]:
-                refs.append(
-                    LawReference(
-                        title=doc.title,
-                        act_name=self._extract_act_name(doc.title),
-                        section=self._extract_section(doc.title),
-                        relevance=f"Relevant to missing element: {element_name}",
-                        excerpt=doc.excerpt[:300] if doc.excerpt else "",
-                        url=doc.url,
-                        source_type="indian_kanoon",
-                    )
-                )
-        except Exception as e:
-            print(f"Indian Kanoon search error for '{element_name}': {e}")
-
-        return refs
 
     async def _search_rag_context(
         self, document_type: str, document_text: str
@@ -675,7 +609,6 @@ _indian_law_rag: Optional[IndianLawRAGTool] = None
 
 
 def get_indian_law_rag(
-    indian_kanoon_tool=None,
     crime_rag=None,
     criminal_rag=None,
     civil_rag=None,
@@ -689,10 +622,7 @@ def get_indian_law_rag(
     global _indian_law_rag
     if _indian_law_rag is None:
         _indian_law_rag = IndianLawRAGTool()
-    # Later calls may supply components the first one lacked (e.g. an
-    # Indian Kanoon tool that failed to initialize at startup).
     tool = _indian_law_rag
-    tool.indian_kanoon = indian_kanoon_tool or tool.indian_kanoon
     tool.criminal_rag = criminal_rag or crime_rag or tool.criminal_rag
     tool.crime_rag = tool.criminal_rag
     tool.civil_rag = civil_rag or tool.civil_rag

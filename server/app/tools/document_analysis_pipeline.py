@@ -1,6 +1,6 @@
 """
 Document Analysis Pipeline
-Integrates OCR extraction, IndianKanoon legal search, and RAG retrieval
+Integrates OCR extraction and local RAG retrieval
 to provide comprehensive document analysis with legal context.
 """
 
@@ -32,17 +32,15 @@ class DocumentAnalysisPipeline:
     Orchestrates document analysis with multiple legal data sources.
     """
 
-    def __init__(self, llm, indian_kanoon_tool=None, crime_rag=None):
+    def __init__(self, llm, crime_rag=None):
         """
         Initialize the pipeline.
 
         Args:
             llm: Language model for analysis
-            indian_kanoon_tool: IndianKanoon API client (optional)
             crime_rag: Crime RAG system (optional)
         """
         self.llm = llm
-        self.indian_kanoon = indian_kanoon_tool
         self.crime_rag = crime_rag
 
     async def analyze_document(
@@ -67,15 +65,9 @@ class DocumentAnalysisPipeline:
         # Step 2: Extract legal entities and keywords
         legal_keywords = self._extract_legal_keywords(document_text)
 
-        # Step 3: Search IndianKanoon for relevant legal context (if available)
         legal_references = []
-        if self.indian_kanoon and legal_keywords:
-            try:
-                legal_references = await self._search_legal_references(legal_keywords)
-            except Exception as e:
-                warnings.append(f"Legal search unavailable: {str(e)}")
 
-        # Step 4: Query Crime RAG if crime-related (if available)
+        # Step 3: Query Crime RAG if crime-related (if available)
         crime_context = None
         if doc_category.get("is_crime_related") and self.crime_rag:
             try:
@@ -85,7 +77,7 @@ class DocumentAnalysisPipeline:
             except Exception as e:
                 warnings.append(f"Crime database unavailable: {str(e)}")
 
-        # Step 5: Generate comprehensive analysis using LLM with context
+        # Step 4: Generate comprehensive analysis using LLM with context
         analysis = await self._generate_analysis(
             document_text=document_text,
             document_type=document_type,
@@ -198,38 +190,6 @@ class DocumentAnalysisPipeline:
         # Limit to most relevant
         return list(set(keywords))[:10]
 
-    async def _search_legal_references(
-        self, keywords: List[str]
-    ) -> List[Dict[str, Any]]:
-        """Search IndianKanoon for relevant legal references."""
-        if not self.indian_kanoon:
-            return []
-
-        references = []
-
-        # Search for each keyword
-        for keyword in keywords[:3]:  # Limit searches
-            try:
-                results = await self.indian_kanoon.search_documents(
-                    query=keyword, max_results=3
-                )
-
-                for result in results:
-                    references.append(
-                        {
-                            "title": result.title,
-                            "excerpt": result.excerpt,
-                            "url": result.url,
-                            "type": result.document_type,
-                            "keyword": keyword,
-                        }
-                    )
-            except Exception as e:
-                print(f"Search failed for '{keyword}': {e}")
-                continue
-
-        return references[:5]  # Return top 5
-
     async def _get_crime_context(
         self, document_text: str, keywords: List[str]
     ) -> Optional[Dict[str, Any]]:
@@ -265,9 +225,9 @@ class DocumentAnalysisPipeline:
         # Build context for LLM
         context_parts = []
 
-        # Add legal references if available
+        # Add local legal references if available
         if legal_references:
-            context_parts.append("**Relevant Legal References from IndianKanoon:**")
+            context_parts.append("**Relevant Legal References:**")
             for ref in legal_references[:3]:
                 context_parts.append(f"- {ref['title']}: {ref['excerpt'][:200]}...")
 
@@ -366,18 +326,15 @@ Provide your analysis in a structured format."""
             }
 
 
-def get_document_analysis_pipeline(
-    llm, indian_kanoon=None, crime_rag=None
-) -> DocumentAnalysisPipeline:
+def get_document_analysis_pipeline(llm, crime_rag=None) -> DocumentAnalysisPipeline:
     """
     Factory function to create document analysis pipeline.
 
     Args:
         llm: Language model instance
-        indian_kanoon: IndianKanoon client (optional)
         crime_rag: Crime RAG system (optional)
 
     Returns:
         DocumentAnalysisPipeline instance
     """
-    return DocumentAnalysisPipeline(llm, indian_kanoon, crime_rag)
+    return DocumentAnalysisPipeline(llm, crime_rag)

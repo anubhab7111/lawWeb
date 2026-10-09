@@ -58,7 +58,6 @@ from app.prompts import (
     GROUNDED_QUERY_PROMPT,
     GROUNDING_UNAVAILABLE_DISCLAIMER,
     GROUNDING_UNAVAILABLE_PROMPT_WARNING,
-    INDIAN_KANOON_CONTEXT_BLOCK,
     LAWYER_DETAILS_ASK,
     LAWYER_DETAILS_PREFIX,
     LAWYER_NONE_NEARBY_NOTE,
@@ -91,13 +90,11 @@ from app.logging_config import request_id_var
 from app.tool_dispatch import (
     RAG_TOOL_REGISTRY,
     ToolInvocationResult,
-    infer_indian_kanoon_context_type,
     select_tools,
 )
 from app.tools.crime_reporter import classify_crime_type
 from app.tools.followup import crime_report_too_thin, find_location, missing_lawyer_details
 from app.tools.document_classifier import classify_document, get_document_classifier
-from app.tools.indian_kanoon import get_indian_kanoon_tool
 from app.tools.indian_law_rag import get_indian_law_rag
 from app.tools.lawyer_recommender import (
     format_lawyer_results,
@@ -200,7 +197,7 @@ def _fit_context_blocks(
 ) -> str:
     """
     Join retrieved-context blocks (already in priority order: statute → case
-    law → Indian Kanoon) without exceeding the model's input budget. Drops
+    law) without exceeding the model's input budget. Drops
     lower-priority blocks and truncates the last kept one, so the instruction
     template and user query always survive — this is what stops Ollama from
     silently front-truncating the grounded statute block on long prompts.
@@ -1032,7 +1029,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     Analyzes uploaded documents and provides structured insights.
     If the user asks for validation/compliance checking, runs the 3-layer
     validation pipeline (classification → statutory checklist → legal reasoning).
-    Otherwise uses the enhanced analysis pipeline with IndianKanoon and RAG.
+    Otherwise uses the enhanced analysis pipeline with local RAG.
     """
     document_content = state.get("document_content", "")
     document_type = state.get("document_type", "unknown")
@@ -1055,27 +1052,8 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     if subintent == "validation":
         return await _handle_document_validation(state)
 
-    # ALWAYS use Indian Kanoon API for document analysis (priority)
-    # Run Indian Kanoon and Crime RAG initialization in parallel for better latency
-    indian_kanoon = None
-    indian_kanoon_results = []
+    # Run local Crime RAG initialization while the document pipeline prepares.
     crime_rag = None
-
-    async def init_indian_kanoon():
-        """Initialize Indian Kanoon in parallel."""
-        try:
-            indian_kanoon_tool = get_indian_kanoon_tool()
-            await indian_kanoon_tool.initialize()
-            doc_summary = document_content[:500]
-            ik_result = await RAG_TOOL_REGISTRY["indian_kanoon"](doc_summary)
-            results = ik_result.raw.get("results", []) if ik_result.raw else []
-            logger.info(
-                f"Indian Kanoon found {len(results)} relevant legal references for document"
-            )
-            return indian_kanoon_tool, results
-        except Exception as e:
-            logger.warning(f"Indian Kanoon search error in document analysis: {e}")
-            return None, []
 
     async def init_crime_rag():
         """Initialize Crime RAG in parallel."""
@@ -1089,13 +1067,9 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             return None
 
     # Run both initializations in parallel
-    ik_task = asyncio.create_task(init_indian_kanoon())
     rag_task = asyncio.create_task(init_crime_rag())
 
-    # Wait for both to complete
-    (indian_kanoon, indian_kanoon_results), crime_rag = await asyncio.gather(
-        ik_task, rag_task
-    )
+    crime_rag = await rag_task
 
     # Track whether at least one RAG source succeeded (compulsory RAG).
     # Provisional: crime_rag's own per-document grounding (result.crime_context,
@@ -1103,7 +1077,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     # since crime_rag.initialized only means "the shared index loaded at
     # some point in this process's life," not "retrieved something for this
     # document."
-    rag_succeeded = bool(indian_kanoon_results)
+    rag_succeeded = False
 
     # Use the enhanced document analysis pipeline
     try:
@@ -1112,7 +1086,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
         llm = get_llm()
 
         # Create pipeline and analyze
-        pipeline = get_document_analysis_pipeline(llm, indian_kanoon, crime_rag)
+        pipeline = get_document_analysis_pipeline(llm, crime_rag=crime_rag)
         result = await pipeline.analyze_document(
             document_text=document_content,
             document_type=document_type,
@@ -1127,21 +1101,11 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             for i, point in enumerate(result.key_points, 1):
                 response_parts.append(f"{i}. {point}")
 
-        # Prioritize Indian Kanoon results
-        if indian_kanoon_results:
-            response_parts.append(
-                "\n\n**Relevant Legal References from Indian Kanoon:**"
-            )
-            for ref in indian_kanoon_results[:5]:
-                response_parts.append(f"\n• **{ref.title}**")
-                response_parts.append(f"  {ref.excerpt[:150]}...")
-                response_parts.append(f"  [View on IndianKanoon]({ref.url})")
-        elif result.legal_references:
+        if result.legal_references:
             response_parts.append("\n\n**Relevant Legal References:**")
             for ref in result.legal_references[:3]:
                 response_parts.append(f"\n• **{ref['title']}**")
                 response_parts.append(f"  {ref['excerpt'][:150]}...")
-                response_parts.append(f"  [View on IndianKanoon]({ref['url']})")
 
         if result.crime_context:
             response_parts.append("\n\n**Crime Reporting Context:**")
@@ -1364,29 +1328,12 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
             for l in lawyers
         ]
 
-    # select_tools() adds indian_kanoon only when the request names a legal
-    # area — purely locational searches ("find a lawyer near me") get no
-    # benefit from case-law retrieval.
-    legal_context = ""
-    if "indian_kanoon" in tools:
-        ik_result = await RAG_TOOL_REGISTRY["indian_kanoon"](lawyer_query)
-        if ik_result.succeeded:
-            docs = ik_result.raw.get("results", [])
-            if docs:
-                legal_context = "\n\n**Relevant Legal Context:**\n"
-                for doc in docs[:2]:
-                    legal_context += f"• {doc.title}\n"
-                logger.info("Added Indian Kanoon legal context to lawyer search")
-
     # Enhance with LLM for personalized recommendations
     try:
         llm = get_llm()
         prompt = LAWYER_SEARCH_PROMPT.format(
             query=lawyer_query, lawyer_results=formatted_results
         )
-        if legal_context:
-            prompt = f"{prompt}\n\n{legal_context}"
-
         final_response = await invoke_llm_safely(llm, prompt, stream=True)
     except Exception:
         # Use formatted results directly if LLM fails
@@ -1694,11 +1641,6 @@ async def gq_retrieve(state: ChatState) -> ChatState:
                 # query only (each extra case-law hop cost ~10s of CPU reranking).
                 with_case_law=i == 0,
             )
-    if "indian_kanoon" in tools and "indian_kanoon" not in prior:
-        jobs["indian_kanoon"] = RAG_TOOL_REGISTRY["indian_kanoon"](
-            retrieval_query, infer_indian_kanoon_context_type(user_input)
-        )
-
     names = list(jobs)
     results = await asyncio.gather(*jobs.values(), return_exceptions=True)
     by_name = dict(zip(names, results))
@@ -1713,10 +1655,6 @@ async def gq_retrieve(state: ChatState) -> ChatState:
             + statute_results
         )
         prior["statute_context"] = merged
-    if "indian_kanoon" in by_name:
-        ik = by_name["indian_kanoon"]
-        prior["indian_kanoon"] = ik
-
     rag_succeeded = any(
         isinstance(r, ToolInvocationResult) and r.succeeded for r in prior.values()
     )
@@ -1821,7 +1759,7 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
     (prompt, retrieved_context).
 
     concise=True builds the give-up retry variant: statute and case-law blocks
-    only (Indian Kanoon excerpts are the lowest-priority block), a fraction of
+    only lower-priority case-law blocks, a fraction of
     the context budget, and an instruction to answer directly. The give-up is
     the model spending its whole budget deliberating inside <think>, so
     re-running the identical prompt is just latency; less to reason over and an
@@ -1837,10 +1775,8 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
         )
 
     statute = _tool_result(state, "statute_context")
-    kanoon = _tool_result(state, "indian_kanoon")
     rag_sections_text = statute.context_text if statute else ""
     case_law_text = (statute.raw or {}).get("case_law_text", "") if statute else ""
-    indian_kanoon_results = kanoon.context_text if kanoon else ""
     _, prompt_warning = _apply_compulsory_rag_policy(bool(state.get("rag_succeeded")))
 
     context_parts = []
@@ -1850,13 +1786,6 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
         )
     if case_law_text:
         context_parts.append(CASE_LAW_CONTEXT_BLOCK.format(case_law_text=case_law_text))
-    if indian_kanoon_results and not concise:
-        context_parts.append(
-            INDIAN_KANOON_CONTEXT_BLOCK.format(
-                indian_kanoon_results=indian_kanoon_results[:3000]
-            )
-        )
-
     from app.metrics.engineering_metrics import count_tokens_approx
 
     user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
@@ -2220,18 +2149,8 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         # ================================================================
         # Layer 2.5: Retrieve Indian Law Context (RAG)
         # ================================================================
-        # Initialize Indian Kanoon and Crime RAG in parallel
-        indian_kanoon = None
+        # Initialize local domain RAG systems in parallel
         crime_rag = None
-
-        async def init_ik():
-            try:
-                ik_tool = get_indian_kanoon_tool()
-                await ik_tool.initialize()
-                return ik_tool
-            except Exception as e:
-                logger.warning(f"Indian Kanoon init error: {e}")
-                return None
 
         async def init_rag():
             try:
@@ -2258,12 +2177,10 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         analyzer = get_legal_defect_analyzer(get_llm())
         think_task = asyncio.create_task(analyzer.think(classification))
 
-        indian_kanoon, crime_rag, civil_rag = await asyncio.gather(
-            init_ik(), init_rag(), init_civil()
-        )
+        crime_rag, civil_rag = await asyncio.gather(init_rag(), init_civil())
 
         # Get Indian law context via RAG tool
-        law_rag = get_indian_law_rag(indian_kanoon, crime_rag, civil_rag=civil_rag)
+        law_rag = get_indian_law_rag(crime_rag=crime_rag, civil_rag=civil_rag)
         law_context = await law_rag.retrieve_context(
             document_type=classification.document_type,
             missing_elements=validation.missing_elements,

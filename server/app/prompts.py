@@ -308,9 +308,6 @@ NOTE: Only provisions tagged [criminal] define offences and punishments. Civil/c
 CASE_LAW_CONTEXT_BLOCK = """**Judicial Interpretation** (curated landmark judgments, ordered by court authority — cite the case NAME, do not invent citations beyond what's shown):
 {case_law_text}"""
 
-INDIAN_KANOON_CONTEXT_BLOCK = """**Relevant Case Law & Precedents:**
-{indian_kanoon_results}"""
-
 # Main grounded-answer prompt. `retrieved_context` is the fitted, priority-
 # ordered join of the blocks above; `user_query` is length-clamped.
 GROUNDED_QUERY_PROMPT = """You are a knowledgeable Indian legal assistant. Answer the following legal query comprehensively using ONLY the retrieved legal context below.
@@ -388,7 +385,7 @@ DOCUMENT_UPLOAD_HELP = """I can help you analyze and validate legal documents an
 Please upload a document (PDF, DOCX, TXT) or image (JPG, PNG) and I'll provide:
 - Document type identification and OCR extraction (for images)
 - Summary of key points
-- Relevant legal references from IndianKanoon
+- Relevant legal references from the local legal database
 - Statutory compliance validation and defect analysis
 - Crime reporting guidance (if applicable)
 - Legal implications and concerns

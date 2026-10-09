@@ -10,7 +10,6 @@ from app.tools.crime_reporter import detect_crime_type
 from app.tools.criminal_rag import CriminalRAGSystem, extract_crime_features
 from app.tools.document_classifier import DocumentClassifier
 from app.tools.legal_query_parser import parse_legal_query
-from app.tool_dispatch import infer_indian_kanoon_context_type
 
 
 def test_word_boundaries():
@@ -54,12 +53,6 @@ def test_act_hint_needs_whole_word():
     assert all("Contract" not in act for act, _ in pins)
     pins = parse_legal_query("Section 138 ICA").pinned_sections
     assert pins[0][0] == "Indian Contract"
-
-
-def test_ik_context_type():
-    assert infer_indian_kanoon_context_type("first time offender") != "crpc"
-    assert infer_indian_kanoon_context_type("a written contract about grapes") != "constitution"
-    assert infer_indian_kanoon_context_type("anticipatory bail in an FIR") == "crpc"
 
 
 def test_citation_act_hint_across_abbreviated_dot():

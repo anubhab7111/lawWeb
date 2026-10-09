@@ -4,7 +4,7 @@ Canonical layout of the corpus drive, plus a verifier that enforces it.
 
   README.md   MANIFEST.json   manifest/        provenance, counts, file hashes
   statutes/   case_law/       judgments/       source documents (raw, immutable)
-  iltur/      indiankanoon/                    benchmark export, API cache
+  iltur/                                        benchmark export
   builds/     quarantine/                      derived artefacts, rejected files
   _legacy/    myenv/                           old scripts; a venv (left as-is)
 
@@ -39,7 +39,6 @@ TOP_LEVEL_DIRS = (
     "case_law",
     "judgments",
     "iltur",
-    "indiankanoon",
     "builds",
     "tools",
     "_legacy",
@@ -60,7 +59,6 @@ Only vector/lexical indices live in the repo; everything else is here.
 | case_law/curated/ | landmark-judgment JSON used by the case-law index |
 | judgments/sc/ | Supreme Court judgments: pdf/ (raw), text/, clean/, chunks/, metadata/, manifest/ |
 | iltur/ | IL-TUR benchmark export (CC BY-NC-SA 4.0 — non-commercial use only) |
-| indiankanoon/ | cached Indian Kanoon API responses + call ledger |
 | builds/ | embedding caches, evaluation reports, QA reports |
 | manifest/ | per-file sha256 manifests and download ledgers |
 | quarantine/ | files rejected by a quality gate, each with a reason |

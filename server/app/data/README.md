@@ -23,7 +23,6 @@ statutes/           bare_acts/<domain>/*.pdf, mappings/, rules/, guides/, notifi
 case_law/curated/   landmark judgments (JSON)
 judgments/sc/       pdf/ text/ clean/ chunks/ metadata/ manifest/   (Supreme Court, 1950-2026)
 iltur/lsi/          IL-TUR export (CC BY-NC-SA 4.0 - non-commercial)
-indiankanoon/       API response cache
 builds/             embedding shards, eval + tuning caches, QA and decontamination reports
 manifest/           file hashes, download ledgers
 quarantine/         files rejected by a quality gate, each with a reason

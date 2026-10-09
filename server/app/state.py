@@ -106,7 +106,7 @@ class ChatState(TypedDict):
     # Tool selection
     selected_tools: Optional[
         List[str]
-    ]  # Tools to be used, from INTENT_TOOL_MAP: ["indian_kanoon", "statute_context", "crime_sections", "lawyer_recommender"]
+    ]  # Tools to be used, from INTENT_TOOL_MAP.
     domain_hint: Optional[
         Literal["criminal"]
     ]  # Soft bias for unified statute retrieval; computed deterministically by _infer_domain_hint
