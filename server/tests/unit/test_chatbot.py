@@ -522,14 +522,14 @@ def test_clarification_routes_to_end_without_retrieval(monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_weak_retrieval_is_rewritten_and_retried_once(monkeypatch):
+def test_weak_retrieval_is_retried_once_widened(monkeypatch):
     weak = _statute(chunks=1, conf=0.05)
     rig = Rig(monkeypatch, FakeLLM(["Grounded answer."]), _classification("general_query"),
               [weak, _statute()], [_report(1.0)])
     result = run(rig.bot.chat("Can an FIR be quashed by the High Court?", "s"))
     assert len(rig.statute_calls) == 2
     retry_query, retry_kwargs = rig.statute_calls[1]
-    assert retry_query == "rewritten statute query"
+    assert retry_query == "Can an FIR be quashed by the High Court?"
     assert retry_kwargs["k"] == 12 and retry_kwargs["domain_hint"] is None
     assert result["trace"]["retrieval"]["grade"] == "good"
 
