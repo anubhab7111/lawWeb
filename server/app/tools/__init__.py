@@ -7,7 +7,6 @@ from .lawyer_recommender import (
     format_lawyer_results,
     list_specializations,
 )
-from .indian_kanoon import IndianKanoonTool, get_indian_kanoon_tool
 from .document_classifier import DocumentClassifier, get_document_classifier
 from .statutory_validator import StatutoryValidator, get_statutory_validator
 from .indian_law_rag import IndianLawRAGTool, get_indian_law_rag
@@ -29,8 +28,6 @@ __all__ = [
     "recommend_lawyers",
     "format_lawyer_results",
     "list_specializations",
-    "IndianKanoonTool",
-    "get_indian_kanoon_tool",
     "DocumentClassifier",
     "get_document_classifier",
     "StatutoryValidator",

@@ -104,18 +104,13 @@ def _run_handler(monkeypatch, llm):
         async def retrieve_context(self, **kwargs):
             return LAW
 
-    class NoTool:
-        async def initialize(self):
-            return False
-
     async def cached_think(self, classification):
         return "checklist"
 
     monkeypatch.setattr(cb, "classify_document", classify)
     monkeypatch.setattr(cb, "get_statutory_validator", lambda: SimpleNamespace(validate=lambda t, d: VALIDATION))
-    monkeypatch.setattr(cb, "get_indian_kanoon_tool", lambda: NoTool())
-    monkeypatch.setattr(criminal, "get_criminal_rag_system", lambda: NoTool())
-    monkeypatch.setattr(civil, "get_civil_rag_system", lambda: NoTool())
+    monkeypatch.setattr(criminal, "get_criminal_rag_system", lambda: None)
+    monkeypatch.setattr(civil, "get_civil_rag_system", lambda: None)
     monkeypatch.setattr(cb, "get_indian_law_rag", lambda *a, **k: LawRag())
     monkeypatch.setattr(cb, "get_llm", lambda: llm)
     monkeypatch.setattr(lda.LegalDefectAnalyzer, "think", cached_think)

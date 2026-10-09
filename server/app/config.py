@@ -167,7 +167,6 @@ class Settings(BaseSettings):
 
     # Optional external APIs
     lawyer_api_key: str = ""
-    indian_kanoon_api_key: str = ""
 
     # Case-data provider (My Cases / Hearing Reminders / Cause List Search).
     # "mock" (default) uses an in-memory fixture provider for local dev —

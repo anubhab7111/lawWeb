@@ -1,12 +1,11 @@
 """
 Similar Case Search — upload an order/petition/notice, extract FIRAC, then
-search the existing case-law + statute RAG stack plus live Indian Kanoon for
-similar Supreme Court / High Court cases and relevant statute sections.
+search the existing local case-law and statute RAG stack.
 
 Auth is optional: a logged-in user's search is recorded for history, an
 anonymous search just isn't. No new FAISS index, no new embedding model —
 everything here composes existing tools (document_extractor, firac_extractor,
-legal_retrieval, indian_kanoon).
+legal_retrieval).
 """
 
 from typing import Optional
@@ -20,7 +19,6 @@ from app.db.engine import get_session
 from app.db.models import User
 from app.deps.auth import get_current_user_optional
 from app.deps.uploads import read_upload_within_limit
-from app.tool_dispatch import invoke_indian_kanoon
 from app.tools.document_extractor import get_document_extractor
 from app.tools.firac_extractor import FiracExtraction, extract_firac
 from app.tools.legal_retrieval import retrieve_case_law, retrieve_statutes
@@ -57,14 +55,6 @@ async def _run_search(document_text: str) -> dict:
         print(f"[SimilarCaseSearch] case law retrieval failed: {e}")
         supreme_court_cases = []
 
-    high_court_cases_text = ""
-    try:
-        ik_result = await invoke_indian_kanoon(query, context_type="general")
-        if ik_result.succeeded:
-            high_court_cases_text = ik_result.context_text
-    except Exception as e:
-        print(f"[SimilarCaseSearch] Indian Kanoon lookup failed: {e}")
-
     return {
         "firac": _serialize_firac(firac),
         "similarSupremeCourtCases": [
@@ -81,7 +71,7 @@ async def _run_search(document_text: str) -> dict:
             }
             for c in supreme_court_cases
         ],
-        "relevantHighCourtCasesText": high_court_cases_text,
+        "relevantHighCourtCasesText": "",
         "relevantStatutes": [
             {
                 "actName": c.act_name,

@@ -13,10 +13,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from app.config import get_settings
 from app.text_match import any_word
 from app.tools.base_legal_rag import compress_chunks_for_context
-from app.tools.indian_kanoon import get_indian_kanoon_tool
 
 logger = logging.getLogger(__name__)
 
@@ -29,163 +27,6 @@ class ToolInvocationResult:
     succeeded: bool  # True when non-empty grounding content was retrieved
     context_text: str  # pre-formatted text, ready to splice into a prompt
     raw: Any = None  # structured payload for callers needing more than text
-
-
-# ============================================================================
-# Indian Kanoon (case law / precedent search)
-# ============================================================================
-
-_IK_CONTEXT_TYPE_KEYWORDS = (
-    (
-        "constitution",
-        (
-            "article",
-            "constitution",
-            "fundamental right",
-            "directive principle",
-            "writ",
-            "preamble",
-            "amendment",
-            "right to privacy",
-            "right to life",
-            "right to equality",
-            "freedom of speech",
-            "puttaswamy",
-            "kesavananda",
-            "parliament",
-            "basic structure",
-            "public order",
-            "central law",
-            "state government",
-            "surveillance",
-        ),
-    ),
-    (
-        "crpc",
-        (
-            "bail",
-            "anticipatory bail",
-            "fir",
-            "quash",
-            "cognizable",
-            "complainant",
-            "criminal case",
-            "compoundable",
-            "withdraw",
-            "marital rape",
-            "rape",
-            "economic offence",
-        ),
-    ),
-    (
-        "statute",
-        (
-            "contract",
-            "agreement",
-            "oral agreement",
-            "force majeure",
-            "non-compete",
-            "restraint of trade",
-            "breach",
-            "coercion",
-            "undue influence",
-            "enforceable",
-            "voidable",
-            "consideration",
-            "sale of goods",
-            "partnership",
-            "negotiable instrument",
-            "specific relief",
-            "limitation act",
-            "arbitration",
-            "consumer protection",
-            "insolvency",
-            "property",
-            "ancestral",
-            "heir",
-            "coparcener",
-            "partition",
-            "transfer of property",
-            "registration act",
-            "easement",
-            "succession",
-            "hindu marriage",
-            "special marriage",
-            "maintenance",
-            "divorce",
-            "custody",
-            "adoption",
-            "domestic violence",
-            "dowry",
-            "live-in",
-            "family",
-            "evidence",
-            "admissible",
-            "whatsapp",
-            "electronic record",
-            "certificate",
-            "witness",
-            "crypto",
-            "cryptocurrency",
-            "cyber",
-            "data protection",
-            "it act",
-            "information technology",
-            "ai system",
-            "artificial intelligence",
-            "online",
-            "digital",
-            "photos shared",
-            "privacy",
-            "fema",
-            "pmla",
-            "rbi",
-            "sebi",
-            "companies act",
-            "prevention of corruption",
-        ),
-    ),
-)
-
-
-def infer_indian_kanoon_context_type(text: str) -> str:
-    """Heuristic: pick the Indian Kanoon search context that best matches the query."""
-    text_lower = text.lower()
-    if any_word(text_lower, ("ipc", "penal code")):
-        return "ipc"
-    if any_word(text_lower, ("crpc", "criminal procedure")):
-        return "crpc"
-    for context_type, keywords in _IK_CONTEXT_TYPE_KEYWORDS:
-        if any_word(text_lower, keywords):
-            return context_type
-    return "general"
-
-
-async def invoke_indian_kanoon(
-    query: str, context_type: str = "general"
-) -> ToolInvocationResult:
-    """Fetch case law / precedents from Indian Kanoon."""
-    try:
-        if not get_settings().indian_kanoon_api_key:
-            return ToolInvocationResult(
-                name="indian_kanoon", succeeded=False, context_text=""
-            )
-        ik_tool = get_indian_kanoon_tool()
-        await ik_tool.initialize()
-        result = await ik_tool.answer_legal_query(query, context_type)
-        found = bool(result.get("results"))
-        formatted = result.get("formatted_results", "") if found else ""
-        return ToolInvocationResult(
-            name="indian_kanoon",
-            succeeded=found,
-            context_text=formatted,
-            raw=result,
-        )
-    except Exception as e:
-        logger.warning(f"Indian Kanoon error: {e}")
-        return ToolInvocationResult(
-            name="indian_kanoon", succeeded=False, context_text=""
-        )
 
 
 # ============================================================================
@@ -475,34 +316,19 @@ async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
 # Per-intent tool ceiling. select_tools() narrows it per request; handlers run
 # exactly the tools it returns (state["selected_tools"]) instead of a fixed set.
 INTENT_TOOL_MAP: Dict[str, List[str]] = {
-    "document_analysis": ["indian_kanoon"],
+    "document_analysis": [],
     "crime_report": ["crime_sections"],
-    "general_query": ["statute_context", "indian_kanoon"],
+    "general_query": ["statute_context"],
     "find_lawyer": ["lawyer_recommender"],
     "non_legal": [],
 }
 
-# find_lawyer only pays for a case-law search when the request names a legal
-# area — purely locational searches ("lawyer near me") gain nothing from it.
-_LAWYER_LEGAL_AREA_KEYWORDS = (
-    "criminal", "civil", "family", "property", "divorce", "ipc", "case",
-)
-
-
 def select_tools(intent: str, query: str) -> List[str]:
-    """Deterministic tool policy for one request. Drops tools that cannot
-    contribute (Indian Kanoon without an API key would return empty after a
-    wasted round-trip) and gates the optional ones on the query."""
-    tools = list(INTENT_TOOL_MAP.get(intent, []))
-    if not get_settings().indian_kanoon_api_key:
-        tools = [t for t in tools if t != "indian_kanoon"]
-    elif intent == "find_lawyer" and any_word(query.lower(), _LAWYER_LEGAL_AREA_KEYWORDS):
-        tools.append("indian_kanoon")
-    return tools
+    """Return the deterministic tool policy for one request."""
+    return list(INTENT_TOOL_MAP.get(intent, []))
 
 
 RAG_TOOL_REGISTRY: Dict[str, Callable] = {
-    "indian_kanoon": invoke_indian_kanoon,
     "statute_context": invoke_statute_context,
     "crime_sections": invoke_crime_sections,
     "bare_act_lookup": invoke_bare_act_lookup,

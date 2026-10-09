@@ -112,7 +112,6 @@ def _report(score, flagged=(), llm_succeeded=True):
 
 @pytest.fixture(autouse=True)
 def env(monkeypatch):
-    monkeypatch.setenv("INDIAN_KANOON_API_KEY", "")
     get_settings.cache_clear()
     monkeypatch.setattr(cb, "_llm_breaker", cb._LLMCircuitBreaker())
     rate_limit.reset_rate_limits()
@@ -679,12 +678,10 @@ def test_retry_prompt_genuinely_differs_from_the_first(monkeypatch):
         "rag_succeeded": True,
         "tool_results": {
             "statute_context": _statute(text=long_statute),
-            "indian_kanoon": ToolInvocationResult("indian_kanoon", True, "KANOON-EXCERPT " * 50),
         },
     }
     normal, normal_ctx = cb._build_answer_prompt(state)
     concise, concise_ctx = cb._build_answer_prompt(state, concise=True)
-    assert "KANOON-EXCERPT" in normal and "KANOON-EXCERPT" not in concise
     assert len(concise_ctx) < len(normal_ctx)
     assert "under 300 words" in concise and "under 300 words" not in normal
     # truncation cut on a provision boundary, not mid-entry
@@ -965,12 +962,8 @@ def test_truncate_block_cuts_on_a_provision_boundary():
 
 
 def test_select_tools_policy(monkeypatch):
-    assert select_tools("general_query", "q") == ["statute_context"]  # no IK key
-    monkeypatch.setenv("INDIAN_KANOON_API_KEY", "k")
-    get_settings.cache_clear()
-    assert select_tools("general_query", "q") == ["statute_context", "indian_kanoon"]
-    assert "indian_kanoon" in select_tools("find_lawyer", "divorce lawyer in Pune")
-    assert "indian_kanoon" not in select_tools("find_lawyer", "lawyer near me")
+    assert select_tools("general_query", "q") == ["statute_context"]
+    assert select_tools("find_lawyer", "divorce lawyer in Pune") == ["lawyer_recommender"]
     assert select_tools("non_legal", "q") == []
 
 
