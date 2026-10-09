@@ -3,7 +3,7 @@ import { Fragment, type ReactNode } from "react";
 // Dependency-free renderer for the markdown the backend emits: headings,
 // **bold**, *italic*, `code`, [links](https://…), bullet and numbered lists,
 // horizontal rules, and the <details>/<summary> blocks of the validation
-// report (shown as a titled section).
+// report (rendered collapsed; a block still open mid-stream runs to the end).
 
 const INLINE = /(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
 
@@ -26,44 +26,60 @@ function renderInline(text: string): ReactNode[] {
   });
 }
 
-function stripHtmlTags(line: string): { text: string; summary: boolean } {
-  const summary = /<summary>/i.test(line);
-  return { text: line.replace(/<\/?(details|summary|strong)>/gi, (m) => (/strong/i.test(m) ? "**" : "")), summary };
+function stripHtmlTags(line: string): string {
+  return line.replace(/<\/?(details|summary|strong)>/gi, (m) => (/strong/i.test(m) ? "**" : ""));
+}
+
+function renderLine(raw: string, key: string): ReactNode {
+  const trimmed = stripHtmlTags(raw).trim();
+  if (!trimmed) return raw.trim() ? null : <div key={key} style={{ height: 8 }} />;
+
+  if (/^(-{3,}|\*{3,})$/.test(trimmed)) return <hr key={key} style={{ border: 0, borderTop: "1px solid var(--border)", margin: "12px 0" }} />;
+
+  const heading = /^(#{1,6})\s+(.*)$/.exec(trimmed);
+  if (heading) {
+    return (
+      <div key={key} style={{ fontWeight: 700, fontSize: heading[1].length <= 2 ? "1.12em" : "1em", margin: "14px 0 4px" }}>
+        {renderInline(heading[2])}
+      </div>
+    );
+  }
+
+  const bullet = /^[•\-*]\s+/.test(trimmed);
+  const numbered = /^\d+[.)]\s+/.exec(trimmed);
+  const content = bullet ? trimmed.replace(/^[•\-*]\s+/, "") : trimmed;
+  return (
+    <div key={key} style={{ display: "flex", gap: bullet || numbered ? 8 : 0, marginBottom: 2 }}>
+      {bullet && <span style={{ color: "var(--accent)", flex: "none" }}>•</span>}
+      <span>{renderInline(content)}</span>
+    </div>
+  );
+}
+
+function renderLines(lines: string[], keyPrefix: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*<details>/i.test(lines[i])) {
+      out.push(renderLine(lines[i], `${keyPrefix}${i}`));
+      continue;
+    }
+    let end = lines.findIndex((l, j) => j > i && /<\/details>/i.test(l));
+    if (end === -1) end = lines.length;
+    const block = lines.slice(i + 1, end);
+    const s = block.findIndex((l) => /<summary>/i.test(l));
+    const summary = s === -1 ? "Details" : stripHtmlTags(block[s]).trim();
+    const body = s === -1 ? block : block.filter((_, j) => j !== s);
+    out.push(
+      <details key={`${keyPrefix}${i}`} style={{ margin: "10px 0" }}>
+        <summary style={{ fontWeight: 600, cursor: "pointer" }}>{renderInline(summary)}</summary>
+        <div style={{ marginTop: 6 }}>{renderLines(body, `${keyPrefix}${i}.`)}</div>
+      </details>,
+    );
+    i = end;
+  }
+  return out;
 }
 
 export function RichText({ text }: { text: string }) {
-  const lines = (text || "").split("\n");
-  return (
-    <>
-      {lines.map((raw, i) => {
-        const { text: line, summary } = stripHtmlTags(raw);
-        const trimmed = line.trim();
-        if (!trimmed) return raw.trim() ? null : <div key={i} style={{ height: 8 }} />;
-
-        if (/^(-{3,}|\*{3,})$/.test(trimmed)) return <hr key={i} style={{ border: 0, borderTop: "1px solid var(--border)", margin: "12px 0" }} />;
-
-        const heading = /^(#{1,6})\s+(.*)$/.exec(trimmed);
-        if (heading) {
-          return (
-            <div key={i} style={{ fontWeight: 700, fontSize: heading[1].length <= 2 ? "1.12em" : "1em", margin: "14px 0 4px" }}>
-              {renderInline(heading[2])}
-            </div>
-          );
-        }
-        if (summary) {
-          return <div key={i} style={{ fontWeight: 600, margin: "10px 0 2px" }}>{renderInline(trimmed)}</div>;
-        }
-
-        const bullet = /^[•\-*]\s+/.test(trimmed);
-        const numbered = /^\d+[.)]\s+/.exec(trimmed);
-        const content = bullet ? trimmed.replace(/^[•\-*]\s+/, "") : trimmed;
-        return (
-          <div key={i} style={{ display: "flex", gap: bullet || numbered ? 8 : 0, marginBottom: 2 }}>
-            {bullet && <span style={{ color: "var(--accent)", flex: "none" }}>•</span>}
-            <span>{renderInline(content)}</span>
-          </div>
-        );
-      })}
-    </>
-  );
+  return <>{renderLines((text || "").split("\n"), "")}</>;
 }

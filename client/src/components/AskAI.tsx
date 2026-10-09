@@ -3,7 +3,7 @@ import type { View } from "../App";
 import {
   sendChatMessageStream,
   stopChatStream,
-  uploadDocumentForAnalysis,
+  validateDocumentStream,
   clearChatSession,
   fetchLawyerById,
   listChatSessions,
@@ -181,71 +181,55 @@ export function AskAI({ user, initialQuestion, onConsumeInitial, onBookLawyer, o
       setBusy(true);
 
       try {
-        if (upload) {
-          const controller = new AbortController();
-          abortRef.current = controller;
-          try {
-            const data = await uploadDocumentForAnalysis(
-              upload,
-              text || "Please analyze this document",
-              sessionId,
-              controller.signal
-            );
-            if (data.session_id) setSessionId(data.session_id);
-            setMessages((m) => m.map((msg) => msg.id === botId && !msg.stopped ? {
-              ...msg, streaming: false, content: data.response || "", meta: data as StreamEvent,
-            } : msg));
-          } catch (e: any) {
-            if (e?.name !== "AbortError") throw e;
-            // stopGenerating() already marked this message stopped; the
-            // request was cancelled client-side, nothing more to update.
+        // Known upfront (not just learned from the "done" event) so the
+        // Stop button can cancel the server-side generation even if the
+        // user clicks it before a single event has come back.
+        const activeSessionId = sessionId ?? uuid();
+        if (!sessionId) setSessionId(activeSessionId);
+        streamingSessionIdRef.current = activeSessionId;
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        let acc = "";
+        const onToken = (tok: string) => {
+          acc += tok;
+          setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: acc } : msg));
+        };
+        const onDone = (meta: StreamEvent) => {
+          if (meta.session_id) setSessionId(meta.session_id);
+          // Post-generation verification (citation check, grounding
+          // correction) can rewrite the answer after streaming finishes —
+          // meta.response is that final text; fall back to the streamed
+          // tokens only if the server didn't send one.
+          setMessages((m) => m.map((msg) => msg.id === botId ? {
+            ...msg, streaming: false, status: undefined, meta, stopped: meta.type === "stopped",
+            content: meta.response || acc,
+          } : msg));
+        };
+        const onError = (err: string) => {
+          setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, status: undefined, error: true, content: msg.content ? `${msg.content}\n\n${err}` : err } : msg));
+        };
+        const onEvent = (ev: StreamEvent) => {
+          if (ev.type === "status") {
+            setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, status: ev.label } : msg));
+          } else if (ev.type === "reset") {
+            acc = "";
+            setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: "" } : msg));
+          } else if (ev.type === "replace" && ev.content) {
+            acc = ev.content;
+            setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: acc } : msg));
           }
-        } else {
-          // Known upfront (not just learned from the "done" event) so the
-          // Stop button can cancel the server-side generation even if the
-          // user clicks it before a single event has come back.
-          const activeSessionId = sessionId ?? uuid();
-          if (!sessionId) setSessionId(activeSessionId);
-          streamingSessionIdRef.current = activeSessionId;
+        };
 
-          const controller = new AbortController();
-          abortRef.current = controller;
-
-          let acc = "";
-          await sendChatMessageStream(
-            text,
-            activeSessionId,
-            (tok) => {
-              acc += tok;
-              setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: acc } : msg));
-            },
-            (meta) => {
-              if (meta.session_id) setSessionId(meta.session_id);
-              // Post-generation verification (citation check, grounding
-              // correction) can rewrite the answer after streaming finishes —
-              // meta.response is that final text; fall back to the streamed
-              // tokens only if the server didn't send one.
-              setMessages((m) => m.map((msg) => msg.id === botId ? {
-                ...msg, streaming: false, status: undefined, meta, stopped: meta.type === "stopped",
-                content: meta.response || acc,
-              } : msg));
-            },
-            (err) => {
-              setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, status: undefined, error: true, content: msg.content ? `${msg.content}\n\n${err}` : err } : msg));
-            },
-            controller.signal,
-            (ev) => {
-              if (ev.type === "status") {
-                setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, status: ev.label } : msg));
-              } else if (ev.type === "reset") {
-                acc = "";
-                setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: "" } : msg));
-              } else if (ev.type === "replace" && ev.content) {
-                acc = ev.content;
-                setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, content: acc } : msg));
-              }
-            },
+        if (upload) {
+          // The server reads the message to choose analysis or validation.
+          await validateDocumentStream(
+            { file: upload, message: text || "Please analyze this document", forceValidation: false },
+            activeSessionId, onToken, onDone, onError, controller.signal, onEvent,
           );
+        } else {
+          await sendChatMessageStream(text, activeSessionId, onToken, onDone, onError, controller.signal, onEvent);
         }
       } catch (e: any) {
         setMessages((m) => m.map((msg) => msg.id === botId ? { ...msg, streaming: false, error: true, content: e.message || "Something went wrong." } : msg));
