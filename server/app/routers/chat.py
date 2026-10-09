@@ -624,25 +624,34 @@ async def validate_document_stream(
         description="User message",
     ),
     session_id: Optional[str] = Form(default=None, description="Session ID"),
+    force_validation: bool = Form(
+        default=True, description="False lets the message decide (chat uploads)"
+    ),
     user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
-    Statutory compliance validation streamed as Server-Sent Events (same events as
-    /stream): the report header arrives first, then the analysis as it is written.
+    A document turn streamed as Server-Sent Events (same events as /stream). For
+    statutory validation the report header arrives first, then the analysis as it
+    is written.
     """
     doc_type = "text"
     if file is not None:
         max_size = get_settings().max_document_size_mb * 1024 * 1024
         file_bytes = await read_upload_within_limit(file, max_size)
-        document_text, doc_type = await get_document_extractor().extract_text(
-            file_bytes, file.filename or "document.txt"
-        )
+        try:
+            document_text, doc_type = await get_document_extractor().extract_text(
+                file_bytes, file.filename or "document.txt"
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
     if not document_text or len(document_text.strip()) < 10:
         raise HTTPException(status_code=422, detail="Could not extract text from the document.")
 
     # Force validation intent by including keyword in message
     validation_message = (
-        message if "validate" in message.lower() else f"Please validate this document: {message}"
+        message
+        if not force_validation or "validate" in message.lower()
+        else f"Please validate this document: {message}"
     )
     return _sse_chat_response(
         user,

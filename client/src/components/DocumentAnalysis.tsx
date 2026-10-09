@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { uploadDocumentForAnalysis, analyzeDocumentText, uploadDocumentForValidation, validateDocumentText, type ChatResponse } from "../api";
+import { uploadDocumentForAnalysis, analyzeDocumentText, validateDocumentStream, type ChatResponse } from "../api";
 import { RichText } from "./RichText";
 import { IconUpload, IconPaperclip } from "./icons";
 
@@ -12,25 +12,61 @@ export function DocumentAnalysis() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ChatResponse | null>(null);
+  // Validation streams: the report fills in while `streaming`, under the live status label.
+  const [streaming, setStreaming] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const validateStreaming = async () => {
+    let acc = "";
+    setStreaming(true);
+    setResult({ response: "", session_id: "", intent: "document_analysis" });
+    await validateDocumentStream(
+      mode === "upload" && file ? { file } : { text },
+      undefined,
+      (token) => {
+        acc += token;
+        setResult((r) => r && { ...r, response: acc });
+      },
+      (meta) => {
+        setResult({
+          response: meta.response || acc,
+          session_id: meta.session_id || "",
+          intent: meta.intent,
+          document_validation: meta.document_validation,
+          document_info: meta.document_info,
+        });
+      },
+      (msg) => setError(msg),
+      undefined,
+      (event) => {
+        if (event.type === "status") setStatus(event.label || null);
+        else if (event.type === "reset") acc = "";
+        else if (event.type === "replace") acc = event.content || "";
+        if (event.type !== "status") setResult((r) => r && { ...r, response: acc });
+      },
+    );
+  };
 
   const analyze = async () => {
     setError(null);
     setResult(null);
+    setStatus(null);
     setBusy(true);
     try {
-      const data = mode === "upload" && file
-        ? validate
-          ? await uploadDocumentForValidation(file)
-          : await uploadDocumentForAnalysis(file, "Analyze this document", undefined)
-        : validate
-          ? await validateDocumentText(text)
-          : await analyzeDocumentText(text, undefined);
-      setResult(data);
+      if (validate) {
+        await validateStreaming();
+      } else {
+        setResult(mode === "upload" && file
+          ? await uploadDocumentForAnalysis(file, "Analyze this document", undefined)
+          : await analyzeDocumentText(text, undefined));
+      }
     } catch (e: any) {
       setError(e.message || "Analysis failed.");
     } finally {
       setBusy(false);
+      setStreaming(false);
+      setStatus(null);
     }
   };
 
@@ -84,7 +120,7 @@ export function DocumentAnalysis() {
           {busy ? "Analyzing…" : validate ? "Validate document" : "Analyze document"}
         </button>
 
-        {busy && (
+        {busy && !streaming && (
           <div style={{ marginTop: 16, font: "400 13px var(--font-body)", color: "var(--muted-2)" }}>
             Running the classification → statutory-check → defect pipeline. Scanned files are OCR'd first, so this can take a moment.
           </div>
@@ -95,7 +131,7 @@ export function DocumentAnalysis() {
         {result && (
           <div className="card" style={{ padding: 24, marginTop: 22 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-              <span className="pill pill-accent">Analysis complete</span>
+              <span className="pill pill-accent">{streaming ? status || "Analyzing…" : "Analysis complete"}</span>
               {result.intent && <span className="pill pill-neutral" style={{ textTransform: "capitalize" }}>{result.intent.replace(/_/g, " ")}</span>}
             </div>
             <div className="prose" style={{ font: "400 16.5px var(--font-serif)", color: "var(--text-strong)" }}>

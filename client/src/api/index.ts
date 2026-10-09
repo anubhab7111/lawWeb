@@ -149,7 +149,22 @@ export async function sendChatMessageStream(
         const error = await response.json().catch(() => ({}));
         throw new Error(extractErrorMessage(error, 'Failed to send message'));
     }
+    await readChatEventStream(response, onToken, onDone, onError, signal, onEvent);
+}
 
+/**
+ * Read a chat SSE response (shared by chat and document validation): tokens go
+ * to `onToken`, status/reset/replace to `onEvent`, done/stopped/superseded to
+ * `onDone`, and an `error` event or a dropped connection to `onError`.
+ */
+async function readChatEventStream(
+    response: Response,
+    onToken: (token: string) => void,
+    onDone: (metadata: StreamEvent) => void,
+    onError?: (error: string) => void,
+    signal?: AbortSignal,
+    onEvent?: (event: StreamEvent) => void,
+): Promise<void> {
     const reader = response.body?.getReader();
     if (!reader) throw new Error('No response body');
 
@@ -298,6 +313,39 @@ export async function validateDocumentText(
         throw new Error(extractErrorMessage(error, 'Failed to validate document'));
     }
     return response.json();
+}
+
+/**
+ * Statutory-compliance validation of an uploaded file or pasted text, streamed:
+ * the report header arrives first, then the analysis as it is written. Same
+ * callbacks as sendChatMessageStream; `onDone` carries `document_validation`.
+ */
+export async function validateDocumentStream(
+    input: { file?: File; text?: string; message?: string; forceValidation?: boolean },
+    sessionId: string | undefined,
+    onToken: (token: string) => void,
+    onDone: (metadata: StreamEvent) => void,
+    onError?: (error: string) => void,
+    signal?: AbortSignal,
+    onEvent?: (event: StreamEvent) => void,
+): Promise<void> {
+    const formData = new FormData();
+    if (input.file) formData.append('file', input.file);
+    if (input.text) formData.append('document_text', input.text);
+    if (input.message) formData.append('message', input.message);
+    if (input.forceValidation === false) formData.append('force_validation', 'false');
+    if (sessionId) formData.append('session_id', sessionId);
+    const response = await apiFetch(`${API_BASE_URL}/chat/validate-document/stream`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders() },
+        body: formData,
+        signal,
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(error, 'Failed to validate document'));
+    }
+    await readChatEventStream(response, onToken, onDone, onError, signal, onEvent);
 }
 
 /**

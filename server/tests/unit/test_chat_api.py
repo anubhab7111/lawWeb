@@ -127,6 +127,14 @@ def test_validate_document_stream_sends_the_document_with_validation_intent(clie
     assert kwargs["document_content"] == text
 
 
+def test_document_stream_can_leave_the_intent_to_the_message(client_for):
+    bot = FakeBot(events=[])
+    client_for(bot).post("/api/chat/validate-document/stream",
+                         data={"document_text": "A notice under section 106.", "message": "Summarise this",
+                               "force_validation": "false"})
+    assert bot.stream_calls[0][0] == "Summarise this"
+
+
 def test_validate_document_stream_rejects_an_empty_document(client_for):
     resp = client_for(FakeBot()).post("/api/chat/validate-document/stream", data={"document_text": " "})
     assert resp.status_code == 422
