@@ -163,7 +163,8 @@ class LegalDefectAnalyzer:
         )
         if key not in _THINK_CACHE:
             try:
-                _THINK_CACHE[key] = await self._step_think(classification)
+                checklist = await self._step_think(classification)
+                _THINK_CACHE[key], _ = await self._strip_unverified_cases(checklist)
             except Exception as e:
                 print(f"[ReAct] THINK step error: {e}")
                 return self._fallback_think(classification)
