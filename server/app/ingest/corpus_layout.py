@@ -44,7 +44,7 @@ TOP_LEVEL_DIRS = (
     "_legacy",
 )
 TOP_LEVEL_FILES = ("README.md", "MANIFEST.json")
-LEFT_ALONE = ("myenv",)  # a virtualenv breaks if moved
+LEFT_ALONE = ("myenv", "indiankanoon")  # a virtualenv breaks if moved; indiankanoon/ is a retired API cache
 STRAY_SCRIPTS = ("download.sh", "divide.sh")
 _YEAR_DIR = re.compile(r"^\d{4}$")
 

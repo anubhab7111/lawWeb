@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { RichText } from "./RichText";
 import { searchSimilarCases, searchSimilarCasesByText } from "../api";
 
 interface CaseHit {
@@ -31,7 +30,6 @@ interface Result {
     legalDomainHint: string;
   };
   similarSupremeCourtCases: CaseHit[];
-  relevantHighCourtCasesText: string;
   relevantStatutes: Statute[];
 }
 
@@ -181,15 +179,6 @@ export function SimilarCaseSearch() {
                       )}
                     </div>
                   ))}
-                </div>
-              </>
-            )}
-
-            {result.relevantHighCourtCasesText && (
-              <>
-                <div className="section-label">High Court and other cases (Indian Kanoon)</div>
-                <div className="card" style={{ padding: "14px 16px", marginBottom: 18 }}>
-                  <RichText text={result.relevantHighCourtCasesText} />
                 </div>
               </>
             )}

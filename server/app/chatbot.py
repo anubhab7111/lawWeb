@@ -1052,32 +1052,13 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     if subintent == "validation":
         return await _handle_document_validation(state)
 
-    # Run local Crime RAG initialization while the document pipeline prepares.
-    crime_rag = None
+    try:
+        from app.tools.criminal_rag import get_criminal_rag_system
 
-    async def init_crime_rag():
-        """Initialize Crime RAG in parallel."""
-        try:
-            from app.tools.criminal_rag import get_criminal_rag_system
-
-            rag_system = get_criminal_rag_system()
-            await rag_system.initialize()
-            return rag_system
-        except Exception:
-            return None
-
-    # Run both initializations in parallel
-    rag_task = asyncio.create_task(init_crime_rag())
-
-    crime_rag = await rag_task
-
-    # Track whether at least one RAG source succeeded (compulsory RAG).
-    # Provisional: crime_rag's own per-document grounding (result.crime_context,
-    # below) isn't available yet — it's folded in once the pipeline returns,
-    # since crime_rag.initialized only means "the shared index loaded at
-    # some point in this process's life," not "retrieved something for this
-    # document."
-    rag_succeeded = False
+        crime_rag = get_criminal_rag_system()
+        await crime_rag.initialize()
+    except Exception:
+        crime_rag = None
 
     # Use the enhanced document analysis pipeline
     try:
@@ -1101,12 +1082,6 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             for i, point in enumerate(result.key_points, 1):
                 response_parts.append(f"{i}. {point}")
 
-        if result.legal_references:
-            response_parts.append("\n\n**Relevant Legal References:**")
-            for ref in result.legal_references[:3]:
-                response_parts.append(f"\n• **{ref['title']}**")
-                response_parts.append(f"  {ref['excerpt'][:150]}...")
-
         if result.crime_context:
             response_parts.append("\n\n**Crime Reporting Context:**")
             passages = result.crime_context.get("relevant_passages", [])
@@ -1120,9 +1095,10 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
 
         response = "\n".join(response_parts)
 
-        # Fold in crime RAG's actual per-document grounding now that the
-        # pipeline has run, instead of the process-lifetime .initialized flag.
-        rag_succeeded = rag_succeeded or bool(
+        # Grounding is crime RAG's per-document retrieval, not its
+        # process-lifetime .initialized flag (the shared index may have loaded
+        # long ago without finding anything for this document).
+        rag_succeeded = bool(
             result.crime_context and result.crime_context.get("relevant_passages")
         )
 
@@ -1142,7 +1118,6 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
                 "summary": result.summary,
                 "key_points": result.key_points,
                 "document_type": document_type,
-                "legal_references": result.legal_references,
                 "confidence": result.confidence,
             },
             "messages": state["messages"]
@@ -1758,9 +1733,8 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
     """Assemble the grounded prompt for the general-query answer. Returns
     (prompt, retrieved_context).
 
-    concise=True builds the give-up retry variant: statute and case-law blocks
-    only lower-priority case-law blocks, a fraction of
-    the context budget, and an instruction to answer directly. The give-up is
+    concise=True builds the give-up retry variant: a fraction of the context
+    budget and an instruction to answer directly. The give-up is
     the model spending its whole budget deliberating inside <think>, so
     re-running the identical prompt is just latency; less to reason over and an
     explicit ask for a short answer is what can change the outcome."""
