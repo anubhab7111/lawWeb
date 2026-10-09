@@ -383,6 +383,41 @@ def file_fingerprint(path: Path) -> str:
     return f"{size}:{hashlib.sha1(head + tail).hexdigest()[:12]}"
 
 
+_WORD_RE = re.compile(r"[A-Za-z]+")
+
+
+def _split_word_count(text: str, vocab: set) -> int:
+    """Adjacent token pairs that only form a vocabulary word when joined
+    ("Magi strate"): pypdf's plain mode splits words at kerning gaps."""
+    toks = _WORD_RE.findall(text)
+    n = 0
+    for a, b in zip(toks, toks[1:]):
+        joined = (a + b).lower()
+        if len(joined) >= 6 and joined in vocab and (a.lower() not in vocab or b.lower() not in vocab):
+            n += 1
+    return n
+
+
+def _choose_extraction(plain: str, layout: Optional[str], parse) -> Tuple[str, List["LegalChunk"]]:
+    """Prefer layout-mode text only when it parses to exactly the same
+    sections and has fewer split words: layout mode fixes kerning splits but
+    loses or invents section headers in some acts (BNS parses to nothing)."""
+    plain_chunks = parse(plain)
+    if not layout:
+        return plain, plain_chunks
+    layout_chunks = parse(layout)
+    if {c.section_number for c in layout_chunks} != {c.section_number for c in plain_chunks}:
+        return plain, plain_chunks
+    counts: Dict[str, int] = {}
+    for w in _WORD_RE.findall(plain + "\n" + layout):
+        w = w.lower()
+        counts[w] = counts.get(w, 0) + 1
+    vocab = {w for w, c in counts.items() if c >= 3 and len(w) >= 2}
+    if _split_word_count(layout, vocab) < _split_word_count(plain, vocab):
+        return layout, layout_chunks
+    return plain, plain_chunks
+
+
 def _natural_key(chunk: "LegalChunk"):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", chunk.chunk_id)]
 
@@ -1177,13 +1212,26 @@ class BaseLegalRAGSystem(ABC):
         all_chunks: List[LegalChunk] = []
         for pdf_path, primary_domain, domains in pdf_sources:
             try:
-                loader = PyPDFLoader(str(pdf_path))
-                pages = loader.load()
-                full_text = "\n".join(p.page_content for p in pages)
-                parsed = self._parse_pdf(full_text, pdf_path.name, primary_domain)
+                pages = PyPDFLoader(str(pdf_path)).load()
+                plain = "\n".join(p.page_content for p in pages)
+                try:
+                    layout_pages = PyPDFLoader(str(pdf_path), extraction_mode="layout").load()
+                    layout = "\n".join(
+                        line.strip()
+                        for p in layout_pages
+                        for line in p.page_content.split("\n")
+                    )
+                except Exception:
+                    layout = None
+                full_text, parsed = _choose_extraction(
+                    plain,
+                    layout,
+                    lambda t: self._parse_pdf(t, pdf_path.name, primary_domain),
+                )
                 for c in parsed:
                     c.domains = list(domains)
-                print(f"  {pdf_path.name}: {len(pages)} pages → {len(parsed)} chunks")
+                mode = "layout" if full_text is layout else "plain"
+                print(f"  {pdf_path.name}: {len(pages)} pages → {len(parsed)} chunks ({mode})")
                 all_chunks.extend(parsed)
             except Exception as e:
                 print(f"  ERROR loading {pdf_path.name}: {e}")
