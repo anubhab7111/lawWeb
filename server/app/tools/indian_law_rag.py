@@ -88,8 +88,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
             "affidavit without notary attestation validity",
         ],
         "key_precedents": [
-            "A.K. K. Nambiar v. Union of India (1970) — Affidavit as evidence",
-            "Barium Chemicals Ltd v. Company Law Board (1967) — Requirements of valid affidavit",
         ],
     },
     "Sale Deed": {
@@ -112,7 +110,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         ],
         "key_precedents": [
             "Suraj Lamp & Industries v. State of Haryana (2012) — Sale through GPA/POA void",
-            "K. Ramaswami Gounder v. Arumugam (1999) — Registration of sale deed mandatory",
         ],
     },
     "FIR": {
@@ -135,7 +132,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         ],
         "key_precedents": [
             "Lalita Kumari v. Govt. of U.P. (2014) — Mandatory registration of FIR for cognizable offence",
-            "State of Andhra Pradesh v. Punati Ramulu (1993) — FIR not encyclopedia of events",
         ],
     },
     "Power of Attorney": {
@@ -158,7 +154,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         ],
         "key_precedents": [
             "Suraj Lamp & Industries v. State of Haryana (2012) — POA-based sale is not valid sale",
-            "Bryant v. Powis (1871) — Scope of authority of attorney",
         ],
     },
     "Rent Agreement": {
@@ -181,8 +176,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
             "unregistered lease agreement eviction",
         ],
         "key_precedents": [
-            "Anthony v. K.C. Ittoop (2000) — Unregistered lease inadmissible as evidence",
-            "S.S. Grewal v. Desh Raj (1968) — Leave and licence vs lease",
         ],
     },
     "Agreement to Sell": {
@@ -205,7 +198,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         ],
         "key_precedents": [
             "Suraj Lamp & Industries v. State of Haryana (2012)",
-            "Chand Rani v. Kamal Rani (1993) — Time as essence in agreement to sell",
         ],
     },
     "Notice (CrPC/CPC)": {
@@ -226,7 +218,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
             "effect of non-compliance with legal notice",
         ],
         "key_precedents": [
-            "State of Punjab v. Geeta Iron (1978) — Strict compliance with Section 80 CPC",
             "Dashrath Rupsingh Rathod v. State of Maharashtra (2014) — Section 138 NI Act jurisdiction",
         ],
     },
@@ -282,7 +273,7 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
             "Section 190 CrPC / Section 210 BNSS — Cognizance of offences",
         ],
         "search_queries": ["private complaint before magistrate Section 200 CrPC requirements"],
-        "key_precedents": ["Priyanka Srivastava v. State of U.P. (2015) — Affidavit with Section 156(3) applications"],
+        "key_precedents": [],
     },
     "Chargesheet": {
         "acts": ["Code of Criminal Procedure, 1973 (CrPC)", "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)"],
@@ -311,7 +302,6 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         ],
         "key_precedents": [
             "H. Venkatachala Iyengar v. B.N. Thimmajamma (1959) — Suspicious circumstances in wills",
-            "Jaswant Kaur v. Amrit Kaur (1977) — Attestation requirements for wills",
         ],
     },
 }
@@ -372,7 +362,7 @@ class IndianLawRAGTool:
         law_info = self.law_map.get(document_type, {})
         context.applicable_acts = law_info.get("acts", [])
         context.applicable_sections = law_info.get("key_sections", [])
-        context.precedent_notes = law_info.get("key_precedents", [])
+        context.precedent_notes = await self._verified_precedents(law_info)
 
         # 2. Generate state-specific notes if jurisdiction detected
         if jurisdiction_hints:
@@ -399,6 +389,24 @@ class IndianLawRAGTool:
         context.references.extend(static_refs)
 
         return context
+
+    async def _verified_precedents(self, law_info: Dict[str, Any]) -> List[str]:
+        """The type's curated precedents that resolve in the indexed landmark
+        corpus. Retrieving extra cases by shared Act was tried and dropped: it
+        surfaced off-topic judgments (GPA sales for a rent agreement)."""
+        from app.tools.case_law_rag import get_case_law_rag_system
+
+        try:
+            rag = get_case_law_rag_system()
+            if not rag.initialized and not await rag.initialize():
+                return []
+            return [
+                entry for entry in law_info.get("key_precedents", [])
+                if rag.find_case(entry.split(" — ")[0])
+            ]
+        except Exception as e:
+            print(f"[IndianLawRAG] case-law lookup failed ({e}) — no precedents listed.")
+            return []
 
     def _get_state_notes(
         self, document_type: str, jurisdiction_hints: List[str]

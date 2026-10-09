@@ -113,3 +113,56 @@ def case_verification_footer(report: CaseCitationReport) -> str:
             f"It may be a real judgment outside this database — please verify."
         )
     return "\n".join(lines)
+
+
+# Year optional, unlike _CASE_CITE_RE: this strips rather than flags, and runs only
+# on the document-validation report, where "X v. Y" is always a case reference.
+_NAME_PARTY_RE = rf"{_WORD}(?:\s+(?:{_WORD}|{_CONN}|&)){{0,6}}"
+_CASE_NAME_RE = re.compile(
+    rf"[*_]{{0,2}}(?P<p1>{_NAME_PARTY_RE})\s+(?:v\.?|vs\.?|versus)\s+(?P<p2>{_NAME_PARTY_RE})[*_]{{0,2}}"
+    rf"(?:\s*\(\d{{4}}\))?"
+)
+_LEAD_INS = frozenset({"in", "see", "as", "per", "under", "also", "cf", "cf.", "following", "refer", "the", "and"})
+_TRAILING = frozenset({"of", "for", "the", "and", "de", "van", "von", "&"})
+
+
+def _case_name(m: "re.Match") -> str:
+    p1 = m.group("p1").split()
+    p2 = m.group("p2").split()
+    while len(p1) > 1 and p1[0].lower() in _LEAD_INS:
+        p1 = p1[1:]
+    while len(p2) > 1 and p2[-1].lower() in _TRAILING:
+        p2 = p2[:-1]
+    return f"{' '.join(p1)} v. {' '.join(p2)}"
+_CASE_LAW_LABEL_RE = re.compile(r"^(\s*(?:[-*•]\s*)?(?:\*\*)?Case Law:?(?:\*\*)?:?\s*)", re.IGNORECASE)
+# Not after "v."/"vs." or an initial ("K.C.", "U.P."), which sit inside case names.
+_SENTENCE_END_RE = re.compile(r"(?<=[.;])(?<!\bv\.)(?<!\bvs\.)(?<![\s.][A-Z]\.)\s+")
+NO_VERIFIED_CASE = "None in our case database"
+
+
+def strip_unverified_cases(text: str, find_case) -> Tuple[str, List[str]]:
+    """Remove case names `find_case` can't resolve: a table cell naming one
+    becomes "—", a "Case Law:" line's value becomes NO_VERIFIED_CASE, and in
+    prose the sentence naming it is dropped (its claimed holding is as
+    unverified as the name). Returns (text, removed names)."""
+    removed: List[str] = []
+
+    def unverified(fragment: str) -> bool:
+        bad = [name for name in map(_case_name, _CASE_NAME_RE.finditer(fragment)) if find_case(name) is None]
+        removed.extend(bad)
+        return bool(bad)
+
+    out = []
+    for line in text.split("\n"):
+        if line.lstrip().startswith("|"):
+            cells = line.split("|")
+            line = "|".join(" — " if unverified(c) else c for c in cells)
+        elif (label := _CASE_LAW_LABEL_RE.match(line)) and unverified(line[label.end():]):
+            line = label.group(1) + NO_VERIFIED_CASE
+        elif _CASE_NAME_RE.search(line):
+            kept = [sent for sent in _SENTENCE_END_RE.split(line) if not unverified(sent)]
+            line = " ".join(kept)
+            if not line.strip() or line.strip() in ("-", "*", "•"):
+                continue
+        out.append(line)
+    return "\n".join(out), list(dict.fromkeys(removed))

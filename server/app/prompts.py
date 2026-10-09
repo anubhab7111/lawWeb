@@ -234,7 +234,7 @@ Produce the final defect analysis by:
    - **Defect:** Clear description of what is missing or inadequate
    - **Consequence:** Specific legal effect under Indian law (be precise — "may be challenged", "renders voidable", "unenforceable", etc.)
    - **Authority:** Act, Section, and Rule — cite precisely
-   - **Case Law:** Relevant judgment (if available from precedents or your knowledge)
+   - **Case Law:** a case listed under Relevant Precedents above, by its exact name — or "None in our case database" if none fits
    - **Remediation:** Concrete steps to fix this defect
 
 3. For each CONFIRMED PRESENT element, briefly note it is satisfactory.
@@ -248,6 +248,7 @@ Produce the final defect analysis by:
 
 CRITICAL RULES:
 - NEVER say "this document is legally valid" or "legally binding"
+- NEVER cite a case that is not listed under Relevant Precedents — any other case name is removed from the report
 - Frame findings as: "Based on statutory requirements and standard drafting practices, the following potential issues were identified"
 - Use Indian English legal terminology
 - Reference specific Indian statutes with section numbers
