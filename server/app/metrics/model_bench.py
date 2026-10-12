@@ -105,13 +105,24 @@ def cite_recall(answer: str, gold: Sequence[dict]) -> Optional[float]:
     return hits / len(gold)
 
 
+_CRIME_CONTEXT_MARK = "APPLICABLE PROVISIONS"
+_SECTION_SIGN_RE = re.compile(r"§\s*(\d{1,4}[A-Za-z]{0,2})")
+
+
 def context_sections(prompt: str) -> set:
-    return {sec for sec, _ in _context_passages(prompt) if sec}
+    """Section numbers the prompt supplied: general-answer context entries, plus the crime-report provisions list."""
+    sections = {sec for sec, _ in _context_passages(prompt) if sec}
+    if _CRIME_CONTEXT_MARK in prompt:
+        tail = prompt.split(_CRIME_CONTEXT_MARK, 1)[1]
+        sections |= {m.upper() for m in _SECTION_SIGN_RE.findall(tail)}
+    return sections
 
 
-def cite_precision(answer: str, rag, prompt: str) -> Optional[float]:
-    """Share of the answer's statutory citations that exist and were in the context the model was shown."""
-    report = verify_citations(answer.replace("§", " Section "), rag, context_sections(prompt))
+def cite_precision(answer: str, rag, prompt: str, in_context: bool = True) -> Optional[float]:
+    """Share of the answer's statutory citations that exist in the index and, if in_context, were in the supplied context."""
+    report = verify_citations(
+        answer.replace("§", " Section "), rag, context_sections(prompt) if in_context else None
+    )
     if not report.checks:
         return None
     return len(report.verified) / len(report.checks)
@@ -168,12 +179,13 @@ def answer_metrics(answer: str, item: dict, prompt: str, done_reason: str, rag) 
     stratum, gold = item["stratum"], item.get("gold", {})
     if not answer.strip():
         return {k: 0.0 for k in WEIGHTS}
-    grounded = stratum != "B"
+    # Document prompts list their law as free text, so E checks only that cited sections exist; the rules-only
+    # grounding pass needs the general-answer context format, which only A and C prompts have.
     return {
         "facts": fact_recall(answer, gold.get("facts", [])),
         "cite_recall": cite_recall(answer, gold.get("cite", [])),
-        "cite_precision": cite_precision(answer, rag, prompt),
-        "supported": supported_claims(answer, rag, prompt) if grounded else None,
+        "cite_precision": cite_precision(answer, rag, prompt, in_context=stratum != "E"),
+        "supported": supported_claims(answer, rag, prompt) if stratum in ("A", "C") else None,
         "honesty": honesty(answer, stratum, gold),
         "format": format_score(answer, stratum, done_reason),
     }

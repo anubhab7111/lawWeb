@@ -129,3 +129,17 @@ def test_gates_and_decision_rule():
     ]
     assert mb.recommend(rows) == "close-fast"
     assert mb.recommend([rows[3]]) is None
+
+
+def test_crime_prompt_sections_and_document_precision():
+    prompt = (
+        'Cite e.g. "Bharatiya Nyaya Sanhita § 303" or "§ 351(3)".\n\nCrime reported: x\nType: rape\n\n'
+        "APPLICABLE PROVISIONS (cite the Act named with each section):\n"
+        "• Bharatiya Nyaya Sanhita BNS § 64 (rape (formerly IPC § 376))\n  Punishment: ten years"
+    )
+    assert mb.context_sections(prompt) == {"64", "376"}
+    rag = FakeRag()
+    doc_prompt = "APPLICABLE LAW CONTEXT:\n  Key Sections:   - Section 303 BNS"
+    answer = "Section 303 of the Bharatiya Nyaya Sanhita applies."
+    assert mb.cite_precision(answer, rag, doc_prompt) == 0.0
+    assert mb.cite_precision(answer, rag, doc_prompt, in_context=False) == 1.0
