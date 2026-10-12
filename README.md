@@ -26,16 +26,38 @@ Optional integrations (all off unless configured in `server/.env`): `FCM_SERVICE
 ### One-time PostgreSQL setup (Arch Linux)
 
 ```bash
-sudo pacman -S --needed postgresql
+sudo pacman -S --needed postgresql pgvector
 sudo -u postgres initdb --locale=en_US.UTF-8 -E UTF8 -D /var/lib/postgres/data   # skip if already initialized
 sudo systemctl enable --now postgresql
 sudo -u postgres psql -c "CREATE ROLE lawweb LOGIN PASSWORD 'lawweb' CREATEDB;"
 sudo -u postgres createdb -O lawweb lawweb
+sudo -u postgres psql -d lawweb -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
 ## Setup & Run
 
-Create `server/.env` with `DATABASE_URL="postgresql://lawweb:lawweb@localhost:5432/lawweb?schema=public"`, `JWT_SECRET`, and your `BRAINTREE_MERCHANT_ID` / `BRAINTREE_PUBLIC_KEY` / `BRAINTREE_PRIVATE_KEY` sandbox keys.
+With the prerequisites above installed, one script sets everything up and starts it:
+
+```bash
+./lawweb.sh          # setup, then start
+./lawweb.sh setup    # setup only
+./lawweb.sh start    # start only; Ctrl-C stops the backend and the client
+```
+
+**Setup** is safe to rerun. It:
+- creates the conda env if it is missing and installs `server/requirements.txt`;
+- creates `server/.env` and `client/.env` from their `.env.example` files (existing files are never overwritten) and generates a `JWT_SECRET` if it is empty;
+- checks the database connection and the `vector` extension, then runs `app.db.init_db`;
+- runs `npm install` in `client/`;
+- pulls the Ollama model named in `server/.env` if it is missing.
+
+It does not run `sudo`: if PostgreSQL is not ready it prints the one-time commands and stops. Add your Braintree sandbox keys to `server/.env` yourself; bookings need them, the rest of the app does not.
+
+**Start** launches Ollama if it is not already running, then the backend (http://localhost:8000, API docs at `/docs`), waits for it to answer, and then the client (http://localhost:3000).
+
+### Manual steps
+
+Copy `server/.env.example` to `server/.env` and fill in `JWT_SECRET` and your `BRAINTREE_MERCHANT_ID` / `BRAINTREE_PUBLIC_KEY` / `BRAINTREE_PRIVATE_KEY` sandbox keys.
 
 ```bash
 # Backend
