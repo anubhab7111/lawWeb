@@ -45,7 +45,7 @@ With the prerequisites above installed, one script sets everything up and starts
 ```
 
 **Setup** is safe to rerun. It:
-- creates the conda env if it is missing and installs `server/requirements.txt`;
+- creates the conda env if it is missing and installs `server/requirements.txt` (faiss comes from conda, not pip, because pip's `faiss-gpu` breaks a conda-installed faiss);
 - creates `server/.env` and `client/.env` from their `.env.example` files (existing files are never overwritten) and generates a `JWT_SECRET` if it is empty;
 - checks the database connection and the `vector` extension, then runs `app.db.init_db`;
 - runs `npm install` in `client/`;

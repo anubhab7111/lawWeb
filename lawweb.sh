@@ -79,13 +79,15 @@ setup_python() {
         info "Python packages are up to date"
     else
         info "Installing Python packages (first run downloads several GB)"
-        local reqs="$SERVER/requirements.txt"
-        # A conda-installed faiss provides the same module; pip's faiss-gpu would overwrite its files and break it.
-        if "$PY" -c 'import faiss' >/dev/null 2>&1; then
-            reqs="$(mktemp)"
-            grep -viE '^faiss' "$SERVER/requirements.txt" > "$reqs"
+        # faiss comes from conda: pip's faiss-gpu installs the same module and overwrites a conda build's files.
+        if ! "$PY" -c 'import faiss' >/dev/null 2>&1; then
+            conda install -y -n "$CONDA_ENV" faiss-gpu
         fi
+        local reqs
+        reqs="$(mktemp)"
+        grep -viE '^faiss' "$SERVER/requirements.txt" > "$reqs"
         "$PY" -m pip install -r "$reqs"
+        rm -f "$reqs"
         echo "$want" > "$stamp"
     fi
 }
