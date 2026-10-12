@@ -1,0 +1,242 @@
+{
+ "8a09b3": {
+  "item": "a_real_theft_q",
+  "model": "qwen3-4b-instruct"
+ },
+ "f22a5d": {
+  "item": "a_real_theft_q",
+  "model": "llama3.2-3b"
+ },
+ "234333": {
+  "item": "a_real_theft_q",
+  "model": "qwen3-4b-thinking"
+ },
+ "68818b": {
+  "item": "a_real_theft_q",
+  "model": "qwen2.5-3b"
+ },
+ "a138dd": {
+  "item": "a_real_art21",
+  "model": "llama3.2-3b"
+ },
+ "27ccb6": {
+  "item": "a_real_art21",
+  "model": "qwen3-4b-instruct"
+ },
+ "0ca72d": {
+  "item": "a_real_art21",
+  "model": "qwen2.5-3b"
+ },
+ "bdf1ce": {
+  "item": "a_real_art21",
+  "model": "qwen3-4b-thinking"
+ },
+ "e122a0": {
+  "item": "a_real_bail",
+  "model": "qwen2.5-3b"
+ },
+ "c2e811": {
+  "item": "a_real_bail",
+  "model": "qwen3-4b-instruct"
+ },
+ "f78ba6": {
+  "item": "a_real_bail",
+  "model": "llama3.2-3b"
+ },
+ "0a70af": {
+  "item": "a_real_bail",
+  "model": "qwen3-4b-thinking"
+ },
+ "0a7f4f": {
+  "item": "a_real_art19",
+  "model": "qwen3-4b-thinking"
+ },
+ "ad1660": {
+  "item": "a_real_art19",
+  "model": "qwen3-4b-instruct"
+ },
+ "874eb3": {
+  "item": "a_real_art19",
+  "model": "qwen2.5-3b"
+ },
+ "a53f79": {
+  "item": "a_real_art19",
+  "model": "llama3.2-3b"
+ },
+ "05e69d": {
+  "item": "a_evict",
+  "model": "qwen3-4b-thinking"
+ },
+ "7c8a47": {
+  "item": "a_evict",
+  "model": "qwen3-4b-instruct"
+ },
+ "2a0ceb": {
+  "item": "a_evict",
+  "model": "llama3.2-3b"
+ },
+ "c52883": {
+  "item": "a_evict",
+  "model": "qwen2.5-3b"
+ },
+ "686e29": {
+  "item": "a_will_reg",
+  "model": "llama3.2-3b"
+ },
+ "f296d7": {
+  "item": "a_will_reg",
+  "model": "qwen3-4b-thinking"
+ },
+ "ec6351": {
+  "item": "a_will_reg",
+  "model": "qwen3-4b-instruct"
+ },
+ "4ac069": {
+  "item": "a_will_reg",
+  "model": "qwen2.5-3b"
+ },
+ "403d22": {
+  "item": "a_cheating_bns",
+  "model": "qwen2.5-3b"
+ },
+ "5717f3": {
+  "item": "a_cheating_bns",
+  "model": "llama3.2-3b"
+ },
+ "64994e": {
+  "item": "a_cheating_bns",
+  "model": "qwen3-4b-instruct"
+ },
+ "f48b05": {
+  "item": "a_cheating_bns",
+  "model": "qwen3-4b-thinking"
+ },
+ "21b029": {
+  "item": "b_bns",
+  "model": "llama3.2-3b"
+ },
+ "524f6f": {
+  "item": "b_bns",
+  "model": "qwen3-4b-instruct"
+ },
+ "c8ab8c": {
+  "item": "b_bns",
+  "model": "qwen2.5-3b"
+ },
+ "0a76d5": {
+  "item": "b_bns",
+  "model": "qwen3-4b-thinking"
+ },
+ "32f2ff": {
+  "item": "b_bnss",
+  "model": "llama3.2-3b"
+ },
+ "bd6a8b": {
+  "item": "b_bnss",
+  "model": "qwen3-4b-instruct"
+ },
+ "caca2f": {
+  "item": "b_bnss",
+  "model": "qwen3-4b-thinking"
+ },
+ "9cbc63": {
+  "item": "b_bnss",
+  "model": "qwen2.5-3b"
+ },
+ "15a00a": {
+  "item": "b_bsa",
+  "model": "llama3.2-3b"
+ },
+ "3b5fde": {
+  "item": "b_bsa",
+  "model": "qwen3-4b-instruct"
+ },
+ "bef5f1": {
+  "item": "b_bsa",
+  "model": "qwen2.5-3b"
+ },
+ "f3aee2": {
+  "item": "b_bsa",
+  "model": "qwen3-4b-thinking"
+ },
+ "bb315d": {
+  "item": "c_consumer_fee",
+  "model": "qwen3-4b-instruct"
+ },
+ "8f9e1b": {
+  "item": "c_consumer_fee",
+  "model": "qwen2.5-3b"
+ },
+ "8b45a2": {
+  "item": "c_consumer_fee",
+  "model": "qwen3-4b-thinking"
+ },
+ "07227c": {
+  "item": "c_consumer_fee",
+  "model": "llama3.2-3b"
+ },
+ "cd003f": {
+  "item": "d_real_rape",
+  "model": "qwen3-4b-instruct"
+ },
+ "367103": {
+  "item": "d_real_rape",
+  "model": "llama3.2-3b"
+ },
+ "9fba80": {
+  "item": "d_real_rape",
+  "model": "qwen2.5-3b"
+ },
+ "d8c986": {
+  "item": "d_real_rape",
+  "model": "qwen3-4b-thinking"
+ },
+ "0b2ffe": {
+  "item": "d_snatch",
+  "model": "llama3.2-3b"
+ },
+ "cacce9": {
+  "item": "d_snatch",
+  "model": "qwen3-4b-thinking"
+ },
+ "2bc2dc": {
+  "item": "d_snatch",
+  "model": "qwen2.5-3b"
+ },
+ "20f048": {
+  "item": "d_snatch",
+  "model": "qwen3-4b-instruct"
+ },
+ "bd3b1b": {
+  "item": "d_threat",
+  "model": "qwen3-4b-thinking"
+ },
+ "496788": {
+  "item": "d_threat",
+  "model": "qwen2.5-3b"
+ },
+ "f3c38f": {
+  "item": "d_threat",
+  "model": "llama3.2-3b"
+ },
+ "69fd2d": {
+  "item": "d_threat",
+  "model": "qwen3-4b-instruct"
+ },
+ "7c4f55": {
+  "item": "e_doc_fir",
+  "model": "qwen3-4b-instruct"
+ },
+ "38c7ff": {
+  "item": "e_doc_fir",
+  "model": "qwen2.5-3b"
+ },
+ "5f418f": {
+  "item": "e_doc_fir",
+  "model": "qwen3-4b-thinking"
+ },
+ "24f6d4": {
+  "item": "e_doc_fir",
+  "model": "llama3.2-3b"
+ }
+}
