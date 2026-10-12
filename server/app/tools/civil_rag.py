@@ -1,29 +1,4 @@
-"""
-civil_rag.py — Civil Law Domain RAG System
-
-Handles: Indian Contract Act 1872, Transfer of Property Act 1882,
-         Code of Civil Procedure 1908, Specific Relief Act 1963,
-         Negotiable Instruments Act 1881, Limitation Act 1963,
-         Protection of Women from Domestic Violence Act 2005,
-         Right to Information Act 2005, and others.
-
-Source PDFs: app/data/bare_acts/civil/
-
-Key design decisions
---------------------
-* NO punishment-clause filter. Civil law is built on rights,
-  obligations, and remedies — not criminal sentences. Sections like
-  Indian Contract Act § 10 ("What agreements are contracts") have no
-  "shall be punished" clause but are the foundation of contract law.
-  Filtering them out was the root cause of hallucinations.
-
-* _preprocess_query() expands civil vocabulary (breach of contract,
-  damages, remedies, etc.) without ever mapping to IPC sections.
-
-* retrieve() is the universal entry-point from the chatbot.
-  The result is returned as a LegalContext (new type) rather than the
-  old RAGResult (criminal-specific type).
-"""
+"""civil_rag.py — Civil Law Domain RAG System Handles: Indian Contract Act 1872, Transfer of Property Act 1882, Code of Civil Procedure 1908, Specific Relief Act 1963, Negotiable..."""
 
 from __future__ import annotations
 
@@ -34,14 +9,7 @@ from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalContext
 
 
 class CivilRAGSystem(BaseLegalRAGSystem):
-    """
-    Civil law RAG: indexes all PDFs under app/data/bare_acts/civil/.
-
-    Filtering policy:
-      - ALL sections are indexed (no punishment-clause filter).
-      - This ensures foundational provisions like ICA §10, Specific
-        Relief Act §10–16, and CPC Order rules are available.
-    """
+    """Civil law RAG: indexes all PDFs under app/data/bare_acts/civil/."""
 
     @property
     def domain_name(self) -> str:
@@ -51,10 +19,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
     def pdf_subdir(self) -> str:
         return "civil"
 
-    # No override of _parse_legal_sections() — base implementation is correct
-    # for civil law (generic parser, no punishment filter).
-
-    # ── Adapter: delegate storage/retrieval to the unified index ──
 
     async def initialize(self) -> bool:
         from app.tools.unified_legal_rag import get_unified_rag_system
@@ -88,15 +52,11 @@ class CivilRAGSystem(BaseLegalRAGSystem):
         )
 
     def _preprocess_query(self, query: str) -> str:
-        """
-        Expand civil law queries with domain vocabulary.
-
-        Deliberately civil-only — never maps to criminal section headings.
-        """
+        """Expand civil law queries with domain vocabulary."""
         q = query.lower()
         terms: List[str] = []
 
-        # Contract law
+
         if any_word(q, ["breach", "breached", "default", "non-performance"]):
             terms.extend(["breach of contract", "damages", "Section 73", "Section 74"])
         if any_word(q, ["contract", "agreement", "enforceable"]):
@@ -137,7 +97,7 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-        # Property / landlord-tenant
+
         if any_word(q, ["lease", "rent", "tenant", "landlord", "eviction"]):
             terms.extend(
                 ["lease", "Section 105 Transfer of Property Act", "tenancy", "eviction"]
@@ -149,7 +109,7 @@ class CivilRAGSystem(BaseLegalRAGSystem):
         if any_word(q, ["mortgage", "hypothecation", "charge on property"]):
             terms.extend(["mortgage", "Section 58", "Transfer of Property Act"])
 
-        # Negotiable instruments
+
         if any_word(q, ["cheque", "bounce", "dishonour", "138", "ni act"]):
             terms.extend(
                 [
@@ -163,7 +123,7 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                 ["promissory note", "bill of exchange", "Negotiable Instruments Act"]
             )
 
-        # Civil procedure
+
         if any_word(q, ["suit", "plaint", "civil court", "limitation"]):
             terms.extend(
                 ["code of civil procedure", "limitation period", "Limitation Act"]
@@ -171,14 +131,14 @@ class CivilRAGSystem(BaseLegalRAGSystem):
         if any_word(q, ["injunction", "stay order"]):
             terms.extend(["temporary injunction", "Order 39 CPC"])
 
-        # RTI
+
         if any_word(q, ["rti", "right to information", "public authority", "disclosure"]
         ):
             terms.extend(
                 ["right to information", "RTI Act", "public authority", "Section 6"]
             )
 
-        # AI / technology liability (civil tort framing — NOT criminal)
+
         if any_word(q, ["ai", "artificial intelligence", "algorithm", "automated"]
         ):
             if any_word(q, ["liable", "liability", "loss", "damage"]):
@@ -191,7 +151,7 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                     ]
                 )
 
-        # Corporate / financial loss (civil framing)
+
         if any_word(q, ["financial loss", "economic loss", "monetary loss"]):
             terms.extend(
                 [
@@ -201,7 +161,7 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-        # Cryptocurrency / blockchain (civil/regulatory framing — NOT criminal)
+
         if any_word(q, ["cryptocurrency", "crypto", "bitcoin", "blockchain"]):
             terms.extend(
                 [
@@ -216,10 +176,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
             return query + " " + " ".join(terms)
         return query
 
-
-# ─────────────────────────────────────────────────────────────
-# Singleton
-# ─────────────────────────────────────────────────────────────
 
 _civil_rag: Optional[CivilRAGSystem] = None
 

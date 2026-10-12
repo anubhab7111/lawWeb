@@ -1,17 +1,4 @@
-"""
-case_firac_extractor.py — FIRAC extraction for indexed CASE LAW judgments,
-the corpus-side counterpart to firac_extractor.py (which extracts FIRAC from
-the user's UPLOADED document at query time).
-
-A judgment differs from a petition/order in shape: the operative holding and
-ratio decidendi usually sit in the final third of the text, after lengthy
-recitals of facts and arguments, so a head-only truncation (as
-firac_extractor.py uses for short uploaded documents) would systematically
-cut off the holding. This sampler takes head + tail instead.
-
-Used offline by generate_case_firac.py to backfill app/data/case_law/*.json;
-never called on the request path.
-"""
+"""case_firac_extractor.py — FIRAC extraction for indexed CASE LAW judgments, the corpus-side counterpart to firac_extractor.py (which extracts FIRAC from the user's UPLOADED..."""
 
 from __future__ import annotations
 

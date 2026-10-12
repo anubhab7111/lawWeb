@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Unified Indian Legal Documents Downloader
-"""
+"""Unified Indian Legal Documents Downloader"""
 
 import logging
 import sys
@@ -34,22 +32,16 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
-MIN_FILE_SIZE_BYTES = 1024  # files smaller than 1 KB are treated as corrupt/empty
+MIN_FILE_SIZE_BYTES = 1024
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def download_file(client: httpx.Client, url: str, dest: Path) -> bool:
-    """
-    Attempt to download *url* into *dest*.
-    Returns True on success, False on any failure (HTML redirect, bad status,
-    network error, or suspiciously small file).
-    Already-present files are silently skipped and return True.
-    """
+    """Attempt to download *url* into *dest*."""
     if dest.exists() and dest.stat().st_size > MIN_FILE_SIZE_BYTES:
         log.info(f"  [SKIP] Already exists: {dest.name}")
         return True
@@ -59,8 +51,8 @@ def download_file(client: httpx.Client, url: str, dest: Path) -> bool:
             with client.stream("GET", url, follow_redirects=True, timeout=120.0) as r:
                 ct = r.headers.get("content-type", "")
                 if "text/html" in ct:
-                    # India Code / gov servers redirect invalid bitstream URLs
-                    # to an HTML session page — not a real PDF.
+
+
                     log.warning(f"  [WARN] Server returned HTML (not PDF): {url}")
                     return False
                 r.raise_for_status()
@@ -101,7 +93,7 @@ def download_file(client: httpx.Client, url: str, dest: Path) -> bool:
 
 
 def download_with_fallbacks(client: httpx.Client, urls: list[str], dest: Path) -> bool:
-    """Try each URL in order. Return True as soon as one succeeds."""
+    """Try each URL in order."""
     for url in urls:
         if download_file(client, url, dest):
             return True
@@ -109,9 +101,8 @@ def download_with_fallbacks(client: httpx.Client, urls: list[str], dest: Path) -
 
 
 DOCUMENTS: list[tuple[str, str, list[str]]] = [
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CRIMINAL — new 2023 codes  (originally from download_legal_data.py)
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/criminal",
         "Bharatiya_Nyaya_Sanhita_BNS_2023.pdf",
@@ -130,16 +121,15 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/criminal",
         "Bharatiya_Sakshya_Adhiniyam_BSA_2023.pdf",
         [
-            # NOTE: the old MHA link (BharatiyaSakshyaAdhiniyam_24022024.pdf)
-            # was the 2-page enforcement notification, NOT the bare act.
+
+
             "https://www.indiacode.nic.in/bitstream/123456789/20063/1/aa202347.pdf",
             "https://www.indiacode.nic.in/bitstream/123456789/20063/1/a2023-47.pdf",
             "https://www.mha.gov.in/sites/default/files/2024-04/250882_english_01042024_0.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CRIMINAL — legacy codes
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/criminal",
         "Indian_Penal_Code_1860.pdf",
@@ -161,9 +151,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://www.indiacode.nic.in/bitstream/123456789/4218/1/THE-INDIAN-EVIDENCE-ACT-1872.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CRIMINAL — special statutes  (from download_legal_data1.py)
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/criminal",
         "NDPS_Act_1985.pdf",
@@ -184,7 +173,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/criminal",
         "POCSO_Act_2012.pdf",
         [
-            # NOTE: the old WCD link served a training slideshow, NOT the act.
+
             "https://www.indiacode.nic.in/bitstream/123456789/2079/1/AA2012-32.pdf",
             "https://www.indiacode.nic.in/bitstream/123456789/15303/1/pocso_act,_2012.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Protection%20of%20Children%20from%20Sexual%20Offences%20Act%2C%202012.pdf",
@@ -198,9 +187,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Scheduled%20Castes%20and%20the%20Scheduled%20Tribes%20%28Prevention%20of%20Atrocities%29%20Act%2C%201989.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CONSTITUTIONAL
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/constitutional",
         "Constitution_of_India.pdf",
@@ -221,15 +209,14 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/constitutional",
         "Protection_of_Human_Rights_Act_1993.pdf",
         [
-            # GOV — NHRC
+
             "https://nhrc.nic.in/sites/default/files/PHRA%201993.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Protection%20of%20Human%20Rights%20Act%2C%201993.pdf",
             "https://www.indiacode.nic.in/bitstream/123456789/15497/1/the_protection_of_human_rights_act,_1993.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CIVIL — core procedure & general
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/civil",
         "Code_of_Civil_Procedure_1908.pdf",
@@ -300,7 +287,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://www.indiacode.nic.in/bitstream/123456789/1514/1/A1971-70.pdf",
         ],
     ),
-    # CIVIL — additions from supplement
+
     (
         "bare_acts/civil",
         "Arbitration_and_Conciliation_Act_1996.pdf",
@@ -325,9 +312,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Court-fees%20Act%2C%201870.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # FAMILY LAW
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/family",
         "Hindu_Marriage_Act_1955.pdf",
@@ -399,9 +385,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Muslim%20Women%20%28Protection%20of%20Rights%20on%20Marriage%29%20Act%2C%202019.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CORPORATE & COMMERCIAL
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/corporate",
         "Companies_Act_2013.pdf",
@@ -422,7 +407,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/corporate",
         "SEBI_Act_1992.pdf",
         [
-            # GOV — SEBI official
+
             "https://www.sebi.gov.in/sebi_data/commondocs/april-2018/sebiact_p.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Securities%20and%20Exchange%20Board%20of%20India%20Act%2C%201992.pdf",
         ],
@@ -439,7 +424,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/corporate",
         "Income_Tax_Act_1961.pdf",
         [
-            # GOV — Income Tax India portal (~30 MB, allow extra time)
+
             "https://incometaxindia.gov.in/Documents/income-tax-act-1961-as-amended-by-finance-act-2024.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Income-tax%20Act%2C%201961.pdf",
         ],
@@ -453,9 +438,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://cbic-gst.gov.in/pdf/central-goods-service-tax-act-2017.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # LABOUR & EMPLOYMENT
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/labour",
         "Industrial_Disputes_Act_1947.pdf",
@@ -470,7 +454,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "Factories_Act_1948.pdf",
         [
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Factories%20Act%2C%201948.pdf",
-            # GOV — Chief Labour Commissioner
+
             "https://clc.gov.in/clc/sites/default/files/FactoriesAct1948.pdf",
         ],
     ),
@@ -479,7 +463,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "Employees_Provident_Funds_and_MP_Act_1952.pdf",
         [
             "https://www.indiacode.nic.in/bitstream/123456789/5437/1/employees_provident_fund_act.pdf",
-            # GOV — EPFO official
+
             "https://www.epfindia.gov.in/site_docs/PDFs/Downloads_PDFs/EPFAct1952.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Employees%27%20Provident%20Funds%20and%20Miscellaneous%20Provisions%20Act%2C%201952.pdf",
         ],
@@ -501,9 +485,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Code%20on%20Wages%2C%202019.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CONSUMER, CYBER & INTELLECTUAL PROPERTY
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/consumer_cyber_ip",
         "Consumer_Protection_Act_2019.pdf",
@@ -526,7 +509,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         [
             "https://www.indiacode.nic.in/bitstream/123456789/22037/1/digital_personal_data_protection_act,_2023.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Digital%20Personal%20Data%20Protection%20Act%2C%202023.pdf",
-            # GOV — MEITY
+
             "https://www.meity.gov.in/writereaddata/files/Digital%20Personal%20Data%20Protection%20Act%202023.pdf",
         ],
     ),
@@ -535,7 +518,7 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "Patents_Act_1970.pdf",
         [
             "https://www.indiacode.nic.in/bitstream/123456789/1392/1/A1970-39.pdf",
-            # GOV — IP India (CGPDTM)
+
             "https://ipindia.gov.in/writereaddata/Portal/IPOAct/1_69_1_patent-act-1970-11march2015.pdf",
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Patents%20Act%2C%201970.pdf",
         ],
@@ -556,9 +539,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://lddashboard.legislative.gov.in/sites/default/files/The%20Trade%20Marks%20Act%2C%201999.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # PROPERTY & REAL ESTATE
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/property",
         "RERA_Real_Estate_Regulation_and_Development_Act_2016.pdf",
@@ -583,9 +565,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://www.indiacode.nic.in/bitstream/123456789/20095/1/the_indian_stamp_act,_1899.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # NOTIFICATIONS & EXPLANATORY  (from original download_legal_data.py)
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "notifications",
         "BNSS_Advisory_Enforcement.pdf",
@@ -607,11 +588,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
             "https://nja.gov.in/Concluded_Programmes/2018-19/SE-05_2019_PPTs/6.Organizational%20Structure%20and%20Jurisdiction.pdf",
         ],
     ),
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CORPUS EXPANSION (2026-07) — acts referenced by the document validator
-    # (Succession, Partnership, PoA, Notaries, Oaths) plus high-traffic statutes.
-    # All URLs verified to serve the actual bare-act text with a clean text layer.
-    # ═══════════════════════════════════════════════════════════════════════════
+
+
     (
         "bare_acts/family",
         "Indian_Succession_Act_1925.pdf",
@@ -704,8 +682,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
         "bare_acts/criminal",
         "Unlawful_Activities_Prevention_Act_UAPA_1967.pdf",
         [
-            # /1470/3/ is the English-only consolidated text; /1470/1/ 302s and
-            # the thc.nic.in copy is a bilingual gazette (30% Hindi).
+
+
             "https://www.indiacode.nic.in/bitstream/123456789/1470/3/A1967-37.pdf",
             "https://www.indiacode.nic.in/bitstream/123456789/6853/1/unlawful_activities_prevention_act1967.pdf",
         ],
@@ -750,9 +728,8 @@ DOCUMENTS: list[tuple[str, str, list[str]]] = [
 ]
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 def main() -> None:
-    # De-duplicate by destination path (first entry wins)
+
     seen: set[Path] = set()
     deduped: list[tuple[str, str, list[str]]] = []
     for entry in DOCUMENTS:
@@ -780,7 +757,7 @@ def main() -> None:
 
             log.info(f"\n[{i}/{total}] {subdir}/{filename}")
 
-            # Already on disk → count as skipped
+
             if dest.exists() and dest.stat().st_size > MIN_FILE_SIZE_BYTES:
                 log.info("  [SKIP] Already downloaded.")
                 skipped += 1
@@ -795,7 +772,7 @@ def main() -> None:
 
             time.sleep(0.8)
 
-    # ── Final report ──────────────────────────────────────────────
+
     log.info("\n" + "=" * 65)
     log.info(
         f"  DONE  ✓ {success} downloaded  "

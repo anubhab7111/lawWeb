@@ -12,7 +12,7 @@ def test_fused_order_at_weight_zero():
 
 
 def test_blend_keeps_a_candidate_both_retrievers_agreed_on():
-    # fused rank 1, cross-encoder rank 3 vs a candidate only the cross-encoder likes
+
     scored = [("agreed", 0.6), ("ce_only", 1.0), ("x", 0.8)]
     order = [c for c, _ in blend_rerank_order(scored, ["agreed", "x", "ce_only"], 0.5)]
     assert order[0] in ("agreed", "x") and order.index("agreed") < 2

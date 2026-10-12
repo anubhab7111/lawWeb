@@ -1,32 +1,4 @@
-"""
-MetricsEvaluator -- Main Orchestrator
-======================================
-Runs all 9 evaluation metrics against the legal chatbot RAG pipeline.
-
-Metrics
--------
-  RETRIEVAL
-  * Hit Rate @ 1/3/5  -- % of queries where a ground-truth IPC section is in top-k
-  * MRR               -- Mean Reciprocal Rank of the first relevant section
-  * Context Precision -- Fraction of retrieved context that is relevant (LLM judge)
-
-  GENERATION (RAG Triad)
-  * Faithfulness      -- % of answer claims grounded in retrieved context
-  * Answer Relevance  -- Does the answer address the question?
-  * Context Recall    -- Does the answer cover key facts from the reference?
-
-  ENGINEERING & COST
-  * Latency stats     -- min / p50 / p95 / p99 / max / stdev (seconds)
-  * Cost per 1k       -- Estimated USD at four pricing tiers
-  * Token Efficiency  -- Output tokens / total tokens ratio
-
-Architecture (two-pass)
------------------------
-  Pass 1 -- Pre-computed chatbot results from test_chatbot.py
-            (answer, intent, latency already captured)
-  Pass 2 -- Direct RAG re-retrieval inside the evaluator
-            (ranked sections + raw context for retrieval / judge metrics)
-"""
+"""MetricsEvaluator -- Main Orchestrator ====================================== Runs all 9 evaluation metrics against the legal chatbot RAG pipeline."""
 
 from __future__ import annotations
 
@@ -81,30 +53,25 @@ def _judge_to_generation_score(js: JudgeScore) -> GenerationScore:
     )
 
 
-# =============================================================================
-# Per-query result container
-# =============================================================================
-
-
 @dataclass
 class EvalResult:
     """All evaluation data for a single query."""
 
-    # Identity
+
     query_id: int
     query: str
     domain: str
     intent: str
 
-    # Chatbot output
+
     answer: str
     latency_s: float
 
-    # Retrieved context (from direct RAG pass)
+
     retrieved_sections: List[str]
     retrieved_context: str
 
-    # Retrieval metrics
+
     hit_rate_at_1: float = 0.0
     hit_rate_at_3: float = 0.0
     hit_rate_at_5: float = 0.0
@@ -113,7 +80,7 @@ class EvalResult:
     context_precision_reasoning: str = ""
     context_precision_from_llm: bool = False
 
-    # Generation metrics
+
     faithfulness: float = 0.0
     faithfulness_reasoning: str = ""
     faithfulness_from_llm: bool = False
@@ -126,14 +93,14 @@ class EvalResult:
     context_recall_reasoning: str = ""
     context_recall_from_llm: bool = False
 
-    # Engineering metrics
+
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
     token_efficiency_score: float = 0.0
     output_ratio: float = 0.0
 
-    # Meta
+
     judge_failures: int = 0
     error: Optional[str] = None
 
@@ -146,11 +113,7 @@ class EvalResult:
 
     @property
     def overall_score(self) -> float:
-        """
-        Weighted composite score.
-          Faithfulness 20% + Answer Relevance 20% + Context Recall 10%
-          + MRR 25% + Context Precision 15% + Token Efficiency 10%
-        """
+        """Weighted composite score."""
         return round(
             self.faithfulness * 0.20
             + self.answer_relevance * 0.20
@@ -162,7 +125,7 @@ class EvalResult:
         )
 
     def to_flat_dict(self) -> Dict[str, Any]:
-        """Flat dict for CSV export. Truncates reasoning; drops raw context."""
+        """Flat dict for CSV export."""
         d = asdict(self)
         d["rag_triad_mean"] = self.rag_triad_mean
         d["overall_score"] = self.overall_score
@@ -175,11 +138,6 @@ class EvalResult:
         return d
 
 
-# =============================================================================
-# Aggregate report container
-# =============================================================================
-
-
 @dataclass
 class AggregateReport:
     """Dataset-level aggregated statistics."""
@@ -188,56 +146,35 @@ class AggregateReport:
     errors: int
     judge_failures: int
 
-    # Retrieval
+
     hit_rate_at_1: float
     hit_rate_at_3: float
     hit_rate_at_5: float
     mrr: float
     context_precision_mean: float
 
-    # Generation
+
     faithfulness_mean: float
     answer_relevance_mean: float
     context_recall_mean: float
     rag_triad_mean: float
 
-    # Engineering
+
     latency: Dict[str, float]
     cost_estimates: Dict[str, Dict]
     token_efficiency: Dict[str, float]
 
-    # Domain breakdown
+
     domain_scores: Dict[str, Dict[str, float]]
 
-    # Count of results excluded from each judge-based mean because the judge
-    # failed for that query and a neutral-0.5 fallback was used instead.
+
     judge_fallback_excluded: Dict[str, int]
 
     evaluated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
-# =============================================================================
-# MetricsEvaluator
-# =============================================================================
-
-
 class MetricsEvaluator:
-    """
-    Orchestrates the full 9-metric evaluation suite for the legal chatbot.
-
-    Parameters
-    ----------
-    use_llm_judge : bool
-        True  -> the OpenRouter LLM judge (see app/metrics/llm_judge.py) is
-                 used for all judge-based metrics.
-        False -> keyword heuristics only (offline / fast mode).
-    rag_k : int
-        Number of IPC sections to retrieve in the direct RAG pass.
-    max_concurrent_judge_calls : int
-        Semaphore cap on concurrent judge calls. The judge itself also
-        rate-limits real API calls process-wide to stay under OpenRouter's
-        free-tier 20 req/min cap, so this mainly bounds in-flight coroutines.
-    """
+    """Orchestrates the full 9-metric evaluation suite for the legal chatbot."""
 
     def __init__(
         self,
@@ -250,44 +187,28 @@ class MetricsEvaluator:
         self._judge: Optional[LLMJudge] = LLMJudge() if use_llm_judge else None
         self._judge_sem = asyncio.Semaphore(max_concurrent_judge_calls)
 
-    # -------------------------------------------------------------------------
-    # Pass 2: direct RAG instrumentation
-    # -------------------------------------------------------------------------
 
     async def _get_rag_context(
         self, query: str, gt_entry: GroundTruthEntry
     ) -> Tuple[List[str], str, List[Tuple[str, str]]]:
-        """
-        Re-run retrieval for *query* using the SAME production path the
-        chatbot uses: ``retrieve_statutes`` (doctrine pins + hybrid fill +
-        confidence gate), not the raw unified index. This is what makes
-        Hit-Rate/MRR and the judge's ``context`` reflect what the chatbot
-        actually retrieved and answered from.
-
-        Returns
-        -------
-        (ranked_section_numbers, concatenated_context_text, ranked (act, section) pairs)
-        """
+        """Re-run retrieval for *query* using the SAME production path the chatbot uses: ``retrieve_statutes`` (doctrine pins + hybrid fill + confidence gate), not the raw unified index."""
         sections: List[str] = []
         pairs: List[Tuple[str, str]] = []
         ctx_parts: List[str] = []
 
-        # ── 1. Production statute retrieval (pins + hybrid + gate) ─────
+
         try:
             from app.tools.base_legal_rag import compress_chunks_for_context
             from app.tools.legal_retrieval import retrieve_statutes
 
-            # k=8 matches the chatbot's own retrieve_statutes call so the
-            # evaluated context is what production actually feeds the LLM.
+
             context, _parsed = await retrieve_statutes(query, k=8)
-            # tool_dispatch.invoke_statute_context compresses chunks to their
-            # most relevant sentences before they ever reach the prompt — do
-            # the same here, or the judge (and input_tokens) grade against
-            # full section text the LLM was never actually shown.
+
+
             chunks = await compress_chunks_for_context(query, context.chunks)
             seen: set = set()
             for c in chunks:
-                # "Article 21" → "21"; part-chunks share their section no.
+
                 sec = c.section_number.replace("Article", "").strip()
                 if sec and sec not in seen:
                     seen.add(sec)
@@ -302,9 +223,6 @@ class MetricsEvaluator:
 
         return sections, "\n\n".join(ctx_parts), pairs
 
-    # -------------------------------------------------------------------------
-    # Single-query evaluation
-    # -------------------------------------------------------------------------
 
     async def _evaluate_one(
         self,
@@ -323,12 +241,12 @@ class MetricsEvaluator:
         if isinstance(answer, str) and answer.startswith("ERROR"):
             error, answer = answer, ""
 
-        # ---- Pass 2: RAG retrieval -------------------------------------------
+
         retrieved_sections, retrieved_context, retrieved_pairs = await self._get_rag_context(
             query, gt_entry
         )
 
-        # ---- Retrieval metrics (pure, no LLM) --------------------------------
+
         relevant_secs = relevant_sections_for(gt_entry)
         scored_sections = act_aware_sections(retrieved_pairs, gt_entry.get("expected_acts", []))
         hr1 = compute_hit_rate(scored_sections, relevant_secs, k=1)
@@ -336,11 +254,11 @@ class MetricsEvaluator:
         hr5 = compute_hit_rate(scored_sections, relevant_secs, k=5)
         rr = compute_mrr_single(scored_sections, relevant_secs)
 
-        # ---- Engineering metrics (pure, no LLM) ------------------------------
+
         token_record = build_token_record(
             prompt=query, context=retrieved_context, answer=answer
         )
-        # Add ~500-token system-prompt overhead approximation
+
         token_record["input_tokens"] = max(1, token_record["input_tokens"] + 500)
         eff = compute_token_efficiency(
             answer=answer,
@@ -348,7 +266,7 @@ class MetricsEvaluator:
             output_tokens=token_record["output_tokens"],
         )
 
-        # ---- LLM judge metrics (context precision + RAG triad) ---------------
+
         judge_failures = 0
         cp_precision = 0.0
         cp_from_llm = False
@@ -359,8 +277,8 @@ class MetricsEvaluator:
                 return await coro
 
         if answer and self._judge is not None:
-            # Judge ON: one batched OpenRouter call scores all four metrics,
-            # keeping a full run inside the free-tier daily cap.
+
+
             try:
                 scores = await _guarded(
                     self._judge.evaluate_rag(
@@ -372,10 +290,8 @@ class MetricsEvaluator:
                 )
                 cp_score = scores["context_precision"]
                 cp_precision = float(cp_score.score)
-                # Each of the four triad metrics is parsed independently out
-                # of the batched response, so context_precision can fail to
-                # parse even when the other three succeed — track it the
-                # same way those three are tracked below.
+
+
                 cp_from_llm = not cp_score.reasoning.startswith("[JUDGE FAILED]")
                 if not cp_from_llm:
                     judge_failures += 1
@@ -387,7 +303,7 @@ class MetricsEvaluator:
                 logger.warning("Judge failed for query %d: %s", query_id, exc)
                 judge_failures += 4
         elif answer:
-            # Judge OFF: keyword heuristics only, no network calls.
+
             try:
                 from app.metrics.retrieval_metrics import (
                     compute_context_precision_async,
@@ -414,7 +330,7 @@ class MetricsEvaluator:
                 logger.warning("Heuristic metrics failed for query %d: %s", query_id, exc)
                 judge_failures += 4
         else:
-            judge_failures += 4  # error / empty answer
+            judge_failures += 4
 
         faith_s = gen_scores.get("faithfulness")
         rel_s = gen_scores.get("answer_relevance")
@@ -463,24 +379,9 @@ class MetricsEvaluator:
             error=error,
         )
 
-    # -------------------------------------------------------------------------
-    # Public: run
-    # -------------------------------------------------------------------------
 
     async def run(self, chatbot_results: List[Dict[str, Any]]) -> List[EvalResult]:
-        """
-        Evaluate all chatbot results concurrently.
-
-        Parameters
-        ----------
-        chatbot_results : list[dict]
-            Output of test_chatbot.py::run_evaluation().
-            Required keys: query, answer, intent, response_time_s.
-
-        Returns
-        -------
-        list[EvalResult] -- one per query, same order as input.
-        """
+        """Evaluate all chatbot results concurrently."""
         tasks = []
         for i, cr in enumerate(chatbot_results, start=1):
             query = cr.get("query", "")
@@ -517,9 +418,6 @@ class MetricsEvaluator:
         print(f"[MetricsEvaluator] Done in {elapsed}s.\n")
         return results
 
-    # -------------------------------------------------------------------------
-    # Public: aggregate
-    # -------------------------------------------------------------------------
 
     def aggregate(self, results: List[EvalResult]) -> AggregateReport:
         """Compute dataset-level statistics from a list of EvalResult."""
@@ -529,12 +427,7 @@ class MetricsEvaluator:
 
         errors = sum(1 for r in results if r.error)
 
-        # Retrieval — Hit Rate and MRR must share the same population: only
-        # queries that actually carry section-level ground truth. Queries
-        # without it (e.g. some constitutional questions) would otherwise
-        # silently drag Hit Rate toward 0 (compute_hit_rate returns 0.0 for
-        # empty ground truth) while MRR correctly excludes them — this kept
-        # the two metrics scored over different populations.
+
         gt_queries_with_secs = {
             gt["query"] for gt in GROUND_TRUTH if relevant_sections_for(gt)
         }
@@ -546,12 +439,7 @@ class MetricsEvaluator:
         rrs = [r.reciprocal_rank for r in scored]
         mrr = round(sum(rrs) / len(rrs), 4) if rrs else 0.0
 
-        # Generation — exclude neutral-0.5 judge-failure fallback scores from
-        # the mean when the judge was supposed to be running, so a partial
-        # judge outage doesn't silently pull the reported score toward 0.5.
-        # In --no-llm-judge runs every result is "not from llm" by design
-        # (not a failure), so _judge_mean falls back to the full blended
-        # average in that mode.
+
         cp_mean, cp_excluded = self._judge_mean(
             results, "context_precision", "context_precision_from_llm"
         )
@@ -566,7 +454,7 @@ class MetricsEvaluator:
         )
         rag_triad = round((faith_mean + rel_mean + recall_mean) / 3, 4)
 
-        # Engineering
+
         latency_stats = compute_latency_stats([r.latency_s for r in results])
         token_records = [
             {"input_tokens": r.input_tokens, "output_tokens": r.output_tokens}
@@ -585,7 +473,7 @@ class MetricsEvaluator:
         ]
         token_eff = aggregate_token_efficiency(eff_records)
 
-        # Domain breakdown
+
         domain_groups: Dict[str, List[EvalResult]] = {}
         for r in results:
             domain_groups.setdefault(r.domain, []).append(r)
@@ -638,20 +526,7 @@ class MetricsEvaluator:
         score_attr: str,
         from_llm_attr: str,
     ) -> Tuple[float, int]:
-        """
-        Mean of *score_attr* across *results*, excluding results where
-        *from_llm_attr* is False when the judge is enabled for this run.
-
-        Excluding those results keeps a partial judge outage (some queries
-        got a real score, others got the neutral-0.5 failure fallback) from
-        silently pulling the mean toward 0.5. Falls back to the full blended
-        mean if literally every result was excluded, so the report never
-        shows an empty metric.
-
-        In --no-llm-judge runs every result has *from_llm_attr* False by
-        design (not a failure), so this returns the plain blended mean with
-        0 exclusions rather than flagging the whole run as "failed".
-        """
+        """Mean of *score_attr* across *results*, excluding results where *from_llm_attr* is False when the judge is enabled for this run."""
         if not results:
             return 0.0, 0
 
@@ -665,9 +540,6 @@ class MetricsEvaluator:
         vals = [getattr(r, score_attr) for r in pool]
         return (round(sum(vals) / len(vals), 4) if vals else 0.0), excluded
 
-    # -------------------------------------------------------------------------
-    # Public: print_report
-    # -------------------------------------------------------------------------
 
     def print_report(
         self,
@@ -720,7 +592,7 @@ class MetricsEvaluator:
             )
         print(sep)
 
-        # [1] Retrieval --------------------------------------------------------
+
         n_gt = sum(1 for g in GROUND_TRUTH if relevant_sections_for(g))
         print(
             f"\n  [1] RETRIEVAL METRICS"
@@ -733,7 +605,7 @@ class MetricsEvaluator:
         print(f"  Mean Reciprocal Rank  {_bar(report.mrr)}")
         print(f"  Context Precision     {_bar(report.context_precision_mean)}")
 
-        # [2] Generation -------------------------------------------------------
+
         print("\n  [2] GENERATION METRICS  (RAG Triad)")
         print(thn)
         print(
@@ -754,7 +626,7 @@ class MetricsEvaluator:
             f"  {_lbl(report.rag_triad_mean)}"
         )
 
-        # [3] Engineering -------------------------------------------------------
+
         lat = report.latency
         print("\n  [3] ENGINEERING & COST METRICS")
         print(thn)
@@ -787,7 +659,7 @@ class MetricsEvaluator:
             per10k = info.get("cost_per_10k_usd", 0.0)
             print(f"  {desc:<52}  ${per1k:>7.4f}  ${per10k:>7.3f}")
 
-        # [4] Domain breakdown -------------------------------------------------
+
         print("\n  [4] DOMAIN BREAKDOWN")
         print(thn)
         print(
@@ -805,7 +677,7 @@ class MetricsEvaluator:
                 f"{ds['latency_mean']:>7.1f}"
             )
 
-        # [5] Per-query detail -------------------------------------------------
+
         print("\n  [5] PER-QUERY DETAIL")
         print(thn)
         print(
@@ -830,9 +702,6 @@ class MetricsEvaluator:
 
         print(f"\n{sep}\n")
 
-    # -------------------------------------------------------------------------
-    # Public: save_csv
-    # -------------------------------------------------------------------------
 
     def save_csv(self, results: List[EvalResult], path: "str | Path") -> None:
         """Save per-query results to a CSV file."""
@@ -847,9 +716,6 @@ class MetricsEvaluator:
             writer.writerows(rows)
         print(f"[MetricsEvaluator] CSV saved  -> {path}")
 
-    # -------------------------------------------------------------------------
-    # Public: save_json
-    # -------------------------------------------------------------------------
 
     def save_json(self, results: List[EvalResult], path: "str | Path") -> None:
         """Save the full report (per-query + aggregate) to JSON."""

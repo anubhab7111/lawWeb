@@ -1,8 +1,4 @@
-"""
-FastAPI backend for the legal platform.
-Single Python backend: chatbot/RAG plus auth, lawyers, and bookings
-(previously served by the Express server).
-"""
+"""FastAPI backend for the legal platform."""
 
 import asyncio
 import traceback
@@ -37,21 +33,7 @@ configure_logging(get_settings().log_level)
 
 
 async def _warmup() -> None:
-    """Pre-load everything the chatbot lazily initializes on first use —
-    BGE-M3 embeddings, the reranker, the unified + case-law FAISS/BM25
-    indices, the fastText language detector, and the Ollama LLM (into VRAM,
-    kept resident via keep_alive) — so the first real user query isn't the
-    one paying for it. Measured cold-start cost without this: 10+ minutes.
-
-    Runs as a background task so it never delays uvicorn accepting
-    connections, and must never raise: any failure here just means the
-    first request falls back to the existing per-component lazy-init path.
-
-    Still uses print(): this runs before most modules log anything and its
-    "[Warmup]" lines are what operators tail for readiness. The chat workflow
-    (app/chatbot.py, app/tool_dispatch.py) logs through the `app.*` logger
-    configured by app.logging_config.configure_logging() above.
-    """
+    """Pre-load everything the chatbot lazily initializes on first use — BGE-M3 embeddings, the reranker, the unified + case-law FAISS/BM25 indices, the fastText language detector,..."""
     try:
         from app.chatbot import get_fast_llm, get_llm, invoke_llm_safely
         from app.intent_classifier import classify_intent_embedding
@@ -73,9 +55,7 @@ async def _warmup() -> None:
 
 
 def _ensure_chat_schema() -> None:
-    """The chat_messages.trace column postdates already-deployed databases and
-    migrations otherwise run only via `python -m app.db.init_db`. Without it,
-    every logged-in user's chat turn would fail to persist. Idempotent."""
+    """The chat_messages.trace column postdates already-deployed databases and migrations otherwise run only via `python -m app.db.init_db`."""
     try:
         from app.db.engine import get_engine
         from app.db.migrations import ensure_chat_messages_trace_column
@@ -88,12 +68,10 @@ def _ensure_chat_schema() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # First-ever startup hook in this app. Scheduler jobs are durable
-    # (SQLAlchemy jobstore) so restarts don't need to recreate DB state, but
-    # add_job(..., replace_existing=True) inside register_jobs() still runs
-    # every boot to pick up code changes to job schedules.
+
+
     _ensure_chat_schema()
-    # Before the chatbot is first built: it binds to this checkpointer.
+
     await init_checkpointer()
     scheduler = get_scheduler()
     register_jobs(scheduler)
@@ -116,9 +94,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware for frontend integration. Origins are an explicit allowlist
-# (not "*") because allow_credentials=True combined with a wildcard would let
-# any origin make credentialed requests.
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origins_list,
@@ -127,7 +103,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files for frontend
+
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -186,32 +162,15 @@ async def health_check():
     return {"status": "healthy", "version": "1.0.0"}
 
 
-# ============================================================================
-# Exception Handlers
-# ============================================================================
-
-
 @app.exception_handler(MessageHTTPException)
 async def message_http_exception_handler(request, exc: MessageHTTPException):
-    """Scoped to MessageHTTPException only (raised by app.deps.auth and the
-    new feature routers) so existing HTTPException usage elsewhere (e.g.
-    app.routers.chat) keeps its current {"detail": ...} response shape."""
+    """Scoped to MessageHTTPException only (raised by app.deps.auth and the new feature routers) so existing HTTPException usage elsewhere (e.g."""
     return JSONResponse(status_code=exc.status_code, content={"message": exc.detail})
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler for unhandled errors.
-
-    FastAPI/Starlette places a bare-Exception handler in
-    ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware — so a response
-    built here never gets CORS headers from that middleware, and the browser
-    reports every unhandled 500 as an opaque "Failed to fetch"/CORS error
-    instead of surfacing the actual message. Attach the header manually
-    (only for an origin already on the allowlist), and use the
-    {"message": ...} shape the client's error handling expects everywhere
-    else (see app.deps.errors.MessageHTTPException).
-    """
+    """Global exception handler for unhandled errors."""
     print(f"Unhandled exception on {request.method} {request.url.path}")
     traceback.print_exc()
     settings = get_settings()
@@ -226,11 +185,6 @@ async def global_exception_handler(request, exc):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
-
-
-# ============================================================================
-# Main Entry Point
-# ============================================================================
 
 
 def create_app() -> FastAPI:

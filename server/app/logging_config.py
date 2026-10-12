@@ -15,7 +15,7 @@ class _RequestIdFilter(logging.Filter):
 
 
 def configure_logging(level: str = "INFO") -> None:
-    """Attach one stderr handler to the `app` logger tree. Idempotent."""
+    """Attach one stderr handler to the `app` logger tree."""
     app_logger = logging.getLogger("app")
     app_logger.setLevel(level.upper())
     if any(getattr(h, "_lawweb", False) for h in app_logger.handlers):

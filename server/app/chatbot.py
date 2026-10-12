@@ -1,7 +1,4 @@
-"""
-LangGraph-based legal chatbot implementation.
-This module defines the chatbot workflow using LangGraph for state management and routing.
-"""
+"""LangGraph-based legal chatbot implementation."""
 
 import asyncio
 import json
@@ -106,43 +103,17 @@ from app.tools.statutory_validator import format_score, get_statutory_validator
 
 logger = logging.getLogger(__name__)
 
-LLM_NUM_CTX = 8192  # Ollama defaults to 2048, which silently clips grounded prompts
-# 8192 is the largest window that still keeps qwen3:4b 100% on the 4GB GPU
-# (measured live via `ollama ps`: 3.65GB resident, 0 CPU spill; 10240+ spills
-# ~0.64GB to CPU and slows generation). num_ctx was 6144 with num_predict 3072,
-# which left ~3072 tokens for thinking+answer — and on complex, multi-part
-# grounded questions (privacy limits, FIR quashing, marital rape, force
-# majeure) qwen3:4b routinely spent that entire budget re-drafting inside its
-# own <think> block and never emitted the closing </think>, so the whole
-# generation was discarded and the user got _INCOMPLETE_GENERATION_NOTE
-# instead of an answer (measured: 4/18 eval queries gave up this way). Raising
-# the window to 8192 and num_predict to 4608 gives thinking room to finish and
-# still answer — verified over the full 18-prompt eval: all four give-up queries
-# now return full grounded answers (0/18 give-ups vs 4/18), lifting answer
-# relevance 0.61->0.67 and rag-triad 0.56->0.59, at a mean-latency cost of
-# ~93s->116s (p95 113s->154s). The extra 1024 tokens of
-# window also grows the _fit_context_blocks budget (num_ctx - num_predict) from
-# 3072 to 3584, so retrieved context is not starved to pay for it.
-LLM_NUM_PREDICT = 4608  # tokens reserved for thinking + the answer
-_PROMPT_SAFETY_MARGIN = 256  # headroom for chat scaffolding the estimate can't see
-_MAX_QUERY_CHARS = 8000  # clamp on user-derived text so one huge query can't overflow
+LLM_NUM_CTX = 8192
+
+
+LLM_NUM_PREDICT = 4608
+_PROMPT_SAFETY_MARGIN = 256
+_MAX_QUERY_CHARS = 8000
 
 
 @lru_cache()
 def get_llm() -> ChatOllama:
-    """Get cached LLM instance for better performance.
-
-    reasoning=False, not True: verified live (2 empty answers out of 3
-    identical requests) that with reasoning=True, Ollama's `thinking` field
-    and `content` field are genuinely separate per-chunk, and qwen3:4b's
-    thinking-phase length is variable enough that it can consume the whole
-    num_predict budget before ever starting the answer, leaving `content`
-    completely empty with no error raised. With reasoning=False the same
-    thinking text lands inline in `content` (ending in `</think>`, same as
-    get_fast_llm_prose() already relies on), which invoke_llm_safely()
-    strips/filters — and, critically, always has *something* to fall back
-    to if generation gets cut off mid-thought, instead of nothing.
-    """
+    """Get cached LLM instance for better performance."""
     settings = get_settings()
     return ChatOllama(
         model=settings.llm_model,
@@ -150,16 +121,14 @@ def get_llm() -> ChatOllama:
         base_url=settings.ollama_base_url,
         num_ctx=LLM_NUM_CTX,
         num_predict=LLM_NUM_PREDICT,
-        timeout=210.0,  # kept above _LLM_TIMEOUT_SECONDS (the real, enforced cap)
+        timeout=210.0,
         reasoning=False,
-        keep_alive="1h",  # loading the 14B model is the OOM-prone step — do it rarely
+        keep_alive="1h",
     )
 
 
 def _truncate_block(block: str, max_chars: int) -> str:
-    """Cut a context block to max_chars at a provision boundary ("\n\n• "
-    entries) or, failing that, the last line/sentence end. Cutting mid-word
-    would hand the model a half-quoted section it may cite as if complete."""
+    """Cut a context block to max_chars at a provision boundary (" • " entries) or, failing that, the last line/sentence end."""
     if len(block) <= max_chars:
         return block
     head = block[:max_chars]
@@ -175,10 +144,7 @@ def _truncate_block(block: str, max_chars: int) -> str:
 
 @lru_cache()
 def get_retry_llm() -> ChatOllama:
-    """get_llm() with a higher temperature, used for the single retry after a
-    give-up. At temperature 0.1 the same prompt tends to retrace the same
-    reasoning; a different sample plus a smaller prompt gives it a real chance.
-    Same model and num_ctx, so Ollama doesn't reload anything."""
+    """get_llm() with a higher temperature, used for the single retry after a give-up."""
     settings = get_settings()
     return ChatOllama(
         model=settings.llm_model,
@@ -195,13 +161,7 @@ def get_retry_llm() -> ChatOllama:
 def _fit_context_blocks(
     context_parts: list, reserved_tokens: int, max_tokens: Optional[int] = None
 ) -> str:
-    """
-    Join retrieved-context blocks (already in priority order: statute → case
-    law) without exceeding the model's input budget. Drops
-    lower-priority blocks and truncates the last kept one, so the instruction
-    template and user query always survive — this is what stops Ollama from
-    silently front-truncating the grounded statute block on long prompts.
-    """
+    """Join retrieved-context blocks (already in priority order: statute → case law) without exceeding the model's input budget."""
     from app.metrics.engineering_metrics import count_tokens_approx
 
     budget = LLM_NUM_CTX - LLM_NUM_PREDICT - _PROMPT_SAFETY_MARGIN - reserved_tokens
@@ -219,7 +179,7 @@ def _fit_context_blocks(
             used += block_tokens
         else:
             remaining = budget - used
-            if remaining > 50:  # ~4 chars/token — keep a useful truncated head
+            if remaining > 50:
                 kept.append(_truncate_block(block, remaining * 4))
             break
     return "\n\n".join(kept)
@@ -227,43 +187,22 @@ def _fit_context_blocks(
 
 @lru_cache()
 def get_fast_llm() -> ChatOllama:
-    """Get cached small LLM for classification/routing tasks (local Ollama).
-
-    num_ctx=LLM_NUM_CTX, not a smaller value: fast_llm_model is the same
-    Ollama model tag as get_llm() (both "qwen3:4b" — see config.py), and
-    Ollama reloads a model whenever a request asks for a different num_ctx
-    than what's currently loaded (verified live via `ollama ps`, ~1.7-2s per
-    reload). A single chat request calls both get_llm() and get_fast_llm()
-    in sequence, so a mismatched num_ctx here was forcing a reload on every
-    handoff between them — pure added latency for no benefit.
-    """
+    """Get cached small LLM for classification/routing tasks (local Ollama)."""
     settings = get_settings()
     return ChatOllama(
         model=settings.fast_llm_model,
         temperature=0,
         base_url=settings.ollama_base_url,
         num_ctx=LLM_NUM_CTX,
-        num_predict=128,  # Reduced from 256 for faster classification
-        timeout=15.0,  # Reduced from 30s
-        reasoning=False,  # classification needs the raw JSON, not a thinking preamble
+        num_predict=128,
+        timeout=15.0,
+        reasoning=False,
     )
 
 
 @lru_cache()
 def get_fast_llm_prose() -> ChatOllama:
-    """Same small model as get_fast_llm(), but for short natural-language
-    generation (case summaries, plain-language explanations) rather than
-    JSON classification. qwen3:4b keeps thinking even with reasoning=False
-    (verified directly against the Ollama API — `think: false` is not
-    honored by this model/build) and the thinking preamble alone commonly
-    runs 300-500 tokens before the real answer starts, so num_predict needs
-    real headroom above get_fast_llm()'s 128 or the response gets cut off
-    mid-thought before ever reaching the answer.
-
-    num_ctx=LLM_NUM_CTX, same reasoning as get_fast_llm(): matching the
-    context size of get_llm()'s "qwen3:4b" instance avoids a model reload
-    every time a single request pipeline hands off between the two.
-    """
+    """Same small model as get_fast_llm(), but for short natural-language generation (case summaries, plain-language explanations) rather than JSON classification."""
     settings = get_settings()
     return ChatOllama(
         model=settings.fast_llm_model,
@@ -278,17 +217,7 @@ def get_fast_llm_prose() -> ChatOllama:
 
 @lru_cache()
 def get_grounding_correction_llm() -> ChatOllama:
-    """Dedicated LLM for grounding_verifier's claim-correction call — same
-    small model as get_fast_llm_prose(), but grammar-constrained to
-    CORRECTION_RESPONSE_SCHEMA via Ollama's structured-output support. Free
-    prompting alone ("respond with ONLY a JSON array") does not work for
-    this task: qwen3:4b reliably reasons through each claim in prose instead
-    and gets cut off by num_predict before emitting any JSON, so the
-    correction step silently never fired. Kept separate from
-    get_fast_llm_prose() since that's shared with bare_act_explorer.py and
-    case_summarizer.py for free-text generation, which format= would break.
-    num_predict has headroom above get_fast_llm_prose()'s 900 for the
-    worst-case _MAX_LLM_CORRECTIONS-sized batch."""
+    """Dedicated LLM for grounding_verifier's claim-correction call — same small model as get_fast_llm_prose(), but grammar-constrained to CORRECTION_RESPONSE_SCHEMA via Ollama's..."""
     from app.tools.grounding_verifier import CORRECTION_RESPONSE_SCHEMA
 
     settings = get_settings()
@@ -308,57 +237,23 @@ _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 def strip_reasoning_tags(text: str) -> str:
-    """Strip a qwen3 thinking preamble from a response. Two shapes seen in
-    practice: a full <think>...</think> pair, or — what this model's chat
-    template actually produces — only the closing </think> tag, since the
-    opening tag is injected into the prompt template rather than generated
-    (confirmed against the raw Ollama API). In the latter case a naive
-    <think>...</think> regex matches nothing, so fall back to keeping only
-    what follows the last </think>."""
+    """Strip a qwen3 thinking preamble from a response."""
     if "</think>" in text:
         return text.rsplit("</think>", 1)[-1].strip()
     return _THINK_TAG_RE.sub("", text).strip()
 
 
-# Context variable for streaming queue - when set, invoke_llm_safely streams tokens
 _stream_queue_var: contextvars.ContextVar[asyncio.Queue | None] = (
     contextvars.ContextVar("stream_queue", default=None)
 )
 
 
-# Wall-clock cap on a single answer generation (asyncio.wait_for enforces it;
-# ChatOllama's own timeout= kwarg is a silent no-op). Sized to the LLM_NUM_PREDICT
-# budget: 4608 tokens at qwen3:4b's measured ~30-35 tok/s can take ~130-150s of
-# generation on the hardest multi-part grounded questions. At 120s those exact
-# queries (privacy limits, basic-structure doctrine, marital rape, contract
-# under economic pressure) were killed mid-answer and served GENERAL_QUERY_ERROR
-# — a 386-char "having trouble" fallback the LLM judge scores 0 for relevance and
-# recall. 180s lets the full think+answer finish (verified live) with headroom
-# below the worst case, trading ~30-50s of tail latency on the 4 hardest queries
-# for a real answer instead of an error.
 _LLM_TIMEOUT_SECONDS = 180
 
-# get_llm()'s prompt template always opens an implicit <think> block server-side
-# (confirmed against the raw Ollama API — see strip_reasoning_tags), so every
-# generation starts as thinking and only becomes a real answer once the model
-# emits the closing </think>. Measured live: on multi-provision questions
-# qwen3:4b can spend its *entire* LLM_NUM_PREDICT budget re-drafting the answer
-# inside its own thinking before ever closing the tag — so "no </think> yet"
-# is not a rare edge case, it's a real failure mode that must not be shown to
-# the user as if it were the answer (see _INCOMPLETE_GENERATION_NOTE below).
-# This cap is sized comfortably above the worst-case character output for
-# LLM_NUM_PREDICT tokens (~4-5 chars/token) — it fires only as an absolute
-# backstop against a truly runaway/never-closing generation, not during
-# normal (if verbose) thinking.
+
 _THINKING_BUFFER_SAFETY_CAP = 20000
 
-# Shown instead of raw thinking text whenever generation ends (hits the safety
-# cap, exhausts num_predict, or the stream errors) without ever producing a
-# closed </think> — i.e. the model never actually finished formulating an
-# answer. Deliberately not a truncated dump of the buffered thinking: that
-# text is internal reasoning-in-progress (drafts, self-corrections, "let me
-# check..."), not a legal answer, and showing it verbatim is worse for a demo
-# than an honest "please retry".
+
 _INCOMPLETE_GENERATION_NOTE = (
     "I wasn't able to finish formulating a complete answer to that in time. "
     "Please try again, or rephrase the question — this can happen with more "
@@ -375,10 +270,7 @@ class ChatBusyError(RuntimeError):
 
 
 class _LLMCircuitBreaker:
-    """Fail fast when Ollama is down or wedged. Without it every request waits
-    out the full generation timeout (up to 180s) before failing; after a few
-    consecutive failures we reject immediately for a cooldown, then let one
-    probe request through (half-open) — a single failure there re-opens it."""
+    """Fail fast when Ollama is down or wedged."""
 
     def __init__(self) -> None:
         self.failures = 0
@@ -416,15 +308,14 @@ _llm_breaker = _LLMCircuitBreaker()
 
 
 async def emit_event(event_type: str, **payload: Any) -> None:
-    """Push a non-token event (status, reset, replace, ...) to the live SSE
-    stream. No-op outside a streaming request, so nodes can call it freely."""
+    """Push a non-token event (status, reset, replace, ...) to the live SSE stream."""
     queue = _stream_queue_var.get(None)
     if queue is not None:
         await queue.put({"type": event_type, **payload})
 
 
 async def emit_text(text: str) -> None:
-    """Stream literal text (e.g. a disclaimer) ahead of the generated answer."""
+    """Stream literal text (e.g."""
     queue = _stream_queue_var.get(None)
     if queue is not None and text:
         await queue.put(text)
@@ -433,39 +324,13 @@ async def emit_text(text: str) -> None:
 async def invoke_llm_safely(
     llm: ChatOllama, prompt: str, stream: bool = False, notify_incomplete: bool = True
 ) -> str:
-    """Safely invoke LLM with proper error handling.
-
-    stream=False is the default: streaming into the user's token queue is the
-    deliberate exception (final answer generation), never something a helper
-    can do by accident. The queue lives in a contextvar that asyncio tasks
-    inherit, so a streaming default would let any auxiliary call made from
-    inside a chat handler (query rewrite, grounding fact-check, a summariser)
-    dump its raw output into the user's answer. Pass stream=True only for the
-    call whose text is the answer.
-
-    notify_incomplete=False keeps the give-up note (see below) out of the
-    stream — the return value is still the note — for a caller that will retry.
-
-    Every model here runs with reasoning=False (see get_llm()), so a
-    thinking preamble arrives inline in the token stream ending with a
-    literal `</think>`, not as a separate field, and every generation starts
-    inside that preamble (the opening tag is injected server-side). Both
-    branches below withhold/strip it: streaming buffers tokens until the
-    closing tag is seen so the preamble is never shown live; non-streaming
-    strips everything up to and including it. If generation ends — safety
-    cap, num_predict exhausted, or the model just stops — without a closing
-    tag ever appearing, that means the model never actually finished
-    formulating an answer (measured live: it can spend its whole budget
-    re-drafting inside the thinking phase), so both branches return
-    _INCOMPLETE_GENERATION_NOTE rather than the raw buffered thinking text —
-    showing that verbatim would leak internal monologue/drafts to the user.
-    """
+    """Safely invoke LLM with proper error handling."""
     _llm_breaker.check()
     queue = _stream_queue_var.get(None) if stream else None
 
     if queue is not None:
-        # Streaming mode - use astream and push chunks to queue, filtering
-        # out a leading thinking preamble before anything reaches the queue.
+
+
         visible_response = ""
 
         async def _drain() -> str:
@@ -489,11 +354,8 @@ async def invoke_llm_safely(
                         visible_response += after
                         await queue.put(after)
                 elif len(buffer) > _THINKING_BUFFER_SAFETY_CAP:
-                    # Absolute backstop against a runaway/never-closing
-                    # generation. Stop consuming the stream entirely rather
-                    # than falling through to the normal per-token path —
-                    # otherwise the model's continued thinking output would
-                    # keep arriving as if it were real content.
+
+
                     logger.warning(
                         "thinking exceeded %s chars without closing — giving up",
                         _THINKING_BUFFER_SAFETY_CAP,
@@ -503,9 +365,8 @@ async def invoke_llm_safely(
                         await queue.put(_INCOMPLETE_GENERATION_NOTE)
                     return visible_response
             if in_thinking and buffer:
-                # Stream ended (hit num_predict or stopped) before a closing
-                # tag ever showed up — the buffered text is unfinished
-                # thinking, not an answer.
+
+
                 logger.warning(
                     "generation ended mid-thinking (%s buffered chars, no closing tag)",
                     len(buffer),
@@ -520,8 +381,8 @@ async def invoke_llm_safely(
             _llm_breaker.record_success()
             return result
         except asyncio.TimeoutError:
-            # Same treatment as a user-initiated Stop: keep whatever was
-            # already streamed to the client rather than discarding it.
+
+
             _llm_breaker.record_failure()
             note = "\n\n*(Response generation took too long and was cut short.)*"
             visible_response += note
@@ -535,10 +396,8 @@ async def invoke_llm_safely(
             logger.exception("LLM streaming error")
             raise
     else:
-        # Non-streaming mode. ainvoke (not run_in_executor + invoke): on
-        # timeout wait_for cancels the in-flight HTTP request itself, where a
-        # thread would keep blocking a shared executor worker until the
-        # client's own (longer) timeout fired.
+
+
         try:
             response = await asyncio.wait_for(
                 llm.ainvoke([HumanMessage(content=prompt)]),
@@ -546,18 +405,15 @@ async def invoke_llm_safely(
             )
             _llm_breaker.record_success()
             raw = response.content
-            # A schema-constrained model (format=...) decodes straight into the
-            # grammar and never emits a think block, so a missing </think> is
-            # the normal shape of its output — not a give-up. Treating it as one
-            # discarded every grounding-correction reply (valid JSON, ~3s) and
-            # left claim-level correction silently switched off.
+
+
             if getattr(llm, "format", None):
                 return strip_reasoning_tags(raw)
             if "</think>" not in raw and not get_settings().llm_thinking:
                 return raw.strip()
             if "</think>" not in raw:
-                # Never closed the thinking phase — raw is entirely internal
-                # monologue, not an answer (see docstring).
+
+
                 logger.warning(
                     "non-streaming generation ended without </think> (%s chars) — giving up",
                     len(raw),
@@ -574,11 +430,6 @@ async def invoke_llm_safely(
             raise
 
 
-# ============================================================================
-# Node Functions
-# ============================================================================
-
-
 def _count_keyword_matches(text: str, keywords: frozenset) -> int:
     """Count how many keywords match in the text."""
     return count_words(text, keywords)
@@ -589,7 +440,7 @@ def _extract_legal_entities(text: str) -> List[str]:
     entities = []
     text_lower = text.lower()
 
-    # Extract IPC/CrPC sections
+
     section_patterns = [
         r"section\s+(\d+[a-z]?)",
         r"ipc\s+(\d+[a-z]?)",
@@ -600,7 +451,7 @@ def _extract_legal_entities(text: str) -> List[str]:
         for match in matches:
             entities.append(f"Section {match}")
 
-    # Extract act names
+
     act_keywords = [
         "indian penal code",
         "ipc",
@@ -625,9 +476,7 @@ def _extract_legal_entities(text: str) -> List[str]:
 
 
 async def _invoke_fast_text(prompt: str, timeout: float) -> str:
-    """Short auxiliary generation with the thinking preamble stripped. Uses the
-    prose-sized budget: the 128-token classification LLM spends its whole budget
-    on thinking and never reaches the answer."""
+    """Short auxiliary generation with the thinking preamble stripped."""
     return await asyncio.wait_for(
         invoke_llm_safely(get_fast_llm_prose(), prompt, stream=False), timeout=timeout
     )
@@ -636,13 +485,8 @@ async def _invoke_fast_text(prompt: str, timeout: float) -> str:
 async def _rewrite_query_for_retrieval(
     messages: List[Message], current_input: str
 ) -> str:
-    """
-    Condense conversation history + the latest message into one standalone
-    retrieval query using the fast LLM. First turns (no prior exchange)
-    return the input unchanged with zero added latency; any failure or
-    degenerate output also falls back to the raw input.
-    """
-    # Exclude the current input if it's already the last history entry
+    """Condense conversation history + the latest message into one standalone retrieval query using the fast LLM."""
+
     prior = messages
     if prior and prior[-1]["role"] == "user" and prior[-1]["content"] == current_input:
         prior = prior[:-1]
@@ -668,20 +512,8 @@ async def _rewrite_query_for_retrieval(
         return current_input
 
 
-# ============================================================================
-# Primary Router (embedding-based) + deterministic policy layer
-# ============================================================================
-
 def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
-    """
-    Single shared implementation of the "grounding unavailable" pattern,
-    used identically across handle_document_analysis, handle_crime_report,
-    and handle_general_query. Returns (disclaimer_prefix, prompt_warning):
-    - disclaimer_prefix: prepend to the final response when rag_succeeded
-      is False (empty string when grounding succeeded — prepend is a no-op).
-    - prompt_warning: append to the generation prompt when rag_succeeded is
-      False, instructing the LLM not to fabricate citations it wasn't given.
-    """
+    """Single shared implementation of the "grounding unavailable" pattern, used identically across handle_document_analysis, handle_crime_report, and handle_general_query."""
     if rag_succeeded:
         return "", ""
     return GROUNDING_UNAVAILABLE_DISCLAIMER, GROUNDING_UNAVAILABLE_PROMPT_WARNING
@@ -689,7 +521,7 @@ def _apply_compulsory_rag_policy(rag_succeeded: bool) -> tuple:
 
 _UPLOAD_HELP_KEYWORDS = ("upload", "i will upload", "how to upload", "can i upload")
 _ACTION_INTENTS = frozenset({"find_lawyer", "crime_report"})
-_CLARIFY_MAX_WORDS = 25  # a long, detailed message has enough to answer directly
+_CLARIFY_MAX_WORDS = 25
 
 
 def _asks_about_uploading(text: str) -> bool:
@@ -702,15 +534,12 @@ def _merge_trace(state: ChatState, **entries: Any) -> Dict[str, Any]:
 
 
 def _looks_like_an_explicit_question(text: str) -> bool:
-    """A '?' means the user already wrote out a specific legal question,
-    not a raw situational statement — see _clarification_for."""
+    """A '?' means the user already wrote out a specific legal question, not a raw situational statement — see _clarification_for."""
     return "?" in text
 
 
 def _ambiguous_action_contenders(result) -> FrozenSet[str]:
-    """The near-tied intents worth escalating over — only when an *action*
-    intent (report a crime / find a lawyer) is among them; two explanatory
-    intents tying is not worth interrupting for."""
+    """The near-tied intents worth escalating over — only when an *action* intent (report a crime / find a lawyer) is among them; two explanatory intents tying is not worth..."""
     contenders = {result.primary_intent, *result.secondary_intents} - {
         "non_legal",
         "document_analysis",
@@ -723,24 +552,7 @@ def _ambiguous_action_contenders(result) -> FrozenSet[str]:
 def _clarification_gate(
     result, has_document: bool, messages: List[Message], user_input: str
 ) -> FrozenSet[str]:
-    """Non-empty iff this turn is genuinely torn between an *action* flow
-    (report a crime / find a lawyer) and another one — worth escalating,
-    first to the LLM tie-breaker (_resolve_ambiguity_with_llm), then, only if
-    that is also unsure, to a clarifying question. Guessing wrong here is
-    worse than for two explanatory flows: the user gets a confident answer to
-    a question they did not ask, and cannot tell.
-
-    Deliberately narrow so it does not nag: it never fires with an attached
-    document, on long messages, right after its own previous question, or on
-    an explicit written-out question — only on a raw situational statement
-    ("my landlord is cheating me"), where there genuinely is no question to
-    answer yet. This last guard is load-bearing, not decorative: measured
-    against the project's own 18-query eval set, embedding-classifier margins
-    of 0.001-0.03 between "explain the law" and "find a lawyer"/"report a
-    crime" are common noise on ordinary legal questions — before this guard,
-    6 of 18 canonical questions ("Can an FIR be quashed by the High Court? On
-    what grounds?") were intercepted and never answered. Every one of those
-    six, like every false trigger found, was an explicit written-out question."""
+    """Non-empty iff this turn is genuinely torn between an *action* flow (report a crime / find a lawyer) and another one — worth escalating, first to the LLM tie-breaker..."""
     if not get_settings().clarify_on_ambiguous or not result.is_ambiguous:
         return frozenset()
     if has_document or len(user_input.split()) > _CLARIFY_MAX_WORDS:
@@ -757,8 +569,7 @@ def _clarification_gate(
 
 
 def _resume_after_followup(messages: List[Message], user_input: str) -> Optional[tuple]:
-    """(intent, original request + this reply) when the last assistant turn was a
-    missing-detail question; None otherwise."""
+    """(intent, original request + this reply) when the last assistant turn was a missing-detail question; None otherwise."""
     if len(messages) < 2 or messages[-1]["role"] != "assistant" or messages[-2]["role"] != "user":
         return None
     asked = messages[-1]["content"]
@@ -784,13 +595,7 @@ def _tiebreak_options(candidates: Tuple[str, ...]) -> str:
 
 @lru_cache()
 def _get_tiebreak_llm(candidates: Tuple[str, ...]) -> ChatOllama:
-    """Schema-constrained tie-breaker for a near-tied route (see
-    _resolve_ambiguity_with_llm) — same pattern as get_grounding_correction_llm():
-    format= is what actually gets qwen3:4b to answer with the label instead of
-    reasoning through it in prose. One tiny cached instance per distinct
-    candidate-set (at most a handful of combinations of the 3 legal intents
-    that can tie), reusing fast_llm_model/num_ctx so Ollama never reloads
-    between this and get_fast_llm()/get_grounding_correction_llm()."""
+    """Schema-constrained tie-breaker for a near-tied route (see _resolve_ambiguity_with_llm) — same pattern as get_grounding_correction_llm(): format= is what actually gets qwen3:4b..."""
     settings = get_settings()
     schema = {
         "type": "object",
@@ -814,15 +619,7 @@ def _get_tiebreak_llm(candidates: Tuple[str, ...]) -> ChatOllama:
 async def _resolve_ambiguity_with_llm(
     contenders: FrozenSet[str], user_input: str
 ) -> Tuple[Optional[str], Dict[str, Any]]:
-    """Cascade routing, tier 2: one fast, schema-constrained call to resolve a
-    near-tied route before asking the user. Only reached from classify_intent
-    when _clarification_gate already found the turn worth interrupting for —
-    so this never runs on the common, unambiguous case; the fast path stays a
-    pure embedding lookup with zero LLM calls. Returns (resolved_intent,
-    trace); resolved_intent is None when the model is also unsure, returns
-    something outside the offered candidates, or the call fails/times out —
-    the caller then falls back to the existing clarifying question. Must
-    never raise or block routing."""
+    """Cascade routing, tier 2: one fast, schema-constrained call to resolve a near-tied route before asking the user."""
     settings = get_settings()
     if not settings.route_tiebreak_enabled:
         return None, {"tried": False}
@@ -851,34 +648,7 @@ async def _resolve_ambiguity_with_llm(
 
 
 async def classify_intent(state: ChatState) -> ChatState:
-    """
-    Intent classification and tool selection.
-
-    Architecture — fully embedding-based, no keyword gates or hardcoded
-    shortcuts anywhere in this path:
-    1. Primary router: embedding nearest-centroid classification over 5
-       classes, including non_legal (classify_intent_embedding). A
-       has_document boost/penalty biases document_analysis appropriately —
-       verified empirically that this alone handles even single-word
-       document-attached queries ("review", "thoughts?") confidently, so no
-       separate word-count fast path is needed.
-    2. Clarification: a near-tie between an action intent (report a crime,
-       find a lawyer) and another flow becomes one clarifying question
-       instead of a silent guess (_clarification_for).
-    3. Domain-hint inference (classify_domain_hint_embedding), an
-       independent binary embedding classifier
-    4. History-aware query rewrite for retrieval
-    5. Tool selection (tool_dispatch.select_tools) — the handlers execute
-       exactly the tools chosen here.
-
-    Returns enriched state with:
-    - intent: Primary classification ("clarify" when a question is asked)
-    - routing_confidence / routing_reasoning / is_ambiguous / secondary_intents
-    - selected_tools: Tools the handler will run
-    - domain_hint: Soft bias for unified statute retrieval
-    - extracted_entities: Legal terms found
-    - trace["routing"]: what was decided and why
-    """
+    """Intent classification and tool selection."""
     user_input = state["current_input"]
     has_document = bool(state.get("document_content"))
     messages = state.get("messages", [])
@@ -903,21 +673,14 @@ async def classify_intent(state: ChatState) -> ChatState:
         }
 
     result = await classify_intent_embedding(user_input, has_document)
-    # Ambiguous ties among the four *legal* intents default to general_query
-    # (still grounded, just not the specific handler) rather than falling
-    # back to an LLM — no model call anywhere in this routing path. But if
-    # non_legal is itself the top-scoring class, trust it even when the
-    # margin is thin: collapsing an ambiguous non_legal read into
-    # general_query would silently reintroduce the old "assume legal when
-    # unsure" bias non_legal was added to remove.
+
+
     intent = result.primary_intent
     if result.is_ambiguous and intent != "non_legal":
-        # An attached document must not be silently dropped by the fallback.
+
         intent = "document_analysis" if has_document else "general_query"
 
-    # No document attached means nothing to analyse: answer as a general legal
-    # question, unless the user is asking how uploading works. Decided here so
-    # the reported intent matches the flow that actually runs.
+
     if intent == "document_analysis" and not has_document:
         if not _asks_about_uploading(user_input):
             intent = "general_query"
@@ -955,9 +718,8 @@ async def classify_intent(state: ChatState) -> ChatState:
 
     contenders = _clarification_gate(result, has_document, messages, user_input)
     if contenders:
-        # _resolve_ambiguity_with_llm has its own internal try/except and should
-        # never raise — this is defense in depth so an unexpected failure there
-        # degrades to the clarifying question rather than 500ing the whole turn.
+
+
         try:
             resolved, tiebreak_trace = await _resolve_ambiguity_with_llm(contenders, user_input)
         except Exception as e:
@@ -971,7 +733,7 @@ async def classify_intent(state: ChatState) -> ChatState:
             )
             intent = resolved
             routing_trace["intent"] = intent
-            # falls through to the normal flow below — no clarifying question
+
         else:
             logger.info("Router: ambiguous %s — asking a clarifying question", sorted(contenders))
             await emit_event("routing", intent="clarify")
@@ -998,7 +760,7 @@ async def classify_intent(state: ChatState) -> ChatState:
         result.secondary_intents,
     )
 
-    # History-aware query rewrite (multi-turn only; no-op on first turns).
+
     retrieval_query = await _rewrite_query_for_retrieval(messages, user_input)
     selected_tools = select_tools(intent, retrieval_query)
 
@@ -1024,20 +786,12 @@ async def classify_intent(state: ChatState) -> ChatState:
 
 
 async def handle_document_analysis(state: ChatState) -> ChatState:
-    """
-    Handle document analysis and validation requests.
-    Analyzes uploaded documents and provides structured insights.
-    If the user asks for validation/compliance checking, runs the 3-layer
-    validation pipeline (classification → statutory checklist → legal reasoning).
-    Otherwise uses the enhanced analysis pipeline with local RAG.
-    """
+    """Handle document analysis and validation requests."""
     document_content = state.get("document_content", "")
     document_type = state.get("document_type", "unknown")
     user_query = state.get("current_input", "")
 
-    # classify_intent only routes here without a document when the user is
-    # asking how uploading works (anything else is rerouted to general_query
-    # there, so the reported intent matches the flow that runs).
+
     if not document_content:
         response = DOCUMENT_UPLOAD_HELP
         return {
@@ -1047,7 +801,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             + [{"role": "assistant", "content": response}],
         }
 
-    # Check if user is asking for validation/compliance checking
+
     subintent = await classify_document_subintent_embedding(user_query)
     if subintent == "validation":
         return await _handle_document_validation(state)
@@ -1060,13 +814,13 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     except Exception:
         crime_rag = None
 
-    # Use the enhanced document analysis pipeline
+
     try:
         from app.tools.document_analysis_pipeline import get_document_analysis_pipeline
 
         llm = get_llm()
 
-        # Create pipeline and analyze
+
         pipeline = get_document_analysis_pipeline(llm, crime_rag=crime_rag)
         result = await pipeline.analyze_document(
             document_text=document_content,
@@ -1074,7 +828,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             user_query=user_query,
         )
 
-        # Format the response
+
         response_parts = [result.summary]
 
         if result.key_points:
@@ -1095,14 +849,12 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
 
         response = "\n".join(response_parts)
 
-        # Grounding is crime RAG's per-document retrieval, not its
-        # process-lifetime .initialized flag (the shared index may have loaded
-        # long ago without finding anything for this document).
+
         rag_succeeded = bool(
             result.crime_context and result.crime_context.get("relevant_passages")
         )
 
-        # Compulsory RAG: if retrieval failed, prepend disclaimer
+
         if not rag_succeeded:
             response = DOC_RAG_UNAVAILABLE_DISCLAIMER + response
 
@@ -1124,11 +876,11 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             + [{"role": "assistant", "content": response}],
         }
     except Exception as e:
-        # Fallback to basic analysis
+
         error_msg = f"Enhanced analysis unavailable: {str(e)}"
         logger.warning(error_msg)
 
-        # Basic fallback analysis
+
         llm = get_llm()
         max_chars = 15000
         doc_text = document_content[:max_chars]
@@ -1140,7 +892,7 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
         prompt = DOCUMENT_ANALYSIS_PROMPT.format(
             document_text=sanitize_untrusted_document(doc_text)
         )
-        # Compulsory RAG: always prepend disclaimer when using fallback path
+
         await emit_text(DOC_RAG_UNAVAILABLE_DISCLAIMER)
         analysis = await invoke_llm_safely(llm, prompt, stream=True)
         analysis = DOC_RAG_UNAVAILABLE_DISCLAIMER + analysis
@@ -1174,15 +926,9 @@ def _ask_followup(state: ChatState, question: str, flow: str) -> ChatState:
 
 
 async def handle_crime_report(state: ChatState) -> ChatState:
-    """
-    Handle crime reporting and guidance requests.
-    Uses two-stage legal RAG pipeline:
-    1. Extract crime features (violence, intent, weapon, etc.)
-    2. Retrieve IPC/BNS sections via FAISS semantic search, sorted by score
-    3. Feed structured IPC sections to LLM for court-safe response
-    """
+    """Handle crime reporting and guidance requests."""
     user_input = state["current_input"]
-    # Prefer the history-aware standalone query for retrieval on follow-ups
+
     crime_details = (
         state.get("crime_details") or state.get("retrieval_query") or user_input
     )
@@ -1191,15 +937,14 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     if not serious and not state.get("followup_answered") and crime_report_too_thin(crime_details):
         return _ask_followup(state, CRIME_DETAILS_ASK, "crime_report")
 
-    # Retrieve IPC/BNS sections via the shared dispatcher (legal minimality:
-    # k=2, fewer/more-accurate chargeable sections)
+
     ik_result = await RAG_TOOL_REGISTRY["crime_sections"](
         crime_details, crime_type=identified_crime, k=2
     )
     rag_sections_text = ik_result.context_text
     rag_succeeded = ik_result.succeeded
 
-    # Build prompt for the finetuned LLM
+
     llm = get_llm()
 
     rag_section = ""
@@ -1207,7 +952,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
         rag_section = f"""\n\nAPPLICABLE PROVISIONS (cite the Act named with each section):
 {rag_sections_text}"""
 
-    # Compulsory RAG: when RAG failed, instruct LLM not to fabricate sections
+
     disclaimer_prefix, no_rag_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
     prompt = CRIME_REPORT_PROMPT.format(
@@ -1228,7 +973,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
             crime_name=identified_crime.replace("_", " ").title()
         )
 
-    # Compulsory RAG: if RAG failed, prepend visible disclaimer
+
     if disclaimer_prefix:
         final_response = disclaimer_prefix + final_response
     if serious:
@@ -1253,10 +998,7 @@ async def handle_crime_report(state: ChatState) -> ChatState:
 
 
 async def handle_find_lawyer(state: ChatState) -> ChatState:
-    """
-    Handle lawyer search requests.
-    Finds relevant lawyers based on user needs and location.
-    """
+    """Handle lawyer search requests."""
     user_input = state["current_input"]
     lawyer_query = (state.get("lawyer_query") or user_input)[:_MAX_QUERY_CHARS]
     tools = state.get("selected_tools") or []
@@ -1266,12 +1008,7 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
             return _ask_followup(state, LAWYER_DETAILS_PREFIX + LAWYER_DETAILS_ASK[tuple(missing)], "find_lawyer")
     location = find_location(state.get("retrieval_query") or lawyer_query)
 
-    # Real Postgres-backed recommendation (pgvector semantic search + weighted
-    # rating/success_rate score). ChatState has no session plumbing, and this
-    # is the only DB access chatbot.py needs, so open one locally rather than
-    # threading a Session through the whole graph. recommend_lawyers runs its
-    # blocking query in a worker thread; everything that reads the ORM rows
-    # happens inside the `with` so none is touched after the session closes.
+
     from app.db.engine import get_engine
     from sqlmodel import Session as DBSession
 
@@ -1303,7 +1040,7 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
             for l in lawyers
         ]
 
-    # Enhance with LLM for personalized recommendations
+
     try:
         llm = get_llm()
         prompt = LAWYER_SEARCH_PROMPT.format(
@@ -1311,7 +1048,7 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
         )
         final_response = await invoke_llm_safely(llm, prompt, stream=True)
     except Exception:
-        # Use formatted results directly if LLM fails
+
         final_response = LAWYER_SEARCH_FALLBACK.format(
             formatted_results=formatted_results
         )
@@ -1339,38 +1076,7 @@ async def _verify_response_citations(
     llm_invoke: Optional[Callable[[str], Awaitable[str]]] = None,
     citation_only: bool = False,
 ) -> tuple:
-    """
-    Post-generation grounding gate.
-
-    citation_only=True runs ONLY the deterministic statute-citation-existence
-    check, never the claim-level grounding pass — used by gq_verify when
-    this query's own retrieval failed but generation still produced a real
-    answer. Claim-level grounding needs retrieved context text to judge
-    claims against (none exists on that path), but citation existence is
-    checkable regardless: verify_citations() queries the whole persistent
-    corpus index (rag.find_section()), not what this specific query
-    retrieved. Always returns report=None in this mode — nothing here
-    should ever trigger a regeneration, since there is no better context to
-    retarget retrieval at.
-
-    citation_only=False (default, unchanged from before) runs the full
-    two-layer gate:
-
-    1. citation_verifier (unchanged): does every 'Section N of the X Act' /
-       'Article N' in the answer exist in the indexed corpus under the cited
-       act, and was it among what was actually retrieved for this query?
-    2. grounding_verifier: goes past the citation token to the claim built
-       around it — splits the answer into sentences, checks each cited or
-       high-risk-absolute claim against its evidence text, and (only for
-       what's flagged) uses one batched LLM call to rewrite the unsupported
-       part from evidence alone. Supported sentences are never touched.
-
-    Returns (text, report): the answer with advisory footers from both layers
-    (silent when everything checks out) and the GroundingReport the caller
-    can act on — or (response_text, None) when the gate was skipped,
-    citation_only was requested, or an error occurred. Never raises — a
-    verifier bug must not break chat.
-    """
+    """Post-generation grounding gate."""
     try:
         from app.tools.grounding_verifier import ground_and_correct, grounding_footer
         from app.tools.citation_verifier import verify_citations, verification_footer
@@ -1442,19 +1148,6 @@ async def _verify_response_citations(
         return response_text, None
 
 
-# ============================================================================
-# General-query agentic loop
-#
-#   gq_plan -> gq_retrieve -> gq_grade -+-> gq_generate -> gq_verify -+-> END
-#                  ^                    |                             |
-#                  +---- gq_rewrite <---+ (weak/empty retrieval)      |
-#                  +-------------------------------------------------+
-#                                        (grounding score low: regenerate once)
-#
-# Both loops are bounded (one retry each) and skipped once the request has
-# used its wall-clock budget, so the worst case stays predictable.
-# ============================================================================
-
 _QUESTION_SPLIT_RE = re.compile(r"(?<=\?)\s+")
 _ENUM_SPLIT_RE = re.compile(r"(?:^|\s)\(?(?:[a-d]|[1-4])[\).]\s+(?=[A-Za-z])")
 _MIN_SUBQUESTION_WORDS = 5
@@ -1463,16 +1156,7 @@ _ENTRY_SPLIT_RE = re.compile(r"\n\n(?=• )")
 
 
 def decompose_question(text: str) -> List[str]:
-    """Split a multi-part question into standalone sub-questions so retrieval
-    can search for each part instead of one blended query.
-
-    Deterministic on purpose: a 4B model spends seconds thinking through even
-    a trivial decomposition, and this box has none to spare. Only genuinely
-    separable parts are returned — a fragment like "On what grounds?" depends
-    on the sentence before it, so it is dropped, and a query with no
-    separable structure returns [] and retrieval runs on the full text alone.
-    The full query is always searched too, so decomposition can only add
-    recall."""
+    """Split a multi-part question into standalone sub-questions so retrieval can search for each part instead of one blended query."""
     text = text.strip()
 
     def _qualifying(parts: List[str]) -> List[str]:
@@ -1490,8 +1174,7 @@ def decompose_question(text: str) -> List[str]:
 
 
 def _merge_entries(texts: List[str]) -> str:
-    """Join formatted context blocks, dropping entries (keyed by their first
-    line, e.g. "• **IPC § 420** — Cheating") already seen in an earlier one."""
+    """Join formatted context blocks, dropping entries (keyed by their first line, e.g."""
     seen: set = set()
     out: List[str] = []
     for text in texts:
@@ -1507,8 +1190,7 @@ def _merge_entries(texts: List[str]) -> str:
 
 
 def _merge_statute_results(results: list) -> ToolInvocationResult:
-    """Fold several statute_context results (one per query) into one, in
-    priority order. Exceptions and empty results are skipped."""
+    """Fold several statute_context results (one per query) into one, in priority order."""
     ok = [r for r in results if isinstance(r, ToolInvocationResult) and r.succeeded]
     if not ok:
         return ToolInvocationResult(
@@ -1533,9 +1215,8 @@ def _merge_statute_results(results: list) -> ToolInvocationResult:
             ),
             "retrieved_sections": sections,
             "confidence": max((r.raw or {}).get("confidence", 0.0) for r in ok),
-            # The retriever's own counts are authoritative (the formatted text
-            # can hold fewer entries than chunks after budgeting); a merge must
-            # never report fewer provisions than its best input.
+
+
             "chunk_count": max(
                 len(_ENTRY_SPLIT_RE.split(text)) if text else 0,
                 *((r.raw or {}).get("chunk_count", 0) for r in ok),
@@ -1571,10 +1252,7 @@ async def gq_plan(state: ChatState) -> ChatState:
 
 
 async def gq_retrieve(state: ChatState) -> ChatState:
-    """Run the tools chosen by the router (state["selected_tools"]) in
-    parallel. The statute search is repeated per sub-question and, on a
-    regeneration pass, aimed at the citations the grounding gate could not
-    support."""
+    """Run the tools chosen by the router (state["selected_tools"]) in parallel."""
     user_input = state["current_input"]
     retrieval_query = state.get("retrieval_query") or user_input
     tools = state.get("selected_tools") or []
@@ -1605,15 +1283,15 @@ async def gq_retrieve(state: ChatState) -> ChatState:
             jobs[f"statute_context:{i}"] = RAG_TOOL_REGISTRY["statute_context"](
                 query,
                 k=primary_k if is_primary else 4,
-                # Widening drops the domain bias; a second-chance search must
-                # not be limited by the guess that just under-delivered.
+
+
                 domain_hint=(
                     ["criminal"] if domain_hint == "criminal" and not widen else None
                 ),
-                # Only the primary query gets the embedding doctrine match.
+
                 doctrine_assist=is_primary and not widen,
-                # Sub-questions add statutes; authorities come from the first
-                # query only (each extra case-law hop cost ~10s of CPU reranking).
+
+
                 with_case_law=i == 0,
             )
     names = list(jobs)
@@ -1654,16 +1332,13 @@ def _tool_result_from(results: Dict[str, Any], name: str) -> Any:
 
 
 async def gq_grade(state: ChatState) -> ChatState:
-    """Turn retrieval quality into a decision. Emptiness alone is not enough:
-    non-empty but off-topic provisions produce a fluent, confidently-cited
-    answer about the wrong law. "weak" = fewer than 3 provisions, or a mean
-    reranker score under settings.retrieval_min_confidence."""
+    """Turn retrieval quality into a decision."""
     settings = get_settings()
     statute = _tool_result(state, "statute_context")
     confidence = 0.0
     chunk_count = 0
     if statute is None:
-        # Statute search wasn't selected; judge on whether anything came back.
+
         grade = "good" if state.get("rag_succeeded") else "none"
     elif not statute.succeeded:
         grade = "none"
@@ -1713,9 +1388,7 @@ def _route_after_grade(state: ChatState) -> Literal["gq_rewrite", "gq_generate"]
 
 
 async def gq_rewrite(state: ChatState) -> ChatState:
-    """Second chance for weak/empty retrieval: gq_retrieve re-runs the same query
-    widened (no domain filter, larger k). A fast-LLM keyword rewrite used to sit
-    here; qwen3:4b gave up on it 19/19 times after ~18 s each."""
+    """Second chance for weak/empty retrieval: gq_retrieve re-runs the same query widened (no domain filter, larger k)."""
     await emit_event(
         "status", stage="retrieval", label="Broadening the search…"
     )
@@ -1726,18 +1399,11 @@ async def gq_rewrite(state: ChatState) -> ChatState:
     }
 
 
-_CONCISE_CONTEXT_TOKENS = 1400  # retry pass: a much smaller context block
+_CONCISE_CONTEXT_TOKENS = 1400
 
 
 def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
-    """Assemble the grounded prompt for the general-query answer. Returns
-    (prompt, retrieved_context).
-
-    concise=True builds the give-up retry variant: a fraction of the context
-    budget and an instruction to answer directly. The give-up is
-    the model spending its whole budget deliberating inside <think>, so
-    re-running the identical prompt is just latency; less to reason over and an
-    explicit ask for a short answer is what can change the outcome."""
+    """Assemble the grounded prompt for the general-query answer."""
     user_input = state["current_input"]
     messages = state.get("messages", [])
     regenerating = bool(state.get("regen_pending"))
@@ -1764,9 +1430,8 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
 
     user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
     feedback = state.get("regen_feedback") if regenerating else None
-    # Reserve budget for the fixed scaffolding (instruction template ~500
-    # tokens) plus the query, conversation history and any regeneration
-    # feedback, then fit the context blocks into whatever input budget remains.
+
+
     reserved = (
         count_tokens_approx(user_input_for_prompt)
         + count_tokens_approx(conversation_context or "")
@@ -1791,8 +1456,8 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
         if feedback:
             prompt += REGENERATION_FEEDBACK_BLOCK.format(feedback=feedback)
     else:
-        # No retrieved context — tools returned empty. Use the general prompt
-        # with extra caution about ungrounded claims.
+
+
         prompt = (
             GENERAL_QUERY_PROMPT.format(query=user_input_for_prompt) + prompt_warning
         )
@@ -1808,13 +1473,7 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
 
 
 def _concise_gates(state: ChatState) -> Dict[str, bool]:
-    """The individual conditions behind _prefers_concise, exposed separately
-    so gq_generate can log which gate(s) block the fast path on a given
-    turn — the "concise first" path was designed to fire on simple,
-    well-retrieved questions but nobody had measured how often it actually
-    does on real traffic (see Phase 2, docs/superpowers/specs/
-    2026-09-22-chatbot-agentic-optimization-design.md). Independent of
-    settings.concise_first_enabled, which _prefers_concise checks itself."""
+    """The individual conditions behind _prefers_concise, exposed separately so gq_generate can log which gate(s) block the fast path on a given turn — the "concise first" path was..."""
     settings = get_settings()
     user_input = state["current_input"]
     return {
@@ -1826,14 +1485,7 @@ def _concise_gates(state: ChatState) -> Dict[str, bool]:
 
 
 def _prefers_concise(state: ChatState) -> bool:
-    """Whether to answer with the concise prompt on the first attempt.
-
-    Only for a simple question that retrieval covered well: graded "good", one
-    part, short, and not a multi-offense scenario. Everything else keeps the full
-    prompt, since it is depth on those that the concise answer would cost. The
-    reason to do it at all: the full prompt gives up (never closes its <think>
-    block) on a meaningful share of queries and takes 2+ minutes when it doesn't,
-    where the concise one measured ~6x faster."""
+    """Whether to answer with the concise prompt on the first attempt."""
     settings = get_settings()
     if not settings.concise_first_enabled:
         return False
@@ -1849,15 +1501,7 @@ def _can_retry_giveup(state: ChatState) -> bool:
 
 
 async def gq_generate(state: ChatState) -> ChatState:
-    """Build the grounded prompt from what retrieval returned and generate,
-    streaming to the client. The "grounding unavailable" disclaimer is streamed
-    *before* the answer — it is known the moment retrieval returns, and must
-    not be something that only arrives with the final event.
-
-    If the model gives up (spends its whole budget thinking and never answers),
-    retry once with a trimmed, concise variant of the prompt before showing the
-    user a "please try again" note. The give-up note is withheld from the stream
-    on the first attempt so the user never sees it when the retry succeeds."""
+    """Build the grounded prompt from what retrieval returned and generate, streaming to the client."""
     regenerating = bool(state.get("regen_pending"))
     disclaimer_prefix, _ = _apply_compulsory_rag_policy(bool(state.get("rag_succeeded")))
 
@@ -1897,10 +1541,9 @@ async def gq_generate(state: ChatState) -> ChatState:
                 answer = await invoke_llm_safely(get_retry_llm(), prompt, stream=True)
                 attempts, retried = 2, True
             else:
-                await emit_text(answer)  # no time left: show the note we withheld
-        # Still no answer: the text is a canned "please retry" note, not
-        # something to fact-check (and a "verified, score 1.0" trace for it
-        # would mislead).
+                await emit_text(answer)
+
+
         if answer == _INCOMPLETE_GENERATION_NOTE:
             failed = True
     except Exception as e:
@@ -1944,17 +1587,7 @@ def _regeneration_plan(report) -> tuple:
 
 
 async def gq_verify(state: ChatState) -> ChatState:
-    """Post-generation grounding gate. Corrects unsupported sentences in
-    place; if the answer is still poorly supported it loops back once to
-    regenerate with retrieval aimed at the unsupported citations.
-
-    When this query's retrieval failed (rag_succeeded is False) but
-    generation still produced a real answer, runs a citation-only pass
-    instead of skipping verification altogether — see
-    _verify_response_citations(citation_only=True). No regeneration is
-    ever triggered on that path: there is no better context to retarget
-    retrieval at.
-    """
+    """Post-generation grounding gate."""
     settings = get_settings()
     response = state.get("response") or ""
     finished = {
@@ -1962,8 +1595,7 @@ async def gq_verify(state: ChatState) -> ChatState:
         "messages": state["messages"] + [{"role": "assistant", "content": response}],
     }
 
-    # Generation itself failed: the text is a canned apology, nothing to
-    # check against anything.
+
     if state.get("error") == "generation_failed":
         return {
             **finished,
@@ -2002,13 +1634,8 @@ async def gq_verify(state: ChatState) -> ChatState:
     verify_seconds = time.monotonic() - verify_started
 
     score = report.overall_score if report is not None else None
-    # Only an *adjudicated* report may trigger a regeneration. The deterministic
-    # word-overlap pass alone flags most fluent paraphrases (grounding_footer
-    # already refuses to show those to users for the same reason), and a
-    # regeneration costs another minute or more of GPU time. citation_only is
-    # also checked explicitly (not just relied on via report is None): defense
-    # in depth so a future change to _verify_response_citations's return
-    # contract can't silently reopen regeneration on the no-retrieval path.
+
+
     can_regenerate = (
         not citation_only
         and settings.grounding_retry_enabled
@@ -2054,8 +1681,8 @@ async def gq_verify(state: ChatState) -> ChatState:
         }
 
     if final_text != response:
-        # Corrections and footers land in the client immediately, not only
-        # once the terminal event arrives.
+
+
         await emit_event("replace", content=final_text)
     return {
         **state,
@@ -2071,20 +1698,10 @@ def _route_after_verify(state: ChatState) -> Literal["gq_retrieve", "end"]:
 
 
 async def _handle_document_validation(state: ChatState) -> ChatState:
-    """
-    Internal handler for document validation using the 3-layer pipeline.
-    Called by handle_document_analysis when validation is requested.
-
-    Layer 1: Document Classification (deterministic, rule-based)
-    Layer 2: Statutory Checklist Validation (rule-based, no LLM)
-    Layer 3: Legal Reasoning & Defect Explanation (LLM-based)
-
-    Output is framed as identifying potential issues — NEVER provides
-    binding legal opinions or states "this document is legally valid."
-    """
+    """Internal handler for document validation using the 3-layer pipeline."""
     document_content = state.get("document_content", "")
 
-    # If no document content, show upload prompt
+
     if not document_content:
         response = DOCUMENT_VALIDATION_UPLOAD_PROMPT
         return {
@@ -2095,9 +1712,8 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         }
 
     try:
-        # ================================================================
-        # Layer 1: Document Classification (deterministic)
-        # ================================================================
+
+
         await emit_event("status", stage="classify", label="Reading the document…")
         classification = await classify_document(document_content)
 
@@ -2106,9 +1722,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             f"(confidence: {classification.confidence:.2f})"
         )
 
-        # ================================================================
-        # Layer 2: Statutory Checklist Validation (rule-based, no LLM)
-        # ================================================================
+
         validator = get_statutory_validator()
         validation = validator.validate(document_content, classification.document_type)
         await emit_event(
@@ -2120,10 +1734,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             f"compliance score: {format_score(validation.compliance_score)}"
         )
 
-        # ================================================================
-        # Layer 2.5: Retrieve Indian Law Context (RAG)
-        # ================================================================
-        # Initialize local domain RAG systems in parallel
+
         crime_rag = None
 
         async def init_rag():
@@ -2146,14 +1757,13 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             except Exception:
                 return None
 
-        # THINK needs only the classification, so the LLM runs it while law
-        # context is retrieved.
+
         analyzer = get_legal_defect_analyzer(get_llm())
         think_task = asyncio.create_task(analyzer.think(classification))
 
         crime_rag, civil_rag = await asyncio.gather(init_rag(), init_civil())
 
-        # Get Indian law context via RAG tool
+
         law_rag = get_indian_law_rag(crime_rag=crime_rag, civil_rag=civil_rag)
         law_context = await law_rag.retrieve_context(
             document_type=classification.document_type,
@@ -2168,9 +1778,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             f"{len(law_context.applicable_acts)} applicable acts"
         )
 
-        # ================================================================
-        # Layer 3: Legal Reasoning & Defect Explanation (LLM)
-        # ================================================================
+
         await emit_event("status", stage="generation", label="Writing the analysis…")
         result = await analyzer.analyze_defects(
             classification=classification,
@@ -2182,8 +1790,8 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
         )
 
         response = result["formatted_response"]
-        # The streamed prefix + analysis + suffix already equal this unless the
-        # analysis fell back; either way the client ends on the exact report.
+
+
         await emit_event("replace", content=response)
 
         logger.info(
@@ -2191,7 +1799,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             f"Compliance: {format_score(result['compliance_score'])}"
         )
 
-        # Build validation info for state
+
         validation_info: DocumentValidationInfo = {
             "classified_type": classification.document_type,
             "classification_confidence": classification.confidence,
@@ -2223,7 +1831,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
     except Exception as e:
         logger.exception("Document validation error: %s", e)
 
-        # Fallback: try basic classification and validation without LLM
+
         try:
             classifier = get_document_classifier()
             classification = classifier.classify(document_content)
@@ -2282,9 +1890,7 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
 
 async def handle_non_legal_query(state: ChatState) -> ChatState:
-    """
-    Handle non-legal queries with a polite rejection message.
-    """
+    """Handle non-legal queries with a polite rejection message."""
     response = NON_LEGAL_RESPONSE
 
     return {
@@ -2302,11 +1908,6 @@ async def handle_clarification(state: ChatState) -> ChatState:
         "response": response,
         "messages": state["messages"] + [{"role": "assistant", "content": response}],
     }
-
-
-# ============================================================================
-# Router Function
-# ============================================================================
 
 
 def route_by_intent(
@@ -2333,28 +1934,8 @@ def route_by_intent(
     return "general_query"
 
 
-# ============================================================================
-# Graph Builder
-# ============================================================================
-
-
 def build_legal_chatbot_graph() -> StateGraph:
-    """
-    Build the LangGraph workflow for the legal chatbot. The one graph serves
-    both /api/chat and /api/chat/stream — streaming is a contextvar side
-    channel (see invoke_llm_safely / emit_event), not a second code path.
-
-    START -> classify_intent -> [route_by_intent] -+-> document_analysis -> END
-                                                   +-> crime_report     -> END
-                                                   +-> find_lawyer      -> END
-                                                   +-> non_legal        -> END
-                                                   +-> clarify          -> END
-                                                   +-> general_query loop:
-       gq_plan -> gq_retrieve -> gq_grade -> gq_generate -> gq_verify -> END
-                     ^              | weak/empty            | score low
-                     +-- gq_rewrite-+                        |
-                     +---------------------------------------+ (regenerate once)
-    """
+    """Build the LangGraph workflow for the legal chatbot."""
     workflow = StateGraph(ChatState)
 
     workflow.add_node("classify_intent", classify_intent)
@@ -2412,11 +1993,7 @@ def build_legal_chatbot_graph() -> StateGraph:
     return workflow
 
 
-# ============================================================================
-# Chatbot Class
-# ============================================================================
-
-_MAX_SESSION_MESSAGES = 20  # live conversation window per session
+_MAX_SESSION_MESSAGES = 20
 
 
 def _append_capped(left: Optional[List[Message]], right: Optional[List[Message]]) -> List[Message]:
@@ -2424,21 +2001,14 @@ def _append_capped(left: Optional[List[Message]], right: Optional[List[Message]]
 
 
 class SessionState(TypedDict):
-    """The only state that is checkpointed: conversation history.
-
-    The per-turn graph's own state (tool results holding retriever objects and
-    sets, up-to-10MB uploaded document text, exceptions) never reaches the
-    checkpointer — LangGraph's serializer fails on the first arbitrary object in
-    a tool's `raw` payload and flattens exceptions to strings. Keeping history
-    in a small outer graph means only plain, JSON-safe messages are persisted."""
+    """The only state that is checkpointed: conversation history."""
 
     messages: Annotated[List[Message], _append_capped]
 
 
 @dataclass
 class _TurnContext:
-    """Per-turn inputs and output, passed through a contextvar rather than graph
-    state so none of it is checkpointed (see SessionState)."""
+    """Per-turn inputs and output, passed through a contextvar rather than graph state so none of it is checkpointed (see SessionState)."""
 
     session_id: str
     started_at: float
@@ -2453,17 +2023,7 @@ _turn_var: contextvars.ContextVar[Optional[_TurnContext]] = contextvars.ContextV
 
 
 class LegalChatbot:
-    """
-    Main chatbot class that wraps the LangGraph workflow.
-    Provides a clean interface for the API layer.
-
-    Two graphs: `self._turn_graph` is the workflow (classify -> handlers, see
-    build_legal_chatbot_graph), compiled with checkpointer=False so its state is
-    never persisted — and so it cannot inherit the outer graph's checkpointer,
-    which a subgraph compiled with checkpointer=None would. `self.graph` is a
-    one-node outer graph whose only state is the message history; it is compiled
-    with the checkpointer, keyed by thread_id == the session's memory key.
-    """
+    """Main chatbot class that wraps the LangGraph workflow."""
 
     def __init__(self, checkpointer: Optional[BaseCheckpointSaver] = None):
         self._checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
@@ -2477,15 +2037,14 @@ class LegalChatbot:
 
         self._active_stream_tasks: Dict[str, asyncio.Task] = {}
         self._in_flight = 0
-        # Only used to bound the in-process fallback saver; Postgres threads are
-        # reaped by app.jobs.chat_threads instead.
+
+
         self._last_seen: Dict[str, float] = {}
 
-    # -- concurrency ----------------------------------------------------------
 
     def _acquire_slot(self) -> None:
-        # One GPU serves every request; past this many concurrent chats the
-        # extra ones would only queue behind Ollama, so refuse them quickly.
+
+
         if self._in_flight >= get_settings().chat_max_concurrent:
             raise ChatBusyError("The assistant is busy right now. Please try again shortly.")
         self._in_flight += 1
@@ -2493,18 +2052,14 @@ class LegalChatbot:
     def _release_slot(self) -> None:
         self._in_flight = max(0, self._in_flight - 1)
 
-    # -- session memory (checkpoint-backed) -----------------------------------
 
     def _config(self, session_id: str, touch: bool = True) -> Dict[str, Any]:
-        """thread_id is the memory key, which already carries the account scope
-        (`user:<id>:<session>` / `guest:<session>`), so one account cannot read
-        another's conversation by guessing a session id. Only writes count as
-        activity (touch=True)."""
+        """thread_id is the memory key, which already carries the account scope (`user:<id>:<session>` / `guest:<session>`), so one account cannot read another's conversation by guessing..."""
         if touch:
             self._touch(session_id)
         return {
             "configurable": {"thread_id": session_id},
-            # Stamped into every checkpoint; idle-thread cleanup reads it.
+
             "metadata": {"last_active": datetime.now(timezone.utc).isoformat()},
         }
 
@@ -2535,13 +2090,7 @@ class LegalChatbot:
         return bool(await self.get_session_history(session_id))
 
     async def seed_session(self, session_id: str, messages: List[Message]) -> None:
-        """
-        Prime a thread from DB-loaded history, but only if it has none yet
-        (avoids clobbering an active conversation with a stale DB read). Called
-        by the chat router for an authenticated user whose thread has no
-        checkpoint (a session that predates checkpointing, or whose idle thread
-        was cleaned up) — chat_messages is the durable transcript.
-        """
+        """Prime a thread from DB-loaded history, but only if it has none yet (avoids clobbering an active conversation with a stale DB read)."""
         if messages and not await self.has_session(session_id):
             await self.graph.aupdate_state(
                 self._config(session_id),
@@ -2557,19 +2106,14 @@ class LegalChatbot:
         )
 
     async def clear_session(self, session_id: str) -> None:
-        """Forget a session's history and stop any in-flight generation for it
-        (otherwise it would keep running and write into a session the user just
-        cleared)."""
+        """Forget a session's history and stop any in-flight generation for it (otherwise it would keep running and write into a session the user just cleared)."""
         self.stop_stream(session_id)
         self._last_seen.pop(session_id, None)
         await self._checkpointer.adelete_thread(session_id)
 
-    # -- the turn -------------------------------------------------------------
 
     async def _run_turn(self, state: SessionState) -> Dict[str, Any]:
-        """The outer graph's only node: run the workflow for this turn. The last
-        message is the user turn that was just appended; everything before it is
-        history."""
+        """The outer graph's only node: run the workflow for this turn."""
         ctx = _turn_var.get()
         if ctx is None:
             raise RuntimeError("chat turn started without a turn context")
@@ -2605,16 +2149,15 @@ class LegalChatbot:
         document_content: Optional[str] = None,
         document_type: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Stream a chat turn (see _stream_chat), holding a concurrency slot
-        for its whole lifetime — including when the client disconnects."""
+        """Stream a chat turn (see _stream_chat), holding a concurrency slot for its whole lifetime — including when the client disconnects."""
         self._acquire_slot()
         inner = self._stream_chat(message, session_id, document_content, document_type)
         try:
             async for event in inner:
                 yield event
         finally:
-            # Close the inner generator deterministically: its `finally` is
-            # what cancels the graph task when the client has gone away.
+
+
             await inner.aclose()
             self._release_slot()
 
@@ -2625,25 +2168,10 @@ class LegalChatbot:
         document_content: Optional[str] = None,
         document_type: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Stream chat response token by token.
-
-        Runs the same compiled graph as chat(); the graph's nodes push tokens
-        and progress events into a queue (see invoke_llm_safely / emit_event)
-        that this generator relays. Yields dicts:
-          {"type": "token", "content": "..."}     answer text
-          {"type": "status", "stage", "label"}    progress for the UI
-          {"type": "reset"}                       discard text streamed so far
-          {"type": "replace", "content": "..."}   corrected full text
-          {"type": "done"|"stopped", ...}         terminal, with metadata
-        """
+        """Stream chat response token by token."""
         request_id_var.set(uuid.uuid4().hex[:8])
-        # Multilingual layer. Translate the query to English up front so
-        # routing/retrieval/reasoning run in English and memory stays canonical.
-        # Hybrid streaming: English replies stream token by token; a
-        # non-English reply cannot stream because it is translated only after
-        # the full English answer exists, so for those we suppress per-token
-        # output and emit one translated message at the end.
+
+
         english_message, lang = await preprocess_query(message)
         translate_out = (
             lang.is_reliable and lang.language != get_settings().default_language
@@ -2674,12 +2202,11 @@ class LegalChatbot:
                     "error": str(e),
                 }
             finally:
-                await queue.put(None)  # Signal completion
+                await queue.put(None)
 
         task = asyncio.create_task(run_graph())
-        # A new stream supersedes any still-running one for this session — cancel
-        # the old task first so it isn't orphaned (unstoppable, still burning
-        # LLM compute) by the dict overwrite below.
+
+
         previous = self._active_stream_tasks.get(session_id)
         if previous is not None and not previous.done():
             previous.cancel()
@@ -2690,10 +2217,8 @@ class LegalChatbot:
         stopped = False
         superseded = False
         try:
-            # Relay tokens and events as they arrive. For a non-English reply
-            # we still drain the queue (to accumulate the full English answer)
-            # but do not emit per-token — the client receives one translated
-            # message after generation completes.
+
+
             while True:
                 item = await queue.get()
                 if item is None:
@@ -2716,44 +2241,35 @@ class LegalChatbot:
                 if not translate_out:
                     yield {"type": "token", "content": item}
 
-            # Wait for the graph to complete and get its result
+
             try:
                 result = await task
             except asyncio.CancelledError:
-                # stop_stream() cancelled the graph mid-generation — the
-                # tokens already yielded above are everything the user saw.
+
+
                 stopped = True
                 result = {"intent": intent_seen, "response": accumulated}
         finally:
             if self._active_stream_tasks.get(session_id) is task:
                 self._active_stream_tasks.pop(session_id, None)
-                # Reached without the task finishing means the consumer went
-                # away (client disconnect closes this generator). Deregistering
-                # alone would leave the graph generating with nothing able to
-                # stop it, so cancel it here.
+
+
                 if not task.done():
                     task.cancel()
             else:
-                # A newer stream_chat() call for this session_id superseded
-                # us (and cancelled us) before we finished — don't let our
-                # stale partial response land in history after the newer,
-                # already-completed turn.
+
+
                 superseded = True
 
-        # English answer (canonical) — from the graph, or accumulated tokens.
+
         english_text = result.get("response", "") or accumulated
         intent = result.get("intent") or intent_seen
 
-        # A completed turn's reply was already checkpointed by the graph. A
-        # stopped one never got that far, so save the partial text the user saw
-        # as the assistant turn (keeps conversation context coherent).
+
         if stopped and english_text and not superseded:
             await self._append_assistant(session_id, english_text)
 
-        # Client-facing text: translated for non-English, else the English
-        # answer. For English replies that streamed token-by-token, the client
-        # already has the text; only the non-streamed/non-English cases need a
-        # full-text token emission below.
+
         if translate_out:
             response_text = await postprocess_response(english_text, lang)
             if response_text:
@@ -2764,11 +2280,8 @@ class LegalChatbot:
                 yield {"type": "token", "content": response_text}
 
         if superseded:
-            # A newer stream_chat() call for this session_id already started
-            # (or finished) before we did — our result is stale. Emitting a
-            # normal "stopped"/"done" event here would make the router
-            # persist this superseded partial into the transcript, possibly
-            # landing it in the DB after the newer, already-completed turn.
+
+
             yield {"type": "superseded", "session_id": session_id}
             return
 
@@ -2784,7 +2297,7 @@ class LegalChatbot:
             }
             return
 
-        # Yield completion event with metadata
+
         yield {
             "type": "done",
             "session_id": session_id,
@@ -2801,8 +2314,7 @@ class LegalChatbot:
         }
 
     def stop_stream(self, session_id: str) -> bool:
-        """Cancel an in-flight stream_chat() generation for this session, if
-        any. Called from the /api/chat/stream/stop endpoint (the Stop button)."""
+        """Cancel an in-flight stream_chat() generation for this session, if any."""
         task = self._active_stream_tasks.get(session_id)
         if task is not None and not task.done():
             task.cancel()
@@ -2830,23 +2342,10 @@ class LegalChatbot:
         document_content: Optional[str] = None,
         document_type: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Process a chat message and return the response.
-
-        Args:
-            message: User's message
-            session_id: Session identifier for conversation context
-            document_content: Optional document content if user uploaded a file
-            document_type: Type of uploaded document (pdf, image_ocr, etc.)
-
-        Returns:
-            Dict containing response and any additional data
-        """
+        """Process a chat message and return the response."""
         request_id_var.set(uuid.uuid4().hex[:8])
-        # Multilingual layer (no-op for English / when disabled): detect the
-        # input language and translate the query to English so the entire
-        # downstream pipeline — routing, retrieval, reasoning — runs in English.
-        # Conversation memory therefore stays canonical-English.
+
+
         english_message, lang = await preprocess_query(message)
 
         ctx = _TurnContext(
@@ -2862,20 +2361,16 @@ class LegalChatbot:
         )
         result = ctx.result or {}
 
-        # The reply is already in the checkpoint (English canonical — memory is
-        # language-independent); only the client-facing copy is translated.
+
         english_response = result.get("response")
 
-        # Translate the final answer back into the user's language (no-op for
-        # English / when disabled). Falls back to English text on failure.
+
         display_response = (
             await postprocess_response(english_response or "", lang)
             or "I'm sorry, I couldn't process your request."
         )
 
-        # Return structured response. response_en/query_en are the canonical
-        # English texts for language-independent persistence; response is the
-        # user-facing (possibly translated) text.
+
         return {
             "response": display_response,
             "response_en": english_response,
@@ -2892,13 +2387,11 @@ class LegalChatbot:
         }
 
 
-# Singleton instance
 _chatbot: Optional[LegalChatbot] = None
 
 
 def get_chatbot() -> LegalChatbot:
-    """Get or create the chatbot instance, bound to the app's checkpointer
-    (Postgres once app startup has initialised it; in-memory otherwise)."""
+    """Get or create the chatbot instance, bound to the app's checkpointer (Postgres once app startup has initialised it; in-memory otherwise)."""
     global _chatbot
     if _chatbot is None:
         _chatbot = LegalChatbot(get_checkpointer())

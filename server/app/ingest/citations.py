@@ -1,12 +1,4 @@
-"""
-Statute-citation extraction from judgment text.
-
-Finds references like "Ss. 302/34 IPC", "section 438(1) Cr.P.C.", "sections 148,
-149 and 302 read with section 34 of the Indian Penal Code" and returns
-normalised "ACT:number" strings ("IPC:302", "CrPC:438", "contract act 1872:10",
-"Constitution:21"). A reference whose Act can't be determined from the text
-right after the number list is skipped rather than guessed.
-"""
+"""Statute-citation extraction from judgment text."""
 
 from __future__ import annotations
 
@@ -24,8 +16,7 @@ _SECTION_RE = re.compile(rf"{_TRIGGER}({_LIST})", re.IGNORECASE)
 _ARTICLE_RE = re.compile(rf"\barticles?\s+({_LIST})", re.IGNORECASE)
 _NUM_RE = re.compile(r"\d{1,4}(?:-?[A-Z]{1,2}\b)?", re.IGNORECASE)
 
-# Order matters: BNSS before BNS, and the criminal codes before the generic
-# "... Act" fallback.
+
 _ACTS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"(?:B\.?\s?N\.?\s?S\.?\s?S\.?\b|Bharatiya\s+Nagarik\s+Suraksha)", re.I), "BNSS"),
     (re.compile(r"(?:B\.?\s?N\.?\s?S\.?\b|Bharatiya\s+Nyaya\s+Sanhita)", re.I), "BNS"),

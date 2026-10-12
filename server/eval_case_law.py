@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""
-eval_case_law.py — lightweight retrieval-quality check for the case-law
-index, using ground truth that already exists for free: each doctrine in
-app/data/legal_ontology.json lists its own landmark_cases (see
-app/data/case_law_manifest.py::build_manifest()). For every doctrine with
-at least one landmark case, query the case-law RAG with the doctrine name
-and check whether that doctrine's landmark case(s) land in the top-k.
-
-Reuses compute_hit_rate/compute_mrr_single verbatim (same functions
-eval_retrieval_only.py uses for the bare-acts index) — no new metric code.
-
-Usage (conda env legal_chatbot_env, run from server/):
-    python eval_case_law.py
-"""
+"""eval_case_law.py — lightweight retrieval-quality check for the case-law index, using ground truth that already exists for free: each doctrine in app/data/legal_ontology.json..."""
 
 import asyncio
 import json

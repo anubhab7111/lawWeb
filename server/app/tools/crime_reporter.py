@@ -1,8 +1,4 @@
-"""
-Crime reporting module.
-Provides crime type detection for routing crime reports.
-The finetuned LLM handles generating guidance, IPC sections, punishment, and further steps.
-"""
+"""Crime reporting module."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -14,7 +10,7 @@ from app.text_match import count_words
 
 CLASSIFIER_DIR = Path(__file__).resolve().parents[1] / "data" / "crime_type_classifier"
 
-# List of recognized crime types for the /crime-types API endpoint
+
 CRIME_TYPES: List[str] = [
     "theft",
     "robbery",
@@ -34,7 +30,7 @@ CRIME_TYPES: List[str] = [
     "dowry",
 ]
 
-# Keywords for crime type detection
+
 CRIME_KEYWORDS: Dict[str, List[str]] = {
     "threat": [
         "threatened",
@@ -184,7 +180,7 @@ CRIME_KEYWORDS: Dict[str, List[str]] = {
     ],
 }
 
-# Complex crimes that benefit from RAG lookup for IPC sections
+
 COMPLEX_CRIMES: List[str] = [
     "land_dispute",
     "cybercrime",
@@ -195,15 +191,7 @@ COMPLEX_CRIMES: List[str] = [
 
 
 def detect_crime_type(description: str) -> str:
-    """
-    Detect the type of crime based on description keywords.
-
-    Args:
-        description: User's description of the incident
-
-    Returns:
-        Detected crime type string
-    """
+    """Detect the type of crime based on description keywords."""
     description_lower = description.lower()
 
     scores: Dict[str, int] = {}
@@ -218,8 +206,6 @@ def detect_crime_type(description: str) -> str:
     return "general"
 
 
-# Classifier labels are the IndianBailJudgments-1200 crime families it was trained on.
-# Two families cover more than one of our types; keywords pick within those (first wins ties).
 FAMILY_TYPES: Dict[str, List[str]] = {
     "Theft or Robbery": ["theft", "robbery"],
     "Dowry Harassment": ["dowry"],
@@ -258,12 +244,12 @@ HUMAN_VICTIM_WORDS = [
 def resolve_family(family: str, description: str) -> str:
     text = description.lower()
     if family == "Murder":
-        # Bail data files threats under Extortion, so "threatening to kill me" scores as
-        # Murder; with no sign that anyone died it is criminal intimidation.
+
+
         died = count_words(text, CRIME_KEYWORDS["murder"])
         if not died and count_words(text, CRIME_KEYWORDS["threat"]):
             return "threat"
-        # Killing someone's animal is mischief (IPC 428/429, BNS 325), not murder.
+
         if count_words(text, ANIMAL_WORDS) and not count_words(text, HUMAN_VICTIM_WORDS):
             return "property_damage"
         return "murder"
@@ -276,8 +262,7 @@ def crime_type_from_vector(q: np.ndarray, description: str) -> str:
 
 
 async def classify_crime_type(description: str) -> str:
-    """Crime type from a logistic-regression head over the shared BGE-M3 embedding;
-    falls back to keyword matching when the weights or the embedding model are missing."""
+    """Crime type from a logistic-regression head over the shared BGE-M3 embedding; falls back to keyword matching when the weights or the embedding model are missing."""
     if _load_classifier() is None:
         return detect_crime_type(description)
     try:

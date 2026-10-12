@@ -1,7 +1,4 @@
-"""Hand-written routing messages for the two intents with no authentic chat-style source.
-
-Written for the routing gold set (see eval_routing.py); reviewed by the project owner before use.
-"""
+"""Hand-written routing messages for the two intents with no authentic chat-style source."""
 
 FIND_LAWYER = [
     "I need a lawyer for my divorce case in Pune",

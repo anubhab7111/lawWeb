@@ -1,19 +1,4 @@
-"""
-Lawyer recommendation: pgvector semantic search over lawyer bios, fused with
-a weighted score on rating/success_rate. Backs both POST /api/lawyers/recommend
-and the chatbot's find_lawyer intent, so there is one recommendation
-implementation instead of two divergent ones.
-
-Reuses the embedding model already loaded for the RAG pipeline
-(the shared BGE-M3 model via base_legal_rag._get_shared_embeddings) rather than
-loading a second copy.
-
-There is no lawyer create/update endpoint in this repo today, so embeddings
-are only ever backfilled (see backfill_lawyer_embeddings.py). If a lawyer
-create/update route is added later, it must call embed_lawyers_batch (or
-embed_query_text on a single bio) and store the result in bio_embedding, or
-new/edited lawyers will silently be excluded from semantic search.
-"""
+"""Lawyer recommendation: pgvector semantic search over lawyer bios, fused with a weighted score on rating/success_rate."""
 
 import asyncio
 from typing import List, Optional, Tuple
@@ -25,19 +10,11 @@ from app.db.models import Lawyer
 from app.tools.base_legal_rag import _get_shared_embeddings
 
 
-# Weighted-score components. Semantic similarity dominates when a
-# problem_description is given; when it isn't, these are renormalized to
-# just rating/success_rate (see recommend_lawyers).
 SEMANTIC_WEIGHT = 0.5
 RATING_WEIGHT = 0.3
 SUCCESS_RATE_WEIGHT = 0.2
 
-# Broad candidate set pulled by SQL (vector order or rating order), then
-# re-ranked in Python by the weighted score. At current table sizes this is
-# a plain sequential scan (sub-millisecond); once the lawyers table grows
-# past ~50k-100k rows, add
-#   CREATE INDEX ... ON lawyers USING hnsw (bio_embedding vector_cosine_ops)
-# as a pure scaling change — no query code above this needs to change.
+
 CANDIDATE_POOL_SIZE = 20
 RESULT_LIMIT = 5
 
@@ -54,7 +31,7 @@ def _build_embedding_text(specialty: str, bio: str) -> str:
 
 
 async def embed_query_text(text: str) -> List[float]:
-    """Embed free text (e.g. a user's problem description) for query-time search."""
+    """Embed free text (e.g."""
     embeddings = await _get_shared_embeddings()
     return await embeddings.aembed_query(text)
 
@@ -62,7 +39,7 @@ async def embed_query_text(text: str) -> List[float]:
 async def embed_lawyers_batch(
     specialties_and_bios: List[Tuple[str, str]],
 ) -> List[List[float]]:
-    """Embed (specialty, bio) pairs in one batch. Used by the backfill script."""
+    """Embed (specialty, bio) pairs in one batch."""
     embeddings = await _get_shared_embeddings()
     texts = [_build_embedding_text(specialty, bio) for specialty, bio in specialties_and_bios]
     return await asyncio.to_thread(embeddings.embed_documents, texts)
@@ -84,12 +61,7 @@ async def recommend_lawyers(
     min_rating: Optional[float] = None,
     limit: int = RESULT_LIMIT,
 ) -> List[Lawyer]:
-    """
-    Retrieve a candidate pool (semantic search when problem_description is
-    given, otherwise rating-ordered) filtered by the structured criteria,
-    then re-rank the pool by a weighted score of semantic similarity,
-    rating, and success_rate.
-    """
+    """Retrieve a candidate pool (semantic search when problem_description is given, otherwise rating-ordered) filtered by the structured criteria, then re-rank the pool by a weighted..."""
     filters = []
     if specialty:
         filters.append(Lawyer.specialty.ilike(f"%{specialty}%"))
@@ -109,7 +81,7 @@ async def recommend_lawyers(
         for f in filters:
             stmt = stmt.where(f)
         stmt = stmt.order_by(distance_col).limit(CANDIDATE_POOL_SIZE)
-        # Blocking SQLAlchemy + pgvector scan: keep it off the event loop.
+
         rows = await asyncio.to_thread(lambda: session.exec(stmt).all())
         candidates: List[Tuple[Lawyer, Optional[float]]] = [
             (lawyer, float(distance)) for lawyer, distance in rows
@@ -137,8 +109,8 @@ async def recommend_lawyers(
             SUCCESS_RATE_WEIGHT,
         )
     else:
-        # No semantic signal to blend in — renormalize onto the remaining
-        # components instead of silently discarding half the score.
+
+
         remaining = RATING_WEIGHT + SUCCESS_RATE_WEIGHT
         semantic_weight = 0.0
         rating_weight = RATING_WEIGHT / remaining
@@ -146,7 +118,7 @@ async def recommend_lawyers(
 
     scored: List[Tuple[float, Lawyer]] = []
     for lawyer, distance in candidates:
-        # Cosine distance is in [0, 2]; similarity = 1 - distance, clamped.
+
         similarity = max(0.0, min(1.0, 1 - distance)) if distance is not None else 0.0
         norm_rating = _normalize(lawyer.rating, rating_lo, rating_hi)
         norm_success = _normalize(lawyer.success_rate, success_lo, success_hi)

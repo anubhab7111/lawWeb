@@ -1,14 +1,4 @@
-"""
-FIRAC extraction for Similar Case Search: turns an uploaded order/petition/
-notice into a structured Facts/Issues/Rules/Application/Conclusion summary
-that downstream retrieval (case law + statutes) is queried with.
-
-Uses the main LLM (not the fast/classification one) because extraction
-quality directly gates every downstream retrieval result — this is the
-single biggest quality risk in Similar Case Search (see the implementation
-plan). Callers should show the extracted FIRAC to the user for confirmation
-before trusting search results built on it.
-"""
+"""FIRAC extraction for Similar Case Search: turns an uploaded order/petition/ notice into a structured Facts/Issues/Rules/Application/Conclusion summary that downstream retrieval..."""
 
 from __future__ import annotations
 
@@ -19,7 +9,7 @@ from typing import List
 
 from app.chatbot import get_llm, invoke_llm_safely
 
-_MAX_INPUT_CHARS = 6000  # keep the extraction prompt well inside the LLM's context budget
+_MAX_INPUT_CHARS = 6000
 
 
 @dataclass
@@ -34,8 +24,7 @@ class FiracExtraction:
     raw_llm_output: str = ""
 
     def search_query(self) -> str:
-        """Text to feed into statute/case-law retrieval — issues carry the
-        most retrieval signal, entities disambiguate domain."""
+        """Text to feed into statute/case-law retrieval — issues carry the most retrieval signal, entities disambiguate domain."""
         parts = self.issues + self.extracted_entities
         return " ".join(parts) if parts else self.facts[:500]
 
@@ -65,7 +54,7 @@ DOCUMENT TEXT:
 
 def _extract_json(raw: str) -> dict:
     raw = raw.strip()
-    # Models sometimes wrap JSON in ```json fences despite instructions.
+
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
         raise ValueError("No JSON object found in LLM output")

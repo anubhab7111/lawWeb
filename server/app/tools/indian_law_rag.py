@@ -1,15 +1,4 @@
-"""
-Indian Law RAG Tool (Layer 2 — Tool 3: retrieve_indian_law_context)
-
-RAG-based retrieval of Indian legal context for document validation.
-Searches across:
-- State-specific Stamp Acts
-- Case law and judicial precedents
-- Statutory requirements and forms
-
-Uses local domain RAG systems and static legal mappings to provide a
-validation-focused interface.
-"""
+"""Indian Law RAG Tool (Layer 2 — Tool 3: retrieve_indian_law_context) RAG-based retrieval of Indian legal context for document validation."""
 
 import re
 from typing import Dict, Any, List, Optional
@@ -23,10 +12,10 @@ class LawReference:
     title: str
     act_name: str
     section: str
-    relevance: str  # Why this reference is relevant to the validation
+    relevance: str
     excerpt: str
     url: str = ""
-    source_type: str = ""  # "bare_act", "case_law", "stamp_act", "rules_forms"
+    source_type: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -61,10 +50,6 @@ class IndianLawContext:
             "precedent_notes": self.precedent_notes,
         }
 
-
-# ============================================================================
-# Mapping: Document Type → Applicable Acts and Key Sections
-# ============================================================================
 
 DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
     "Affidavit": {
@@ -306,28 +291,20 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
 
 
 class IndianLawRAGTool:
-    """
-    RAG-based tool for retrieving Indian law context relevant to document validation.
-
-    Combines:
-    1. Static law mapping (acts, sections, precedents per document type)
-    2. Domain-specific FAISS RAG (criminal / civil / constitutional)
-
-    This tool feeds into Layer 3 (LLM-based defect explanation).
-    """
+    """RAG-based tool for retrieving Indian law context relevant to document validation."""
 
     def __init__(
         self,
-        crime_rag=None,  # Legacy; kept for backward compatibility
-        criminal_rag=None,  # CriminalRAGSystem
-        civil_rag=None,  # CivilRAGSystem
-        constitutional_rag=None,  # ConstitutionalRAGSystem
+        crime_rag=None,
+        criminal_rag=None,
+        civil_rag=None,
+        constitutional_rag=None,
     ):
-        # Prefer new domain-specific instances; fall back to legacy crime_rag
+
         self.criminal_rag = criminal_rag or crime_rag
         self.civil_rag = civil_rag
         self.constitutional_rag = constitutional_rag
-        self.crime_rag = self.criminal_rag  # backward-compat alias
+        self.crime_rag = self.criminal_rag
         self.law_map = DOCUMENT_LAW_MAP
 
     async def retrieve_context(
@@ -338,39 +315,27 @@ class IndianLawRAGTool:
         document_text: str = "",
         jurisdiction_hints: List[str] = None,
     ) -> IndianLawContext:
-        """
-        Retrieve Indian law context relevant to the document validation findings.
-
-        Args:
-            document_type: Classified document type
-            missing_elements: Missing mandatory elements from Layer 2
-            non_compliance: Non-compliance issues from Layer 2
-            document_text: Original document text for additional context
-            jurisdiction_hints: State/court hints from classifier
-
-        Returns:
-            IndianLawContext with references, acts, sections, and notes
-        """
+        """Retrieve Indian law context relevant to the document validation findings."""
         context = IndianLawContext(document_type=document_type)
 
-        # 1. Get static law mapping
+
         law_info = self.law_map.get(document_type, {})
         context.applicable_acts = law_info.get("acts", [])
         context.applicable_sections = law_info.get("key_sections", [])
         context.precedent_notes = await self._verified_precedents(law_info)
 
-        # 2. Generate state-specific notes if jurisdiction detected
+
         if jurisdiction_hints:
             context.state_specific_notes = self._get_state_notes(
                 document_type, jurisdiction_hints
             )
 
-        # 3. Search local RAG for additional legal context
+
         if self.crime_rag and document_text:
             rag_refs = await self._search_rag_context(document_type, document_text)
             context.references.extend(rag_refs)
 
-        # 4. Add static references for missing elements
+
         static_refs = self._build_static_references(
             document_type, missing_elements, non_compliance
         )
@@ -379,9 +344,7 @@ class IndianLawRAGTool:
         return context
 
     async def _verified_precedents(self, law_info: Dict[str, Any]) -> List[str]:
-        """The type's curated precedents that resolve in the indexed landmark
-        corpus. Retrieving extra cases by shared Act was tried and dropped: it
-        surfaced off-topic judgments (GPA sales for a rent agreement)."""
+        """The type's curated precedents that resolve in the indexed landmark corpus."""
         from app.tools.case_law_rag import get_case_law_rag_system
 
         try:
@@ -402,13 +365,13 @@ class IndianLawRAGTool:
         """Generate state-specific notes based on jurisdiction."""
         notes = []
 
-        # Extract state from hints
+
         states_found = []
         for hint in jurisdiction_hints:
             if hint.startswith("State: "):
                 states_found.append(hint.replace("State: ", "").lower())
 
-        # State-specific stamp duty and registration notes
+
         stamp_duty_notes: Dict[str, Dict[str, str]] = {
             "delhi": {
                 "Sale Deed": "Delhi: Stamp duty is 6% for male owners, 4% for female owners. Registration fee is 1%.",
@@ -459,13 +422,7 @@ class IndianLawRAGTool:
     async def _search_rag_context(
         self, document_type: str, document_text: str
     ) -> List[LawReference]:
-        """Search local FAISS RAG for additional legal context.
-
-        Routes to the appropriate domain RAG based on document type:
-        - FIR / criminal documents  -> criminal_rag
-        - Civil / contract docs     -> civil_rag (if available)
-        - Default                   -> criminal_rag (legacy behaviour)
-        """
+        """Search local FAISS RAG for additional legal context."""
         refs = []
 
         criminal_doc_types = {"FIR"}
@@ -494,7 +451,7 @@ class IndianLawRAGTool:
             query = f"{document_type} legal requirements validity Indian law"
 
             if hasattr(rag_instance, "retrieve_context"):
-                # Criminal RAG returns CrimeContext with relevant_passages
+
                 context = await rag_instance.retrieve_context(query, k=3)
                 for passage in getattr(context, "relevant_passages", [])[:2]:
                     refs.append(
@@ -509,7 +466,7 @@ class IndianLawRAGTool:
                         )
                     )
             elif hasattr(rag_instance, "retrieve"):
-                # Civil / Constitutional RAG returns LegalContext with chunks
+
                 context = await rag_instance.retrieve(query, k=3)
                 for chunk in context.chunks[:2]:
                     refs.append(
@@ -604,7 +561,6 @@ class IndianLawRAGTool:
         return ""
 
 
-# Singleton
 _indian_law_rag: Optional[IndianLawRAGTool] = None
 
 
@@ -614,11 +570,7 @@ def get_indian_law_rag(
     civil_rag=None,
     constitutional_rag=None,
 ) -> IndianLawRAGTool:
-    """Get or create the Indian law RAG tool singleton.
-
-    Accepts both the legacy crime_rag parameter and the new domain-specific
-    criminal_rag / civil_rag / constitutional_rag parameters.
-    """
+    """Get or create the Indian law RAG tool singleton."""
     global _indian_law_rag
     if _indian_law_rag is None:
         _indian_law_rag = IndianLawRAGTool()

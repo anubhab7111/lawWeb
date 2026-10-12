@@ -1,6 +1,4 @@
-"""
-State definitions for the LangGraph legal chatbot.
-"""
+"""State definitions for the LangGraph legal chatbot."""
 
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
@@ -48,13 +46,13 @@ class CrimeReportInfo(TypedDict):
 class DocumentValidationInfo(TypedDict):
     """Result of the 3-layer document validation pipeline with ReAct reasoning."""
 
-    # Layer 1: Classification
+
     classified_type: str
     classification_confidence: float
     sub_type: Optional[str]
     jurisdiction_hints: List[str]
 
-    # Layer 2: Statutory Validation
+
     compliance_score: float
     total_checks: int
     passed: int
@@ -63,29 +61,29 @@ class DocumentValidationInfo(TypedDict):
     present_elements: List[Any]
     non_compliance: List[Any]
 
-    # Layer 3: Legal Analysis (ReAct)
+
     llm_analysis: str
     applicable_acts: List[str]
     applicable_sections: List[str]
     precedent_notes: List[str]
     state_specific_notes: List[str]
 
-    # ReAct Reasoning Trace
-    reasoning_trace: Optional[dict]  # {"think": str, "analyze": str}
+
+    reasoning_trace: Optional[dict]
 
 
 class ChatState(TypedDict):
     """Main state for the chatbot graph."""
 
-    # Conversation
+
     messages: List[Message]
     current_input: str
-    conversation_context: Optional[str]  # Summary of recent conversation
-    # Standalone search query condensed from history (multi-turn only);
-    # retrieval uses this, generation still sees current_input.
+    conversation_context: Optional[str]
+
+
     retrieval_query: Optional[str]
 
-    # Intent classification
+
     intent: Optional[
         Literal[
             "document_analysis",
@@ -96,64 +94,64 @@ class ChatState(TypedDict):
         ]
     ]
 
-    # Enhanced routing metadata
-    routing_confidence: Optional[float]  # Confidence score for the routing decision
-    routing_reasoning: Optional[str]  # Explanation for the routing decision
-    is_ambiguous: Optional[bool]  # Flag for low-confidence routing
-    secondary_intents: Optional[List[str]]  # For multi-intent queries
-    extracted_entities: Optional[List[str]]  # Legal terms/acts extracted from query
 
-    # Tool selection
+    routing_confidence: Optional[float]
+    routing_reasoning: Optional[str]
+    is_ambiguous: Optional[bool]
+    secondary_intents: Optional[List[str]]
+    extracted_entities: Optional[List[str]]
+
+
     selected_tools: Optional[
         List[str]
-    ]  # Tools to be used, from INTENT_TOOL_MAP.
+    ]
     domain_hint: Optional[
         Literal["criminal"]
-    ]  # Soft bias for unified statute retrieval; computed deterministically by _infer_domain_hint
+    ]
     active_document_context: Optional[
         bool
-    ]  # Flag when document is actively being discussed
+    ]
 
-    # Document analysis
+
     document_content: Optional[str]
-    document_type: Optional[str]  # Type of document: pdf, image_ocr, docx, etc.
+    document_type: Optional[str]
     document_info: Optional[DocumentInfo]
 
-    # Document validation (3-layer pipeline)
+
     document_validation: Optional[DocumentValidationInfo]
 
-    # Crime reporting
+
     crime_details: Optional[str]
     crime_report: Optional[CrimeReportInfo]
 
-    # Lawyer search
+
     lawyer_query: Optional[str]
     lawyers_found: Optional[List[LawyerInfo]]
 
-    # General-query agentic loop (retrieve -> grade -> generate -> verify)
+
     sub_questions: Optional[List[str]]
-    tool_results: Optional[Dict[str, Any]]  # name -> ToolInvocationResult | Exception
-    retrieved_context: Optional[str]  # fitted context actually put in the prompt
-    retrieved_sections: Optional[Any]  # set of section numbers, for citation checks
+    tool_results: Optional[Dict[str, Any]]
+    retrieved_context: Optional[str]
+    retrieved_sections: Optional[Any]
     rag_succeeded: Optional[bool]
     retrieval_confidence: Optional[float]
-    retrieval_grade: Optional[str]  # good | weak | none
+    retrieval_grade: Optional[str]
     retrieval_attempts: Optional[int]
     regen_count: Optional[int]
-    regen_pending: Optional[bool]  # verify decided to loop back for a regeneration
-    regen_feedback: Optional[str]  # unsupported claims/citations to fix on regeneration
-    extra_queries: Optional[List[str]]  # targeted retrieval queries for the regeneration
+    regen_pending: Optional[bool]
+    regen_feedback: Optional[str]
+    extra_queries: Optional[List[str]]
     grounding_score: Optional[float]
     clarification: Optional[bool]
-    followup_answered: Optional[bool]  # this turn answered a missing-detail question
+    followup_answered: Optional[bool]
 
-    # Response
+
     response: Optional[str]
 
-    # Metadata
+
     session_id: Optional[str]
     error: Optional[str]
-    started_at: Optional[float]  # time.monotonic() at request start
-    # Audit trail of what the workflow did — routing, retrieval, grading,
-    # grounding — returned to the client with the final event.
+    started_at: Optional[float]
+
+
     trace: Optional[Dict[str, Any]]

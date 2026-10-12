@@ -1,9 +1,4 @@
-"""Word-boundary keyword matching shared by the keyword-driven classifiers.
-
-Plain `term in text` matches inside longer words ("fire" in "fired", "fir" in
-"first"). These helpers match whole words, allowing only regular inflections
-of the last word ("kill" -> killed/killing/kills, "stab" -> stabbed).
-"""
+"""Word-boundary keyword matching shared by the keyword-driven classifiers."""
 
 import re
 from functools import lru_cache

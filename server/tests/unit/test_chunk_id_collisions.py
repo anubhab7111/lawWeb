@@ -15,8 +15,8 @@ def _ids(rag, source_file, domain="criminal"):
 
 
 def test_acts_sharing_a_name_prefix_get_distinct_chunk_ids():
-    # IPC and the Evidence Act both start "INDIAN"; the three Bharatiya acts start "BHARAT".
-    # Colliding ids made the build keep one and silently drop the other's section.
+
+
     rag = UnifiedLegalRAGSystem()
     ipc = _ids(rag, "Indian_Penal_Code_1860.pdf")
     iea = _ids(rag, "Indian_Evidence_Act_1872.pdf")

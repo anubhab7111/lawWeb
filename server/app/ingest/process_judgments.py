@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""
-Extract, clean, dedup and chunk the downloaded Supreme Court judgments.
-
-Per year, under <corpus>/judgments/sc/:
-  text/year=YYYY/<stem>.txt.gz        raw pdftotext output
-  text/year=YYYY/_extraction.parquet  one row per PDF: quality metrics, status, sha
-  clean/year=YYYY/<stem>.txt.gz       cleaned paragraphs
-  chunks/year=YYYY/chunks.jsonl.gz    schema-validated chunk records
-  chunks/year=YYYY/_DONE.json         marks a finished year (pipeline_version, counts)
-and quarantine/extract|chunk/sc/... for rejected documents / chunks, each with a reason.
-
-Resumable: a year with a matching _DONE.json is skipped (--force redoes it).
-A QA report and a random spot-check sample are written to <corpus>/builds/qa/.
-
-Usage (from server/):
-    python -m app.ingest.process_judgments --years 1985 2005
-    python -m app.ingest.process_judgments               # every downloaded year
-"""
+"""Extract, clean, dedup and chunk the downloaded Supreme Court judgments."""
 
 from __future__ import annotations
 
@@ -166,24 +149,13 @@ def process_year(year: int, workers: int, force: bool = False) -> Optional[Dict]
 
 
 def keep_year(stem: str, folder_years: List[int]) -> int:
-    """Which year folder keeps a judgment that the bucket lists in several.
-
-    The bucket lists a case under both its decision year and its report year;
-    the filename's leading year is the report year, so that copy wins, else the
-    earliest folder.
-    """
+    """Which year folder keeps a judgment that the bucket lists in several."""
     report_year = int(stem.removeprefix("S_")[:4])
     return report_year if report_year in folder_years else min(folder_years)
 
 
 def dedupe_across_years(years: List[int]) -> Dict:
-    """Drop the copies of a judgment that sit in more than one year folder.
-
-    Chunk files are rewritten without the dropped copies, their extraction rows
-    are marked `duplicate`, and every drop is recorded in
-    <corpus>/manifest/sc_cross_year_duplicates.jsonl. Raw PDFs are left alone.
-    Idempotent: rows already marked duplicate are ignored.
-    """
+    """Drop the copies of a judgment that sit in more than one year folder."""
     root = sc_root()
     owners: Dict[str, List[int]] = {}
     tables: Dict[int, pd.DataFrame] = {}

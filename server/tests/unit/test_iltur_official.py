@@ -10,9 +10,9 @@ def test_matches_the_leaderboard_computation_including_absent_labels():
     golds = [["Section 302", "Section 34"], ["Section 294(b)"]]
     preds = [["Section 302"], ["Section 294"]]
     g, p = io.gold_matrix(golds, VOCAB), io.gold_matrix(preds, VOCAB)
-    # leaderboard: plain sklearn macro over all vocab columns
+
     assert io.official_macro_f1(g, p) == 100 * f1_score(g, p, average="macro", zero_division=0)
-    # 294 and 294(b) are different columns; 302 right, 34 missed, 294 wrong, 294(b) missed
+
     assert abs(io.official_macro_f1(g, p) - 25.0) < 1e-9
 
 
@@ -35,7 +35,7 @@ def test_topk_never_predicts_zero_scores():
 def test_label_thresholds_are_fitted_per_column_and_improve_dev_f1():
     rng = np.random.default_rng(0)
     gold = (rng.random((400, 2)) < 0.3).astype(np.int8)
-    # label 0 is separable at 0.6, label 1 at 0.3
+
     scores = np.where(gold == 1, [0.7, 0.4], [0.5, 0.2]) + rng.normal(0, 0.02, (400, 2))
     th = io.fit_label_thresholds(scores, gold, fallback=0.5)
     assert 0.5 < th[0] <= 0.7 and 0.2 < th[1] <= 0.4

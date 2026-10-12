@@ -1,18 +1,4 @@
-"""
-label_reranker.py — cross-encoder reranking of candidate statutes against case facts.
-
-Candidate statutes come from every retrieval source (precedent votes, the
-classifier, judgment votes, statute retrieval). The cross-encoder then reads the
-facts *together with each candidate's statute text* and scores the pair, so the
-final order reflects whether the facts actually satisfy the provision rather than
-how the candidate was found. Facts longer than one input are read as several
-segments and a candidate keeps its best segment score (the offence may be described
-anywhere in the narrative).
-
-The model is a cross-encoder fine-tuned on IL-TUR training cases
-(train_label_reranker.py); statute texts ship as a fixture (app/data/iltur_statutes.json)
-so scoring never needs the corpus drive.
-"""
+"""label_reranker.py — cross-encoder reranking of candidate statutes against case facts."""
 
 from __future__ import annotations
 

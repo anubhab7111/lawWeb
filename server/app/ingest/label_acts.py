@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-Which Act each IL-TUR `lsi` label usually refers to, measured on the judgment corpus.
-
-IL-TUR labels are bare section names ("Section 482"). The dataset attaches IPC text
-to all of them, but its cases often mean the Code of Criminal Procedure (482 =
-quashing, 438 = anticipatory bail). For each label number this counts how the
-Supreme Court judgments cite it — as IPC or as CrPC — and records the majority Act,
-so the chatbot pins the provision the number actually means.
-
-Output: app/data/iltur_label_acts.json  {"Section 482": {"act": "CrPC", "ipc": n, "crpc": n}, ...}
-
-Usage (from server/):  python -m app.ingest.label_acts
-"""
+"""Which Act each IL-TUR `lsi` label usually refers to, measured on the judgment corpus."""
 
 from __future__ import annotations
 
@@ -32,8 +20,7 @@ def label_number(label: str) -> str:
 
 
 def majority_act(ipc: int, crpc: int, min_share: float = 0.6) -> str:
-    """CrPC only when judgments clearly cite it that way; IPC otherwise (the label
-    vocabulary is IPC's)."""
+    """CrPC only when judgments clearly cite it that way; IPC otherwise (the label vocabulary is IPC's)."""
     total = ipc + crpc
     return "CrPC" if total and crpc / total >= min_share else "IPC"
 

@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
-"""
-Download Supreme Court of India judgments (English) from the public AWS open-data
-bucket into the corpus drive, verified and resumable.
-
-Layout written under the corpus root:
-  judgments/sc/pdf/year=YYYY/*.pdf          raw judgments (immutable)
-  judgments/sc/metadata/year=YYYY.parquet   the bucket's per-year metadata
-  judgments/sc/manifest/year=YYYY.jsonl     name, size, sha256 for every PDF
-  judgments/sc/download_ledger.jsonl        one line per completed year
-  quarantine/download/sc/year=YYYY/         files that failed validation + reason
-
-Verification per year: tar size == HTTP Content-Length == the bucket's own
-english.index.json total_size, member count == its file_count, every PDF starts
-with %PDF.
-A killed run resumes: partial tars continue via HTTP Range, finished years are
-skipped when the ledger and the on-disk file count agree.
-
-Usage (from server/):
-    python -m app.ingest.download_sc                     # every available year
-    python -m app.ingest.download_sc --years 1950 1951   # subset
-"""
+"""Download Supreme Court of India judgments (English) from the public AWS open-data bucket into the corpus drive, verified and resumable."""
 
 from __future__ import annotations
 
@@ -81,7 +61,7 @@ def download_file(client: httpx.Client, url: str, dest: Path) -> int:
         have = part.stat().st_size if part.exists() else 0
         headers = {"Range": f"bytes={have}-"} if have else {}
         with client.stream("GET", url, headers=headers) as resp:
-            if resp.status_code == 416:  # already complete
+            if resp.status_code == 416:
                 return have
             resp.raise_for_status()
             mode = "ab" if resp.status_code == 206 else "wb"
@@ -105,17 +85,13 @@ def validate_pdf_head(data: bytes) -> Optional[str]:
 
 
 def extract_verified(tar_path: Path, index: Dict, pdf_dir: Path, quarantine_dir: Path) -> List[Dict]:
-    """Extract PDFs from the tar with per-file checks; returns manifest rows.
-
-    Raises VerificationError if the member count disagrees with the bucket's own
-    index, so a truncated or wrong archive is never accepted.
-    """
+    """Extract PDFs from the tar with per-file checks; returns manifest rows."""
     rows: List[Dict] = []
     pdf_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(tar_path) as tar:
         members = [m for m in tar.getmembers() if m.isfile()]
         for m in members:
-            name = Path(m.name).name  # flatten; refuses path traversal by construction
+            name = Path(m.name).name
             handle = tar.extractfile(m)
             data = handle.read() if handle else b""
             problem = validate_pdf_head(data) if name.lower().endswith(".pdf") else None
@@ -176,7 +152,7 @@ def process_year(year: int, keep_tar: bool = False) -> Dict:
         pdf_dir = root / "pdf" / f"year={year}"
         quarantine = corpus_path("quarantine", "download", "sc", f"year={year}")
         if pdf_dir.exists():
-            shutil.rmtree(pdf_dir)  # never mix a stale partial extraction with a fresh one
+            shutil.rmtree(pdf_dir)
         rows = extract_verified(tar_path, index, pdf_dir, quarantine)
 
         meta = _retry(
@@ -221,7 +197,7 @@ def main() -> None:
     def run(year: int):
         try:
             result = process_year(year, keep_tar=args.keep_tar)
-        except Exception as e:  # keep going; failed years are listed at the end
+        except Exception as e:
             failures.append((year, f"{type(e).__name__}: {e}"))
             print(f"[sc] {year} FAILED — {e}")
             return
@@ -231,7 +207,7 @@ def main() -> None:
         list(pool.map(run, years))
 
     try:
-        (sc_root() / "_downloads").rmdir()  # scratch dir; only removable once empty
+        (sc_root() / "_downloads").rmdir()
     except OSError:
         pass
 

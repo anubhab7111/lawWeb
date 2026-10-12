@@ -1,9 +1,4 @@
-"""
-Shared per-request auth dependency. Before this module, only GET /api/auth/me
-verified the caller's JWT — every other route trusted a raw userId/lawyerId
-field in the request body with no verification at all. New protected routes
-should depend on get_current_user instead of repeating that pattern.
-"""
+"""Shared per-request auth dependency."""
 
 from typing import Optional
 
@@ -45,9 +40,7 @@ def get_current_user_optional(
     authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ) -> Optional[User]:
-    """Same as get_current_user but returns None instead of raising, for
-    routes that behave differently for anonymous vs. logged-in callers
-    (e.g. attaching search history only when a user is present)."""
+    """Same as get_current_user but returns None instead of raising, for routes that behave differently for anonymous vs."""
     if not authorization:
         return None
     try:

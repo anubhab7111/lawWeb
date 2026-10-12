@@ -1,12 +1,4 @@
-"""
-Centralized tool invocation for the legal chatbot.
-
-Every handler in app.chatbot that needs case law, statutes, IPC/BNS sections,
-or lawyer results goes through the functions here instead of calling the
-underlying RAG/API classes ad hoc. Having one implementation per tool means
-a bug fixed here (or a call-signature change in the underlying tool) is
-fixed everywhere at once.
-"""
+"""Centralized tool invocation for the legal chatbot."""
 
 import asyncio
 import logging
@@ -24,14 +16,9 @@ class ToolInvocationResult:
     """Uniform result shape returned by every invoke_* function below."""
 
     name: str
-    succeeded: bool  # True when non-empty grounding content was retrieved
-    context_text: str  # pre-formatted text, ready to splice into a prompt
-    raw: Any = None  # structured payload for callers needing more than text
-
-
-# ============================================================================
-# Unified statute + case-law retrieval
-# ============================================================================
+    succeeded: bool
+    context_text: str
+    raw: Any = None
 
 
 def _format_case_law(cases, max_chars: int = 4000, per_case_chars: int = 1200) -> str:
@@ -39,7 +26,7 @@ def _format_case_law(cases, max_chars: int = 4000, per_case_chars: int = 1200) -
     parts = []
     used = 0
     for c in cases:
-        citation = (c.citation or "").split(",")[0].strip()  # records list every parallel citation
+        citation = (c.citation or "").split(",")[0].strip()
         entry = (
             f"• **{c.case_name}** ({citation or c.court}, {c.date[:4] if c.date else '?'})"
             f" — {c.court}\n{c.text[:per_case_chars]}"
@@ -60,9 +47,7 @@ _RESERVED_LANDMARKS = 2
 
 
 async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000) -> str:
-    """Landmark cases and judgment passages ranked together by the cross-encoder,
-    so the prompt gets the most relevant authority whichever index found it.
-    Falls back to landmark cases first when no reranker is available."""
+    """Landmark cases and judgment passages ranked together by the cross-encoder, so the prompt gets the most relevant authority whichever index found it."""
     from app.tools.base_legal_rag import _get_shared_reranker, cached_predict
     from app.tools.case_law_rag import rerank_header, rerank_source
     from app.tools.unified_rerank import Candidate, rerank
@@ -86,9 +71,7 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
     else:
         ranked = candidates[:6]
 
-    # The landmark set is curated: its top cases (case-law retrieval's own order,
-    # which weighs doctrine/statute links) keep a slot even when their fact-heavy
-    # summaries score below a verbatim judgment passage on the cross-encoder.
+
     reserved = [c for c in candidates if c.source == "case_law"][:_RESERVED_LANDMARKS]
     for c in reserved:
         if c not in ranked:
@@ -110,11 +93,7 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
 
 
 def _budget_context(chunks, max_chars: int = 12000, per_chunk_chars: int = 2500) -> str:
-    """
-    Format retrieved statute chunks for the prompt in rerank order, filling
-    a fixed character budget (≈3k tokens inside the 6k num_ctx window)
-    instead of blindly truncating every chunk to a few hundred characters.
-    """
+    """Format retrieved statute chunks for the prompt in rerank order, filling a fixed character budget (≈3k tokens inside the 6k num_ctx window) instead of blindly truncating every..."""
     parts = []
     used = 0
     for chunk in chunks:
@@ -139,17 +118,7 @@ async def invoke_statute_context(
     doctrine_assist: bool = False,
     with_case_law: bool = True,
 ) -> ToolInvocationResult:
-    """
-    Understanding-first statute + case-law retrieval: parse the legal
-    question, fill via the unified hybrid index, then hop to the curated
-    landmark-judgment corpus for cases interpreting those same provisions.
-    with_case_law=False skips the case-law and judgment hop (the chat's
-    sub-question queries, whose statutes are merged with the main query's).
-
-    context_text carries the statute text; raw["case_law_text"] carries the
-    paired case-law text (kept separate since handlers give each its own
-    prompt framing).
-    """
+    """Understanding-first statute + case-law retrieval: parse the legal question, fill via the unified hybrid index, then hop to the curated landmark-judgment corpus for cases..."""
     try:
         from app.tools.legal_retrieval import (
             retrieve_case_law,
@@ -229,11 +198,6 @@ async def invoke_statute_context(
         )
 
 
-# ============================================================================
-# Criminal RAG (IPC/BNS section retrieval for crime reports)
-# ============================================================================
-
-
 async def invoke_crime_sections(
     query: str, crime_type: str = "", k: int = 2
 ) -> ToolInvocationResult:
@@ -290,12 +254,6 @@ async def invoke_crime_sections(
         return ToolInvocationResult(name="crime_sections", succeeded=False, context_text="")
 
 
-# ============================================================================
-# Bare Act Explorer (bonus chatbot reachability — primary UX is the
-# standalone /api/bare-acts router; see app/tools/bare_act_explorer.py)
-# ============================================================================
-
-
 async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
     try:
         from app.tools.bare_act_explorer import explore_bare_act
@@ -313,8 +271,6 @@ async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
         return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
 
 
-# Per-intent tool ceiling. select_tools() narrows it per request; handlers run
-# exactly the tools it returns (state["selected_tools"]) instead of a fixed set.
 INTENT_TOOL_MAP: Dict[str, List[str]] = {
     "document_analysis": [],
     "crime_report": ["crime_sections"],

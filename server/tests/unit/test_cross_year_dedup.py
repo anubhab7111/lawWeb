@@ -41,7 +41,7 @@ def _doc_ids(root, year):
 def test_keep_year_prefers_the_report_year_in_the_stem():
     assert keep_year("1951_1_1_51", [1950, 1951]) == 1951
     assert keep_year("S_1996_2_866_868", [1995, 1996]) == 1996
-    assert keep_year("2001_5_10_20", [2002, 2003]) == 2002  # no folder matches: earliest
+    assert keep_year("2001_5_10_20", [2002, 2003]) == 2002
 
 
 def test_duplicates_are_dropped_from_the_non_kept_year_and_recorded(corpus):

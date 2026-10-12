@@ -1,26 +1,4 @@
-"""
-constitutional_rag.py — Constitutional Law Domain RAG System
-
-Handles: Constitution of India (and any future constitutional instruments).
-Source PDFs: app/data/bare_acts/constitutional/
-
-Key design decisions
---------------------
-* Article-aware parser: The Constitution uses "Article N" / "Article NA"
-  headers, not the numeric "N. Title" pattern used by the IPC. The base
-  class's generic parser must be overridden to match these headers.
-
-* NO punishment-clause filter. Fundamental rights (Articles 14, 19, 21,
-  32) and Directive Principles have no criminal penalty clause; filtering
-  them out would result in an empty index.
-
-* _preprocess_query() maps constitutional vocabulary (fundamental rights,
-  writs, amendments) to Article numbers to improve retrieval precision.
-
-* Completely isolated from criminal_rag.py: a constitutional query
-  (e.g. "Is surveillance legal under Article 21?") will NEVER receive
-  context from the IPC punishment index.
-"""
+"""constitutional_rag.py — Constitutional Law Domain RAG System Handles: Constitution of India (and any future constitutional instruments)."""
 
 from __future__ import annotations
 
@@ -39,13 +17,7 @@ from app.tools.base_legal_rag import (
 
 
 class ConstitutionalRAGSystem(BaseLegalRAGSystem):
-    """
-    Constitutional law RAG: indexes the Constitution of India.
-
-    Filtering policy:
-      - ALL Articles are indexed (no punishment-clause filter).
-      - Article-aware chunking via overridden _parse_legal_sections().
-    """
+    """Constitutional law RAG: indexes the Constitution of India."""
 
     @property
     def domain_name(self) -> str:
@@ -55,7 +27,6 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
     def pdf_subdir(self) -> str:
         return "constitutional"
 
-    # ── Adapter: delegate storage/retrieval to the unified index ──
 
     async def initialize(self) -> bool:
         from app.tools.unified_legal_rag import get_unified_rag_system
@@ -88,33 +59,19 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             confidence=context.confidence,
         )
 
-    # ── Overrides ────────────────────────────────────────────────
 
     def _parse_legal_sections(
         self, full_text: str, source_file: str
     ) -> List[LegalChunk]:
-        """
-        Article-aware constitutional parser.
-
-        Matches headers of the form:
-          "Article 21.  Protection of life and personal liberty."
-          "Article 226.  Power of High Courts to issue certain writs."
-          "21A.  Right to education."
-        """
+        """Article-aware constitutional parser."""
         chunks: List[LegalChunk] = []
         act_name = _infer_act_name(source_file)
 
-        # Stop before any Schedule: schedules restart their own paragraph
-        # numbering (1, 2, 3, ...), which otherwise collides with real
-        # Article numbers and pollutes the index with schedule text.
+
         boundary = _schedule_boundary(full_text)
         search_text = full_text[:boundary] if boundary else full_text
 
-        # Primary pattern: "Article 19" / "Article 19A". \s* (not \s+) after the
-        # period for consistency with the base parser — some source PDFs run
-        # the body straight on with no space after the number/period. An
-        # optional "N[" prefix is tolerated: amended Articles are often
-        # annotated with a footnote-bracket marker, e.g. "3[226. Power of...".
+
         article_pattern = re.compile(
             r"\n\s*(?:Article\s+)?(?:\d+\[)?(\d{1,3}[A-Z]{0,2})\.\s*([^\n.—]{3,}?)(?:[.—])\s*",
             re.MULTILINE,
@@ -123,7 +80,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         matches = list(article_pattern.finditer(search_text))
 
         if not matches:
-            # Fallback: treat the whole document as one chunk
+
             chunk_id = f"CON_CONSTITUTION_FULL"
             chunks.append(
                 LegalChunk(
@@ -151,18 +108,11 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             if len(raw) < 20:
                 continue
 
-            # Prefix by Act (not just "CON_ART_"): this domain indexes 3 PDFs
-            # (Constitution, Representation of the People Act, Protection of
-            # Human Rights Act) whose section/article numbers legitimately
-            # overlap — without an Act-specific prefix, e.g. Constitution
-            # Article 21 and Human Rights Act Section 21 collide under the
-            # same chunk_id and one silently shadows the other.
+
             act_prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())
             chunk_id = f"CON_{act_prefix}_{art_num}"
 
-            # Only the Constitution itself has "Articles"; the other statutes
-            # in this domain (RoPA, PHRA) have plain sections and citing them
-            # as Articles would be legally wrong.
+
             is_constitution = "constitution" in Path(source_file).stem.lower()
             sec_label = f"Article {art_num}" if is_constitution else art_num
 
@@ -175,8 +125,8 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
                     title=title,
                     text=raw,
                     source_file=source_file,
-                    # Some penal provisions exist in the Const. (e.g. Art. 105 on contempt)
-                    # but has_punishment is informational only here; no filtering applied.
+
+
                     has_punishment=False,
                 )
             )
@@ -185,13 +135,11 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         return chunks
 
     def _preprocess_query(self, query: str) -> str:
-        """
-        Expand constitutional queries with Article numbers and doctrine names.
-        """
+        """Expand constitutional queries with Article numbers and doctrine names."""
         q = query.lower()
         terms: List[str] = []
 
-        # Fundamental rights
+
         if any_word(q, ["right to equality", "equal protection", "article 14"]):
             terms.extend(["Article 14", "right to equality", "equal protection of law"])
         if any_word(q, [
@@ -237,7 +185,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         if any_word(q, ["article 226", "high court writ"]):
             terms.extend(["Article 226", "power of high courts to issue writs"])
 
-        # Writs
+
         if any_word(q, ["habeas corpus"]):
             terms.extend(["habeas corpus", "Article 32", "Article 226"])
         if any_word(q, ["mandamus"]):
@@ -245,7 +193,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
         if any_word(q, ["certiorari"]):
             terms.extend(["certiorari", "writ of certiorari"])
 
-        # Federalism
+
         if any_word(q, ["president rule", "article 356", "emergency"]):
             terms.extend(["Article 356", "President's rule", "emergency provisions"])
         if any_word(q, ["union list", "state list", "concurrent list", "seventh schedule"]
@@ -259,7 +207,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-        # Amendment / basic structure
+
         if any_word(q, ["amendment", "article 368", "basic structure"]):
             terms.extend(
                 [
@@ -270,7 +218,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-        # Directive Principles
+
         if any_word(q, ["dpsp", "directive principles", "article 36", "welfare state"]
         ):
             terms.extend(
@@ -283,7 +231,7 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-        # Parliament / legislature
+
         if any_word(q, ["parliament", "lok sabha", "rajya sabha", "legislative power"]
         ):
             terms.extend(
@@ -294,10 +242,6 @@ class ConstitutionalRAGSystem(BaseLegalRAGSystem):
             return query + " " + " ".join(terms)
         return query
 
-
-# ─────────────────────────────────────────────────────────────
-# Singleton
-# ─────────────────────────────────────────────────────────────
 
 _constitutional_rag: Optional[ConstitutionalRAGSystem] = None
 

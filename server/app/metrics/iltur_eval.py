@@ -1,12 +1,4 @@
-"""
-Pure logic for the LLM-free IL-TUR retrieval evaluation (eval_iltur_retrieval.py):
-turning ~7k-char case facts into retrieval windows, fusing per-window rankings,
-and scoring the fused section ranking against IL-TUR's label set.
-
-Scoring is by section *number* over IPC provisions: IL-TUR `lsi` labels are IPC
-sections only (each label's statute text matches the IPC provision), so a label
-counts as found if a retrieved IPC provision has that number.
-"""
+"""Pure logic for the LLM-free IL-TUR retrieval evaluation (eval_iltur_retrieval.py): turning ~7k-char case facts into retrieval windows, fusing per-window rankings, and scoring..."""
 
 from __future__ import annotations
 
@@ -22,8 +14,7 @@ RRF_K = 60
 
 
 def clean_fact_sentence(sentence: str) -> str:
-    """Drop paragraph numbering and turn IL-TUR's <ENTITY> masks into a
-    neutral noun so retrieval queries read as prose."""
+    """Drop paragraph numbering and turn IL-TUR's <ENTITY> masks into a neutral noun so retrieval queries read as prose."""
     sentence = _LEADING_PARA_RE.sub("", sentence)
     return _ENTITY_RE.sub("a person", sentence).strip()
 
@@ -34,13 +25,7 @@ def fact_windows(
     stride: int = 3,
     max_windows: int = 8,
 ) -> List[str]:
-    """Overlapping sentence windows over a case's facts.
-
-    Cases average ~7k characters, far past what one retrieval query can carry,
-    so each window is retrieved separately and the rankings are fused. When a
-    case has more windows than max_windows they are sampled evenly, keeping
-    coverage of the whole narrative rather than only its opening.
-    """
+    """Overlapping sentence windows over a case's facts."""
     cleaned = [c for c in (clean_fact_sentence(s) for s in sentences) if c]
     if not cleaned:
         return []
@@ -58,8 +43,7 @@ def rrf_fuse(
     k: int = RRF_K,
     weights: Optional[Sequence[float]] = None,
 ) -> List[str]:
-    """Reciprocal-rank fusion of rankings (per-window, or per-system when
-    combining statute and precedent evidence), optionally weighted."""
+    """Reciprocal-rank fusion of rankings (per-window, or per-system when combining statute and precedent evidence), optionally weighted."""
     scores: Dict[str, float] = defaultdict(float)
     for i, ranking in enumerate(rankings):
         weight = weights[i] if weights is not None else 1.0
@@ -106,10 +90,7 @@ def average_precision(ranked: Sequence[str], gold: Iterable[str]) -> float:
 
 
 def macro_f1(rankings: Sequence[Sequence[str]], golds: Sequence[Sequence[str]], k: int) -> float:
-    """Macro-F1 over labels when each case predicts its top-k set — the metric
-    IL-TUR's lsi task is scored with (there from a classifier's label sets), which
-    weights every label equally, so a system that only predicts popular labels
-    scores near zero."""
+    """Macro-F1 over labels when each case predicts its top-k set — the metric IL-TUR's lsi task is scored with (there from a classifier's label sets), which weights every label..."""
     tp: dict = defaultdict(int)
     fp: dict = defaultdict(int)
     fn: dict = defaultdict(int)
@@ -132,8 +113,7 @@ def bootstrap_ci(values: Sequence[float], n: int = 2000, seed: int = 1):
 
 
 def popularity_ranking(case_labels: Iterable[Sequence[str]], depth: int = 30) -> List[str]:
-    """Labels ordered by how many cases carry them: the no-input baseline any system
-    has to beat before its retrieval can be said to add anything."""
+    """Labels ordered by how many cases carry them: the no-input baseline any system has to beat before its retrieval can be said to add anything."""
     counts: dict = defaultdict(int)
     for labels in case_labels:
         for label in set(labels):

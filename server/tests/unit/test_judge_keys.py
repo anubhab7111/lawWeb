@@ -57,7 +57,7 @@ def make_judge(monkeypatch, tmp_path, responses_by_key, usage=None):
 def test_alternate_key_takes_over_at_the_daily_limit(monkeypatch, tmp_path):
     judge, seen, path = make_judge(
         monkeypatch, tmp_path, {"primary": lambda: FakeResponse(200), "alt": lambda: FakeResponse(200)},
-        usage={"date": date.today().isoformat(), "count": 2},  # legacy format belongs to the primary key
+        usage={"date": date.today().isoformat(), "count": 2},
     )
     raw, _, reason = asyncio.run(judge._post_chat("p"))
     assert raw == "{}" and reason is None and seen == ["alt"]

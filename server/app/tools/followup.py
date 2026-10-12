@@ -1,9 +1,4 @@
-"""Missing-detail checks for the find-lawyer and crime-report flows.
-
-When a request lacks what the flow needs (a lawyer request with no place or no kind of
-matter; a crime report too short to say what happened), the chatbot asks once, then
-resumes the same flow with the user's reply merged into the original request.
-"""
+"""Missing-detail checks for the find-lawyer and crime-report flows."""
 
 from functools import lru_cache
 from typing import List, Optional
@@ -18,12 +13,12 @@ STATES_AND_UTS = [
     "dadra and nagar haveli", "daman and diu", "delhi", "jammu and kashmir", "ladakh", "lakshadweep",
     "puducherry", "pondicherry",
 ]
-# Common alternative names that people type but the lawyer table may not use.
+
 PLACE_ALIASES = [
     "bombay", "mumbai", "calcutta", "kolkata", "madras", "chennai", "bangalore", "bengaluru", "gurgaon",
     "gurugram", "noida", "new delhi", "hyderabad", "pune", "ncr", "navi mumbai", "thane",
 ]
-# A message naming any of these practice areas or matters says what the case is about.
+
 MATTER_TERMS = [
     "criminal", "civil", "family", "divorce", "custody", "maintenance", "alimony", "dowry", "498a", "marriage",
     "adoption", "property", "land", "tenant", "landlord", "rent", "eviction", "builder", "rera", "flat",

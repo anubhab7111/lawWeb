@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""
-train_label_reranker.py — fine-tune the statute cross-encoder (app/tools/label_reranker.py).
-
-Training pairs come from IL-TUR train cases: (fact segment, statute text) with label
-1 for the case's gold statutes and 0 for hard negatives — the non-gold statutes the
-precedent index proposes for that case (score_iltur.py precedent --split train,
-self-masked) — plus a few random statutes. Evaluation reranks the candidates
-precedent proposes for dev cases (gold is never injected) and reports how much the
-reranked order improves over precedent's own.
-
-Fits a 4GB GPU: fp16 autocast, gradient checkpointing, gradient accumulation, and
-the 250k-token word-embedding matrix frozen (its gradients and AdamW state would
-not fit). Checkpoints every --ckpt-every micro-batches; a killed run resumes.
-The model is saved to <corpus>/builds/reranker/<tag>/.
-
-Usage (from server/, Ollama idle):
-    python train_label_reranker.py --bench
-    python train_label_reranker.py --cases 20000 --tag v1
-"""
+"""train_label_reranker.py — fine-tune the statute cross-encoder (app/tools/label_reranker.py)."""
 
 import argparse
 import os

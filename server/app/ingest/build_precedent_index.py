@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""
-Build the IL-TUR precedent index (app/tools/precedent_rag.py) from train+dev.
-
-Windows are embedded in shards written to <corpus>/builds/precedent/, so a
-killed run resumes at the first missing shard. Once every shard exists they are
-assembled into a FAISS fp16 index under app/data/faiss_index/precedent/.
-
-Run with Ollama idle (the embedder needs ~1.2GB of VRAM in fp16):
-    EMBEDDINGS_DEVICE=cuda python -m app.ingest.build_precedent_index
-"""
+"""Build the IL-TUR precedent index (app/tools/precedent_rag.py) from train+dev."""
 
 from __future__ import annotations
 

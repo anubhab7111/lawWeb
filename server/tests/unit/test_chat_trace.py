@@ -1,5 +1,4 @@
-"""chat_messages.trace: migration, persistence (assistant rows only) and the
-history response. Runs against the scratch database (see conftest)."""
+"""chat_messages.trace: migration, persistence (assistant rows only) and the history response."""
 
 import asyncio
 import uuid
@@ -15,7 +14,7 @@ from app.routers import chat as chat_router
 
 TRACE = {
     "routing": {"intent": "general_query", "secondary": ["find_lawyer"]},
-    "retrieval": {"grade": "good", "sections": {"438", "437"}},  # a set: JSONB would reject it
+    "retrieval": {"grade": "good", "sections": {"438", "437"}},
     "grounding": {"verified": True, "score": 0.9},
 }
 
@@ -32,7 +31,7 @@ def test_migration_is_idempotent_and_creates_a_nullable_jsonb_column():
     init_db(embed=False)
     engine = get_engine()
     ensure_chat_messages_trace_column(engine)
-    ensure_chat_messages_trace_column(engine)  # second run must be a no-op
+    ensure_chat_messages_trace_column(engine)
     with engine.connect() as conn:
         row = conn.execute(text(
             "SELECT data_type, is_nullable FROM information_schema.columns "
@@ -59,7 +58,7 @@ def test_trace_is_stored_on_the_assistant_row_only():
     stored = rows[1].trace
     assert stored["routing"]["intent"] == "general_query"
     assert stored["grounding"]["score"] == 0.9
-    assert sorted(stored["retrieval"]["sections"]) == ["437", "438"]  # set became a list
+    assert sorted(stored["retrieval"]["sections"]) == ["437", "438"]
 
 
 def test_turn_without_a_trace_still_persists():

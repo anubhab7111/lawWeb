@@ -1,16 +1,4 @@
-"""
-Idempotent, incremental schema changes for existing dev databases.
-
-There is no Alembic in this project. schema.sql only runs once, against a
-fresh database (see init_db.py's has_table("users") check) — every table or
-column added after that has to reach existing dev DBs some other way. The
-convention (already used for the lawyers.bio_embedding pgvector column
-before this file existed) is: add the change to schema.sql for fresh
-installs, AND add a matching idempotent `ensure_*` function here, called
-unconditionally (in dependency order — parents before FK children) from
-run_migrations(). Every ensure_* function must be safe to run on every
-startup, on a DB that may or may not already have the change applied.
-"""
+"""Idempotent, incremental schema changes for existing dev databases."""
 
 from sqlalchemy.engine import Engine
 
@@ -32,8 +20,7 @@ def ensure_lawyer_account_columns_dropped(engine: Engine) -> None:
 
 
 def ensure_us_seed_lawyers_removed(engine: Engine) -> None:
-    """The five original US demo lawyers (ids '1'..'5') are replaced by the
-    Indian directory; keep any that already have bookings."""
+    """The five original US demo lawyers (ids '1'..'5') are replaced by the Indian directory; keep any that already have bookings."""
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "DELETE FROM lawyers WHERE id IN ('1','2','3','4','5') "
@@ -183,9 +170,7 @@ def ensure_sms_columns_dropped(engine: Engine) -> None:
 
 
 def ensure_duplicate_case_events_removed(engine: Engine) -> None:
-    """The mock provider used to re-insert its events on every sync; keep the
-    oldest row of each (case, type, title) group. Dependent summaries and
-    calendar rows follow via ON DELETE CASCADE / SET NULL."""
+    """The mock provider used to re-insert its events on every sync; keep the oldest row of each (case, type, title) group."""
     with engine.begin() as conn:
         conn.exec_driver_sql(
             """
@@ -302,11 +287,7 @@ def ensure_chat_tables(engine: Engine) -> None:
 
 
 def ensure_chat_messages_language_columns(engine: Engine) -> None:
-    """Multilingual support (added after chat_messages already shipped): store
-    the canonical English text in `content` and the user's original-language
-    text + ISO code in content_display/language, so a non-English conversation
-    re-renders in its own language while memory stays language-independent.
-    Depends on ensure_chat_tables having created chat_messages."""
+    """Multilingual support (added after chat_messages already shipped): store the canonical English text in `content` and the user's original-language text + ISO code in..."""
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS "
@@ -318,10 +299,7 @@ def ensure_chat_messages_language_columns(engine: Engine) -> None:
 
 
 def ensure_chat_messages_trace_column(engine: Engine) -> None:
-    """Store the assistant's reasoning trace (routing, retrieval grade and
-    sections, grounding score) alongside the reply it produced. Nullable JSONB:
-    user rows and pre-existing rows simply have no trace. Depends on
-    ensure_chat_tables having created chat_messages."""
+    """Store the assistant's reasoning trace (routing, retrieval grade and sections, grounding score) alongside the reply it produced."""
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS trace JSONB;"
@@ -372,9 +350,7 @@ def ensure_calendar_connections_table(engine: Engine) -> None:
 
 
 def ensure_calendar_events_related_case_event_column(engine: Engine) -> None:
-    """Lets sync_case_events() upsert a hearing's calendar_events row instead
-    of creating a duplicate on every re-sync (added after calendar_events
-    already shipped without this column)."""
+    """Lets sync_case_events() upsert a hearing's calendar_events row instead of creating a duplicate on every re-sync (added after calendar_events already shipped without this column)."""
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS "
@@ -388,10 +364,7 @@ def ensure_calendar_events_related_case_event_column(engine: Engine) -> None:
 
 
 def ensure_notifications_related_case_event_column(engine: Engine) -> None:
-    """Per-hearing dedup key for reminders (added after `notifications` already
-    shipped without it). Without it, a case's later hearings were treated as
-    already-notified — see app/jobs/_case_sync.py. FK-references case_events, so
-    this runs after ensure_case_tables + ensure_notification_tables."""
+    """Per-hearing dedup key for reminders (added after `notifications` already shipped without it)."""
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS "
@@ -400,8 +373,7 @@ def ensure_notifications_related_case_event_column(engine: Engine) -> None:
 
 
 def run_migrations(engine: Engine) -> None:
-    """Called unconditionally from init_db() after schema.sql (or on every
-    run against an existing DB). Order matters: parent tables/columns first."""
+    """Called unconditionally from init_db() after schema.sql (or on every run against an existing DB)."""
     ensure_lawyer_embedding_column(engine)
     ensure_lawyer_account_columns_dropped(engine)
     ensure_us_seed_lawyers_removed(engine)

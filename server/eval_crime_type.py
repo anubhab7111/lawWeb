@@ -1,14 +1,4 @@
-"""Crime-type classifier: build the gold set, train, and gate (>= 0.90 accuracy on the test split).
-
-Gold: IndianBailJudgments-1200 case facts (CC BY 4.0). A prediction is correct when it is
-the case's labelled crime type or a crime type its own cited IPC sections establish (half
-the cases charge more than one crime but carry a single label). Check, not gated: ILSIC
-lay-forum test questions whose cited statutes map to exactly one crime type.
-
-    python eval_crime_type.py build-gold
-    python eval_crime_type.py train
-    python eval_crime_type.py score --system keyword|lr --split dev|test
-"""
+"""Crime-type classifier: build the gold set, train, and gate (>= 0.90 accuracy on the test split)."""
 
 import argparse
 import ast
@@ -28,7 +18,7 @@ from app.tools.crime_reporter import CLASSIFIER_DIR, FAMILY_TYPES
 
 GOLD = Path("tests/gold/crime_type.jsonl")
 ILSIC_DIR = Path("/run/media/ushtro/anubhab_x9/lawweb/ilsic/Layman-new-dataset")
-# Weight of ILSIC lay questions (train split) relative to bail rows; 0 = bail only.
+
 ILSIC_WEIGHTS = (0.0, 0.25, 0.5, 1.0)
 TYPE_FAMILY = {t: f for f, types in FAMILY_TYPES.items() for t in types if t != "general"}
 TYPE_MAP = Path("app/data/crime_type_map.json")
@@ -107,8 +97,7 @@ EMBED_BATCH = 32
 
 
 async def embed(texts: list, checkpoint: Optional[Path] = None) -> np.ndarray:
-    """Unit-normalised BGE-M3 embeddings, in ThermalGuard-paced batches. With `checkpoint`,
-    each batch is saved there and reused on the next run, so an interrupted run resumes."""
+    """Unit-normalised BGE-M3 embeddings, in ThermalGuard-paced batches."""
     from app.ingest.thermal import ThermalGuard
     from app.tools.base_legal_rag import _get_shared_embeddings
 
@@ -161,9 +150,7 @@ def report(name: str, rows: list, preds: list) -> float:
 
 
 def train() -> None:
-    """Logistic regression on bail dev facts + case summaries, plus ILSIC lay crime questions
-    (train split) at a weight; C and that weight picked by 5-fold, case-grouped CV on bail dev
-    facts with the gold accept sets."""
+    """Logistic regression on bail dev facts + case summaries, plus ILSIC lay crime questions (train split) at a weight; C and that weight picked by 5-fold, case-grouped CV on bail..."""
     from sklearn.linear_model import LogisticRegression
 
     from app.tools.crime_reporter import resolve_family

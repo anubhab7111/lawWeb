@@ -1,8 +1,4 @@
-"""
-Thin SMTP email sender. If SMTP_HOST is unset (the local-dev default), sends
-are logged instead of attempted — so notification_dispatch.py works
-end-to-end without real credentials.
-"""
+"""Thin SMTP email sender."""
 
 import smtplib
 from email.message import EmailMessage

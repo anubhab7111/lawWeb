@@ -9,10 +9,10 @@ from app.tools import precedent_rag as pr
 
 def test_vote_labels_weights_by_similarity_and_counts_case_once():
     sims = np.array([[0.9, 0.85, 0.3]])
-    cases = np.array([[0, 0, 1]])  # two windows of case 0, one of case 1
+    cases = np.array([[0, 0, 1]])
     labels = [["302", "34"], ["420"]]
     votes = pr.vote_labels(sims, cases, labels, power=1.0)
-    assert votes["302"] == votes["34"] == 0.9  # case 0 counted once, at its best window
+    assert votes["302"] == votes["34"] == 0.9
     assert votes["420"] == 0.3
 
 
@@ -28,7 +28,7 @@ def test_rank_votes_orders_by_score_then_label():
 
 
 def _tiny_index(tmp_path):
-    vecs = np.eye(4, dtype=np.float32)  # 4 unit windows, 2 per case
+    vecs = np.eye(4, dtype=np.float32)
     owner = np.array([0, 0, 1, 1], dtype=np.int32)
     index = faiss.IndexScalarQuantizer(4, faiss.ScalarQuantizer.QT_fp16, faiss.METRIC_INNER_PRODUCT)
     index.add(vecs)
@@ -49,7 +49,7 @@ def _tiny_index(tmp_path):
 def test_index_round_trip_and_case_exclusion(tmp_path):
     index = _tiny_index(tmp_path)
     assert index.available
-    query = np.array([[1, 0, 0, 0]], dtype=np.float32)  # matches a window of c0
+    query = np.array([[1, 0, 0, 0]], dtype=np.float32)
     top = index.rank_sections(query, k=2, power=1.0)
     assert top[0][0] == "302"
     masked = index.rank_sections(query, k=2, power=1.0, exclude=index.case_index(["c0"]))
@@ -57,7 +57,7 @@ def test_index_round_trip_and_case_exclusion(tmp_path):
 
 
 def test_case_index_works_on_a_freshly_constructed_index(tmp_path):
-    # exclusion is resolved before any search, i.e. before the index was loaded
+
     _tiny_index(tmp_path)
     fresh = pr.PrecedentIndex(tmp_path)
     assert fresh.case_index(["c1"]) == {1}

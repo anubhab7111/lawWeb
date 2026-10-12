@@ -1,12 +1,4 @@
-"""
-case_law_manifest.py — landmark cases to fetch into the curated case-law
-corpus, derived from app/data/legal_ontology.json's `landmark_cases` lists.
-
-Each manifest entry: {case_name, doctrines[], statutes_cited[[act, section]]}
-— doctrines/statutes come straight from the ontology entries that cited the
-case, so a case fetched for "anticipatory bail" is pre-linked to CrPC §438 /
-BNSS §482 without any manual re-entry.
-"""
+"""case_law_manifest.py — landmark cases to fetch into the curated case-law corpus, derived from app/data/legal_ontology.json's `landmark_cases` lists."""
 
 from __future__ import annotations
 
@@ -20,7 +12,7 @@ _ONTOLOGY_PATH = Path(__file__).resolve().parent / "legal_ontology.json"
 class ManifestEntry(TypedDict):
     case_name: str
     doctrines: List[str]
-    statutes_cited: List[List[str]]  # [act, section] pairs
+    statutes_cited: List[List[str]]
 
 
 def build_manifest() -> List[ManifestEntry]:

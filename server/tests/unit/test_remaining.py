@@ -37,7 +37,7 @@ def test_hit_requires_the_right_act():
     plain = compute_hit_rate([s for _, s in retrieved], ["420"], k=2)
     strict = compute_hit_rate(act_aware_sections(retrieved, expected), ["420"], k=2)
     assert plain == 1.0 and strict == 0.0
-    # naming mismatch (no expected act matches anything) falls back to plain numbers
+
     assert act_aware_sections(retrieved, ["Article 19"]) == ["420", "438"]
 
 
@@ -55,7 +55,7 @@ def test_cause_list_cached_and_validated(client):
     first = client.get("/api/cause-list/search", params={"court": "Delhi High Court", "date": when}).json()
     second = client.get("/api/cause-list/search", params={"court": "Delhi High Court", "date": when}).json()
     assert first["published"] and first["results"] == second["results"]
-    assert first["publishedAt"] == second["publishedAt"]  # second call served from cache
+    assert first["publishedAt"] == second["publishedAt"]
 
 
 def random_offset():

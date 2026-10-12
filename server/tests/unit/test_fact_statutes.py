@@ -8,7 +8,7 @@ def ranked(per_window, **kw):
 
 
 def test_bns_hits_count_toward_the_ipc_section_they_replaced():
-    # BNS 103 replaced IPC 302
+
     assert ranked([[(BNS, "103")]]) == ["302"]
 
 

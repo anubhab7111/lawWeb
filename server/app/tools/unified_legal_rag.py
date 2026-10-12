@@ -1,32 +1,4 @@
-"""
-unified_legal_rag.py — Unified All-Domain Legal RAG System
-
-Indexes EVERY bare-act PDF under app/data/bare_acts/ (all domain
-subdirectories) plus the prose corpora (notifications/, explanatory/) into
-one merged FAISS + BM25 index at app/data/faiss_index/unified/.
-
-Key design decisions
---------------------
-* One merged index, domain as metadata. Keyword-based domain routing was
-  the weakest link of the per-domain design: a query about "dowry death"
-  spans family + criminal, "GST fraud" spans indirect_tax + criminal.
-  With a merged index, hybrid retrieval + the cross-encoder reranker do the
-  routing; callers that DO know the domain pass `domains=[...]` to
-  retrieve() as a filter.
-
-* PDF dedup at build time. Several acts live in more than one domain
-  directory (e.g. Representation of the People Act in constitutional/ and
-  election/). Duplicate files are detected by content hash and by
-  normalized act name; the copy with the best extracted text is indexed
-  and every source domain is recorded in the chunk's `domains` metadata.
-
-* Per-domain parser dispatch. Constitutional PDFs go through the
-  Article-aware parser, criminal PDFs keep the per-Act punishment-clause
-  filter, prose corpora get sliding-window chunking, and everything else
-  uses the generic section parser. Chunk IDs are re-prefixed with a unique
-  per-domain code (FAM_, TAX_, …) so IDs from all domains coexist without
-  collision.
-"""
+"""unified_legal_rag.py — Unified All-Domain Legal RAG System Indexes EVERY bare-act PDF under app/data/bare_acts/ (all domain subdirectories) plus the prose corpora..."""
 
 from __future__ import annotations
 
@@ -66,13 +38,9 @@ def _normalized_act_key(stem: str) -> str:
 
 
 class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
-    """
-    Unified legal RAG: one index over all bare_acts domains + prose corpora,
-    with per-chunk `domains` metadata enabling optional query-time filtering.
-    """
+    """Unified legal RAG: one index over all bare_acts domains + prose corpora, with per-chunk `domains` metadata enabling optional query-time filtering."""
 
-    # Unique 3-letter chunk-ID prefix per domain (plain domain[:3] collides:
-    # constitutional/consumer/consumer_cyber_ip would all be "CON").
+
     DOMAIN_CODES: Dict[str, str] = {
         "civil": "CIV",
         "commercial": "CML",
@@ -95,9 +63,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
         "guides": "GDE",
     }
 
-    # Prose corpora outside bare_acts/ (enforcement notifications, judiciary
-    # explainers). These aren't section-numbered statutes: they get sliding-
-    # window chunking instead of the section parser.
+
     PROSE_DIRS = ("notifications", "explanatory", "mappings", "rules", "guides")
 
     def __init__(self, data_dir: Optional[str] = None):
@@ -110,35 +76,28 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
 
     @property
     def pdf_subdir(self) -> str:
-        # Empty subdir → _bare_acts_dir is bare_acts/ itself, so the base
-        # class's rglob (used by _should_rebuild) walks every domain.
+
+
         return ""
 
-    # ── Build-time hooks ────────────────────────────────────────
 
     def _collect_pdf_sources(self) -> List[Tuple[Path, str, List[str]]]:
-        """
-        Walk all domain subdirectories plus the prose corpora, dedupe PDFs
-        that appear in several places (by content hash, then by normalized
-        act name — including one filename being a suffix of another, e.g.
-        two RERA copies), and record every source domain of each surviving
-        file.
-        """
-        located: List[Tuple[Path, str]] = []  # (path, domain)
+        """Walk all domain subdirectories plus the prose corpora, dedupe PDFs that appear in several places (by content hash, then by normalized act name — including one filename being a..."""
+        located: List[Tuple[Path, str]] = []
         for pdf in sorted(self._bare_acts_dir.rglob("*.pdf")):
             rel = pdf.relative_to(self._bare_acts_dir)
             if len(rel.parts) < 2:
-                continue  # skip files not inside a domain subdirectory
+                continue
             located.append((pdf, rel.parts[0]))
 
-        # Prose corpora live beside bare_acts/ under the statutes dir
+
         for domain in self.PROSE_DIRS:
             prose_dir = self._statutes_dir / domain
             if prose_dir.exists():
                 for pdf in sorted(prose_dir.rglob("*.pdf")):
                     located.append((pdf, domain))
 
-        # Group by content hash first (exact duplicates), keyed to one act key
+
         by_key: Dict[str, List[Tuple[Path, str]]] = {}
         hash_to_key: Dict[str, str] = {}
         for pdf, domain in located:
@@ -147,8 +106,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             hash_to_key[digest] = key
             by_key.setdefault(key, []).append((pdf, domain))
 
-        # Merge groups whose normalized keys contain one another (catches
-        # "rera_real_estate_..." vs "real_estate_..." filename variants).
+
         keys = sorted(by_key, key=len)
         merged_into: Dict[str, str] = {}
         for i, short in enumerate(keys):
@@ -167,9 +125,8 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             if len(entries) == 1:
                 best_path, best_domain = entries[0]
             else:
-                # Pick the copy with the best extracted text, not the biggest
-                # file — a scanned/OCR copy is often larger on disk but yields
-                # far worse text than a born-digital one.
+
+
                 best_path, best_domain = max(
                     entries, key=lambda e: self._text_quality(e[0])
                 )
@@ -192,7 +149,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             text = "\n".join(p.page_content for p in pages)
             return sum(ch.isalnum() for ch in text)
         except Exception:
-            return pdf_path.stat().st_size  # crude fallback
+            return pdf_path.stat().st_size
 
     def _parser_for_domain(self, domain: str) -> BaseLegalRAGSystem:
         """Reuse the specialized domain parsers; generic parser elsewhere."""
@@ -216,7 +173,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
         chunks = parser._parse_legal_sections(full_text, source_file)
         code = self.DOMAIN_CODES.get(primary_domain, primary_domain[:3].upper())
         for c in chunks:
-            # Replace the parser's domain prefix with the unified unique code
+
             rest = c.chunk_id.split("_", 1)[1] if "_" in c.chunk_id else c.chunk_id
             c.chunk_id = f"{code}_{rest}"
             c.domain = primary_domain
@@ -234,9 +191,8 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             return []
         code = self.DOMAIN_CODES.get(domain, domain[:3].upper())
         prefix = re.sub(r"[^A-Z0-9]", "", title.upper())
-        # "part N", not a bare number: these are window indices, and must
-        # neither read like statutory citations in prompts nor collide with
-        # real section numbers during evaluation.
+
+
         return [
             LegalChunk(
                 chunk_id=f"{code}_{prefix}_{n}",
@@ -261,14 +217,9 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
                     )
         return fingerprint
 
-    # ── Query-time hook ─────────────────────────────────────────
 
     def _preprocess_query(self, query: str) -> str:
-        """
-        Aggregate the specialized domains' vocabulary expansions. Each
-        expander only fires on its own trigger keywords, so combining them
-        adds targeted synonyms without cross-domain noise.
-        """
+        """Aggregate the specialized domains' vocabulary expansions."""
         extras: List[str] = []
         for domain in ("criminal", "civil", "constitutional"):
             expanded = self._parser_for_domain(domain)._preprocess_query(query)
@@ -278,10 +229,6 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             return query + " " + " ".join(extras)
         return query
 
-
-# ─────────────────────────────────────────────────────────────
-# Singleton
-# ─────────────────────────────────────────────────────────────
 
 _unified_rag: Optional[UnifiedLegalRAGSystem] = None
 

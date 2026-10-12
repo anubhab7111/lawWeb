@@ -17,7 +17,7 @@ NAMES = ["Section 2", "Section 294(b)", "Section 302", "Section 304A", "Section 
 
 
 def test_decode_labels_maps_class_ids_to_section_numbers():
-    # regression: ids used to be read as section numbers (id 2 -> "Section 2")
+
     assert decode_labels([2, 3], NAMES) == ["302", "304A"]
 
 
@@ -80,7 +80,7 @@ def test_macro_f1_punishes_only_predicting_popular_labels():
     always_popular = [["34"]] * 4
     perfect = [["34"], ["34"], ["34"], ["482"]]
     assert macro_f1(perfect, golds, 1) == 1.0
-    # micro-style accuracy would be 75%, but the rare label is never found
+
     assert macro_f1(always_popular, golds, 1) < 0.5
 
 

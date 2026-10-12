@@ -36,9 +36,8 @@ def test_extracts_name_and_year():
 
 
 def test_does_not_extract_without_a_year():
-    # Deliberate precision-over-recall choice: real citations almost always
-    # carry a year; requiring one keeps ordinary "X v. Y" prose from being
-    # flagged as an unverifiable case citation.
+
+
     assert iter_case_citations("Ghose v. Mugneeram Bangur applies here.") == []
 
 
@@ -58,10 +57,8 @@ def test_extracts_through_markdown_bold():
 
 
 def test_extracts_names_with_lowercase_connector_words():
-    # No capitalized lead-in word directly before the party name: a preceding
-    # capitalized word (e.g. a sentence-initial "See") is itself a valid
-    # match for the party-phrase pattern and gets greedily swept in — a known
-    # heuristic limitation, not the property this test checks.
+
+
     citations = iter_case_citations("Attorney General for India v. Satish (2021) is the authority.")
     assert citations[0][1] == "Attorney General for India v. Satish"
 

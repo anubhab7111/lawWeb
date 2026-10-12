@@ -1,9 +1,4 @@
-"""
-My Cases — save/track court cases by CNR or case number: timeline, hearing
-dates, orders, AI summaries, personal notes. All routes require a logged-in
-user (see app/deps/auth.py); every lookup is scoped to the caller's own
-saved_cases rows.
-"""
+"""My Cases — save/track court cases by CNR or case number: timeline, hearing dates, orders, AI summaries, personal notes."""
 
 from typing import Optional
 
@@ -70,9 +65,8 @@ async def save_case(
             select(SavedCase).where(SavedCase.user_id == current_user.id, SavedCase.cnr == record.cnr)
         ).first()
     else:
-        # No CNR from the provider — cnr alone can't identify a duplicate
-        # (the DB's own partial unique index allows multiple NULL-cnr rows
-        # per user), so fall back to the court+case_number+year natural key.
+
+
         existing = session.exec(
             select(SavedCase).where(
                 SavedCase.user_id == current_user.id,

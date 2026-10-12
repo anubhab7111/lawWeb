@@ -1,16 +1,4 @@
-"""Conversation-memory checkpointer for the chatbot.
-
-The live conversation window (last 20 English messages per session) is kept in
-LangGraph checkpoints keyed by thread_id == the chatbot's memory key
-(`user:<id>:<session>` / `guest:<session>`), so it survives restarts and does
-not depend on which worker served the previous turn. `chat_messages` remains the
-durable, user-visible transcript (sidebar, history endpoint); a thread with no
-checkpoint is re-seeded from it (see app.routers.chat._seed_from_db_if_needed).
-
-Postgres when reachable; if it is not, chat degrades to an in-process
-InMemorySaver (with the old TTL/size eviction in LegalChatbot) rather than
-failing — guest chat never needed the database before, and shouldn't now.
-"""
+"""Conversation-memory checkpointer for the chatbot."""
 
 import logging
 from typing import Any, Optional
@@ -27,15 +15,12 @@ _pool: Any = None
 
 
 def _conninfo(database_url: str) -> str:
-    """libpq connection string from the app's DATABASE_URL. Prisma-style URLs
-    carry a ?schema=... parameter that libpq rejects."""
+    """libpq connection string from the app's DATABASE_URL."""
     return database_url.split("?", 1)[0].replace("postgresql+psycopg://", "postgresql://", 1)
 
 
 async def open_postgres_saver(database_url: str) -> tuple:
-    """Open a pool and an AsyncPostgresSaver on it, creating the checkpoint
-    tables if needed (idempotent). Returns (pool, saver). The autocommit /
-    prepare_threshold / dict_row settings are what the saver requires."""
+    """Open a pool and an AsyncPostgresSaver on it, creating the checkpoint tables if needed (idempotent)."""
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from psycopg.rows import dict_row
     from psycopg_pool import AsyncConnectionPool
@@ -78,8 +63,7 @@ async def init_checkpointer() -> BaseCheckpointSaver:
 
 
 def get_checkpointer() -> BaseCheckpointSaver:
-    """The saver for the running app; an InMemorySaver if init never ran
-    (scripts, tests)."""
+    """The saver for the running app; an InMemorySaver if init never ran (scripts, tests)."""
     global _saver
     if _saver is None:
         _saver = InMemorySaver()
@@ -103,10 +87,7 @@ async def delete_stale_threads(
     saver: Optional[BaseCheckpointSaver] = None,
     pool: Any = None,
 ) -> int:
-    """Delete conversation threads idle for more than max_age_days. Every run
-    stamps `last_active` into the checkpoint metadata (see LegalChatbot._config),
-    which is what idleness is judged by. Returns how many threads were deleted;
-    0 without touching anything when the app is on the in-memory fallback."""
+    """Delete conversation threads idle for more than max_age_days."""
     saver = saver or _saver
     pool = pool or _pool
     if saver is None or pool is None:

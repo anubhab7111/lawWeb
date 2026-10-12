@@ -1,21 +1,4 @@
-"""
-legal_retrieval.py — adaptive statute retrieval with legal query understanding.
-
-The single entry point `retrieve_statutes()` used by both the chatbot and
-the retrieval evaluation:
-
-  1. Parse the query (citations + doctrine ontology, optional fast-LLM assist)
-  2. Deterministically fetch PINNED sections (known doctrine law — no
-     embedding roulette)
-  3. Fill the remaining slots via the hybrid index (BM25 + dense + reranker)
-  4. Merge, dedupe by (act, section), pins first
-
-query_type shapes the mix:
-  - section_lookup: pins only (plus hybrid only if pins missed)
-  - doctrine:       pins first, hybrid fills the rest
-  - comparison:     pins from both codes, small hybrid fill
-  - general:        hybrid as before
-"""
+"""legal_retrieval.py — adaptive statute retrieval with legal query understanding."""
 
 from __future__ import annotations
 
@@ -38,12 +21,11 @@ _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\"'])")
 FACT_PATTERN_MIN_CHARS = 600
 FACT_PATTERN_MIN_SENTENCES = 5
 PRECEDENT_PINS = 3
-# Chat pins favour precision over the benchmark's recall-leaning rule: an answer
-# built on a wrong provision is worse than one missing a marginal one. Jurisdiction
-# and definition labels (IPC/CrPC 2-5, 13) never help an answer.
+
+
 CHAT_PIN_MIN_PROB = 0.5
 CHAT_UNPINNED_LABELS = {"Section 2", "Section 3", "Section 4", "Section 5", "Section 13"}
-PRECEDENT_PIN_SCORE = 0.9  # below 1.0: inferred from similar cases, not parsed from the query
+PRECEDENT_PIN_SCORE = 0.9
 
 
 def split_sentences(text: str) -> List[str]:
@@ -65,9 +47,7 @@ _classifier_failed = False
 
 
 def label_to_pin(label: str) -> Tuple[str, str]:
-    """"Section 482" -> ("Code of Criminal Procedure", "482"): IL-TUR labels are
-    bare numbers; the Act is the one Supreme Court judgments cite that number as
-    (app/data/iltur_label_acts.json)."""
+    """"Section 482" -> ("Code of Criminal Procedure", "482"): IL-TUR labels are bare numbers; the Act is the one Supreme Court judgments cite that number as..."""
     global _label_acts
     if _label_acts is None:
         import json
@@ -98,13 +78,7 @@ def _get_classifier():
 
 
 async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[str, str]]:
-    """Sections a long fact narrative most likely engages.
-
-    The statute classifier (38.35 macro-F1 on IL-TUR test) decides, keeping labels
-    above their dev-fitted thresholds; without it, the most similar past cases vote
-    (precedent index). Empty for ordinary questions and when neither is available,
-    so callers get exactly the behaviour they had before either existed.
-    """
+    """Sections a long fact narrative most likely engages."""
     if not looks_like_fact_pattern(query):
         return []
     sentences = split_sentences(query)
@@ -126,7 +100,7 @@ async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[st
         if not get_precedent_index().available:
             return []
         voted = await retrieve_precedent_sections(sentences)
-    except Exception as e:  # a retrieval aid must never break the answer path
+    except Exception as e:
         print(f"[LegalRetrieval] fact-pattern pin lookup failed: {e}")
         return []
     return [label_to_pin(f"Section {section}") for section, _score in voted[:top]]
@@ -138,8 +112,7 @@ _CITATION_CODES = {"Indian Penal Code": "IPC", "Code of Criminal Procedure": "Cr
 async def retrieve_judgment_passages(
     query: str, statute_chunks: List[LegalChunk], k: int = 8
 ) -> list:
-    """Supreme Court passages for the question, boosted toward passages that cite
-    the provisions already retrieved. [] when the judgment index isn't built."""
+    """Supreme Court passages for the question, boosted toward passages that cite the provisions already retrieved."""
     from app.tools.judgment_rag import get_judgment_index
     from app.tools.precedent_rag import encode_texts
 
@@ -164,12 +137,7 @@ async def retrieve_judgment_passages(
 
 
 def _related_sections(chunk: LegalChunk, max_refs: int = 3) -> List[str]:
-    """
-    Sections related to a provision within the SAME act: numeric neighbours
-    (statutes are drafted so adjacent sections form one scheme, e.g.
-    §437/§438/§439 bail) plus explicit cross-references in the text
-    ("subject to section N", "notwithstanding section N").
-    """
+    """Sections related to a provision within the SAME act: numeric neighbours (statutes are drafted so adjacent sections form one scheme, e.g."""
     out: List[str] = []
     sec = chunk.section_number.lower().replace("article", "").strip()
     if sec.isdigit():
@@ -213,7 +181,7 @@ def _expand_context(
                         source_file=rc.source_file,
                         has_punishment=rc.has_punishment,
                         domains=list(rc.domains),
-                        score=0.3,  # supporting context, not a primary hit
+                        score=0.3,
                     )
                 )
     return merged + related
@@ -232,10 +200,7 @@ def _dedupe_by_section(chunks: List[LegalChunk]) -> List[LegalChunk]:
 
 
 def _drop_prose(chunks: List[LegalChunk]) -> List[LegalChunk]:
-    """Exclude prose sliding-window chunks (``section_number`` like "part 3").
-    These are notifications/commentary, not citable statute sections, and can
-    outrank real provisions — especially in the unfiltered confidence-gate retry.
-    Pinned sections never use the "part N" format, so they are unaffected."""
+    """Exclude prose sliding-window chunks (``section_number`` like "part 3")."""
     return [c for c in chunks if not c.section_number.startswith("part ")]
 
 
@@ -249,12 +214,7 @@ async def retrieve_statutes(
     candidate_pool: int = 30,
     rerank_pool: int = 20,
 ) -> Tuple[LegalContext, ParsedLegalQuery]:
-    """
-    Understanding-first statute retrieval over the unified hybrid index.
-
-    Returns (LegalContext, ParsedLegalQuery). Pinned chunks carry score 1.0
-    and come first; hybrid results keep their reranker-relative scores.
-    """
+    """Understanding-first statute retrieval over the unified hybrid index."""
     rag = get_unified_rag_system()
     if not await rag.initialize():
         return LegalContext(domain="unified", query=query), ParsedLegalQuery()
@@ -264,7 +224,7 @@ async def retrieve_statutes(
     else:
         parsed = parse_legal_query(query)
 
-    # ── Deterministic pins ──────────────────────────────────────
+
     precedent = await precedent_pins(query)
     pin_specs = [(a, s, 1.0) for a, s in parsed.pinned_sections] + [
         (a, s, PRECEDENT_PIN_SCORE) for a, s in precedent
@@ -283,12 +243,12 @@ async def retrieve_statutes(
                     source_file=chunk.source_file,
                     has_punishment=chunk.has_punishment,
                     domains=list(chunk.domains),
-                    score=pin_score,  # 1.0: identified in the query; less: inferred from similar cases
+                    score=pin_score,
                 )
             )
     pinned = _dedupe_by_section(pinned)
 
-    # ── Hybrid fill ─────────────────────────────────────────────
+
     query_pinned = bool(parsed.pinned_sections) and bool(pinned)
     if parsed.query_type == "section_lookup" and query_pinned:
         hybrid_k = 0
@@ -315,10 +275,7 @@ async def retrieve_statutes(
 
     merged = _dedupe_by_section(pinned + hybrid_chunks)
 
-    # ── Confidence gate ─────────────────────────────────────────
-    # Thin evidence (fewer than 3 primary provisions) → ONE broadened retry:
-    # no domain filter, larger k, relaxed score cutoff. A grounded answer
-    # from adjacent law beats a fluent answer from parametric memory.
+
     if len(merged) < 3 and parsed.query_type != "section_lookup":
         search_query = query
         if parsed.expansion_terms:
@@ -369,18 +326,7 @@ async def retrieve_case_law(
     k: int = 3,
     query_issues: Optional[List[str]] = None,
 ) -> List[CaseRecord]:
-    """
-    Second hop of statute -> case retrieval: query the curated landmark-
-    judgment corpus, composite-scoring by semantic relevance + issue
-    overlap (query_issues, when the caller has run FIRAC extraction on an
-    uploaded document — see similar_cases.py) + statute overlap (cases
-    whose `statutes_cited` overlap the sections already retrieved for this
-    query) + doctrine overlap (parsed.doctrines). query_issues defaults to
-    None for callers without a structured FIRAC query (e.g. the general
-    chatbot), which degrades gracefully rather than distorting ranking —
-    see case_law_rag.CaseLawRAGSystem.retrieve. Silently returns [] if the
-    case-law corpus isn't built yet.
-    """
+    """Second hop of statute -> case retrieval: query the curated landmark- judgment corpus, composite-scoring by semantic relevance + issue overlap (query_issues, when the caller has..."""
     case_rag = get_case_law_rag_system()
     if not await case_rag.initialize():
         return []

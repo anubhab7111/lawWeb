@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""
-verify_iltur_leaderboard.py — score test predictions with the IL-TUR leaderboard's own code.
-
-Independent check of report_iltur.py: builds label-set predictions for the test split
-(decision thresholds fitted on dev only), then scores them with `evaluate_lsi` from the
-leaderboard Space (spaces/Exploration-Lab/IL-TUR-Leaderboard, eval_utils.py), unmodified,
-stored with its label vocabulary under <corpus>/builds/eval/leaderboard/.
-
-Usage (from server/):  python verify_iltur_leaderboard.py classifier
-                       python verify_iltur_leaderboard.py classifier precedent_trainmem:0.25   (fusion)
-"""
+"""verify_iltur_leaderboard.py — score test predictions with the IL-TUR leaderboard's own code."""
 import importlib.util
 import json
 import os
@@ -34,7 +24,7 @@ spec = importlib.util.spec_from_file_location("eval_utils", str(LB / "eval_utils
 eu = importlib.util.module_from_spec(spec)
 try:
     spec.loader.exec_module(eu)
-except Exception as e:  # the leaderboard module imports extras (BLEU, rouge...); take just the function
+except Exception as e:
     src = open(str(LB / "eval_utils.py")).read()
     start = src.index("def evaluate_lsi")
     end = src.index("\ndef ", start + 10)
@@ -50,7 +40,7 @@ dev_g, test_g = gold_labels("dev"), gold_labels("test")
 dev_ids, test_ids = sorted(dev_g), sorted(test_g)
 mats = [(w, matrices(name, vocab, dev_ids, test_ids)) for name, w in weights]
 dm, tm = (sum(w * m[k] for w, m in mats) for k in (0, 1))
-if len(mats) > 1:  # same row normalisation as report_iltur.py --fuse
+if len(mats) > 1:
     norm = lambda m: m / np.maximum(m.max(axis=1, keepdims=True), 1e-9)  # noqa: E731
     dm, tm = norm(dm), norm(tm)
 dg = io.gold_matrix([dev_g[i] for i in dev_ids], vocab)
@@ -60,7 +50,7 @@ pred = io.predict_threshold(tm, th)
 predictions = {cid: io.labels_from_row(pred[i], vocab) for i, cid in enumerate(test_ids)}
 print(f"{system}: mean labels predicted per case {sum(map(len, predictions.values())) / len(predictions):.2f} "
       f"(gold {sum(map(len, test_g.values())) / len(test_g):.2f})")
-os.chdir(LB)  # evaluate_lsi opens ./lsi_label_vocab.json
+os.chdir(LB)
 result = eu.evaluate_lsi({i: test_g[i] for i in test_ids}, predictions)
 print("OFFICIAL leaderboard evaluate_lsi ->", result)
 json.dump(predictions, open(LB / f"{system}_test_predictions.json", "w"))

@@ -1,29 +1,4 @@
-"""
-Retrieval Metrics
-=================
-Implements the three core search-quality metrics for the legal RAG pipeline.
-
-Metrics
--------
-1. Hit Rate @ k      — What percentage of queries have at least one relevant
-                       document in the top-k retrieved results?
-                       Range: [0, 1].  Target: ≥ 0.70 for k=3.
-
-2. Mean Reciprocal   — For each query, 1 / rank of the *first* relevant result.
-   Rank  (MRR)         Averaged across all queries.
-                       Range: [0, 1].  MRR = 1.0 means the right document is
-                       always ranked #1.
-
-3. Context Precision — What fraction of the retrieved context is genuinely
-                       relevant to the query?  Evaluated by the LLM judge
-                       (see llm_judge.py) when a judge instance is provided,
-                       or approximated via keyword overlap when running offline.
-                       Range: [0, 1].
-
-All pure-metric functions accept plain Python lists and return plain floats so
-they can be unit-tested without any external dependencies.  The LLM-judge path
-is wired in only through the optional ``judge`` parameter.
-"""
+"""Retrieval Metrics ================= Implements the three core search-quality metrics for the legal RAG pipeline."""
 
 from __future__ import annotations
 
@@ -35,35 +10,9 @@ from typing import Dict, List, Optional, Sequence
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Data containers
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class RetrievalSample:
-    """
-    All the information needed to evaluate retrieval quality for one query.
-
-    Attributes
-    ----------
-    query:
-        The exact user query string.
-    retrieved_sections:
-        Ordered list of IPC section numbers (or document IDs) that the RAG
-        system returned, ranked from most to least similar.
-        e.g. ``["420", "406", "302", "465", "468"]``
-    retrieved_context:
-        Raw text of all retrieved chunks concatenated.  Used by Context
-        Precision (LLM judge) and as a fallback for keyword-based scoring.
-    relevant_sections:
-        Ground-truth set of section numbers / doc-IDs that are considered
-        correct for this query.  Comes from :data:`ground_truth.GROUND_TRUTH`.
-    relevant_keywords:
-        Fallback list of keywords; used when ``relevant_sections`` is empty
-        (e.g. constitutional queries where the IPC RAG is not expected to
-        retrieve anything) to compute a keyword-based precision proxy.
-    """
+    """All the information needed to evaluate retrieval quality for one query."""
 
     query: str
     retrieved_sections: List[str]
@@ -76,24 +25,24 @@ class RetrievalSample:
 class RetrievalMetricsResult:
     """Aggregated retrieval metrics for a full evaluation run."""
 
-    # Per-query raw data
+
     samples: List[RetrievalSample]
 
-    # Hit Rate @ various k
+
     hit_rate_at_1: float
     hit_rate_at_3: float
     hit_rate_at_5: float
 
-    # MRR
+
     mrr: float
 
-    # Context Precision (average across all queries)
+
     context_precision_mean: float
     context_precision_per_query: List[float]
 
-    # Diagnostics
-    queries_with_relevant_sections: int  # how many GT entries have IPC sections
-    queries_with_context: int  # how many retrieved non-empty context
+
+    queries_with_relevant_sections: int
+    queries_with_context: int
 
     def to_dict(self) -> Dict[str, float]:
         """Flat dictionary suitable for CSV / JSON export."""
@@ -110,19 +59,10 @@ class RetrievalMetricsResult:
         }
 
 
-# ---------------------------------------------------------------------------
-# Core scalar metrics  (pure functions — no I/O)
-# ---------------------------------------------------------------------------
-
-
 def act_aware_sections(
     retrieved: Sequence[Sequence[str]], expected_acts: Sequence[str]
 ) -> List[str]:
-    """Section numbers from (act, section) pairs, keeping rank positions but
-    blanking any hit from an Act the ground truth doesn't expect — so "420" in
-    the wrong statute no longer counts as a hit. If no retrieved pair matches
-    an expected Act (e.g. the ground truth names articles or topics rather than
-    Acts), fall back to plain section numbers."""
+    """Section numbers from (act, section) pairs, keeping rank positions but blanking any hit from an Act the ground truth doesn't expect — so "420" in the wrong statute no longer..."""
     from app.tools.case_law_rag import _acts_match, normalize_act
 
     wanted = [normalize_act(a) for a in expected_acts if a]
@@ -142,31 +82,7 @@ def compute_hit_rate(
     relevant: Sequence[str],
     k: int = 5,
 ) -> float:
-    """
-    Compute Hit Rate @ k for a *single* query.
-
-    A "hit" occurs when at least one element from *relevant* appears in the
-    first *k* items of *retrieved*.
-
-    Args:
-        retrieved: Ordered sequence of retrieved document IDs / section numbers.
-                   The first element is the highest-ranked result.
-        relevant:  Set of ground-truth relevant IDs for this query.
-        k:         Cut-off rank.  Defaults to 5.
-
-    Returns:
-        1.0 if any relevant document appears in top-k, else 0.0.
-
-    Examples:
-        >>> compute_hit_rate(["420", "406", "302"], ["420"], k=3)
-        1.0
-        >>> compute_hit_rate(["302", "380", "406"], ["420"], k=3)
-        0.0
-        >>> compute_hit_rate([], ["420"], k=3)
-        0.0
-        >>> compute_hit_rate(["420"], [], k=3)  # no ground truth → skip
-        0.0
-    """
+    """Compute Hit Rate @ k for a *single* query."""
     if not relevant or not retrieved:
         return 0.0
     relevant_set = set(str(r).strip() for r in relevant)
@@ -178,27 +94,7 @@ def compute_mrr_single(
     retrieved: Sequence[str],
     relevant: Sequence[str],
 ) -> float:
-    """
-    Compute the Reciprocal Rank for a *single* query.
-
-    Reciprocal Rank = 1 / (rank of first relevant document).
-    If no relevant document is found in the retrieved list, the score is 0.0.
-
-    Args:
-        retrieved: Ordered sequence of retrieved document IDs (highest rank first).
-        relevant:  Ground-truth relevant IDs for this query.
-
-    Returns:
-        Float in (0, 1].  Returns 0.0 when no relevant document is found.
-
-    Examples:
-        >>> compute_mrr_single(["420", "406", "302"], ["420"])
-        1.0
-        >>> compute_mrr_single(["302", "420", "406"], ["420"])
-        0.5
-        >>> compute_mrr_single(["302", "380", "465"], ["420"])
-        0.0
-    """
+    """Compute the Reciprocal Rank for a *single* query."""
     if not relevant or not retrieved:
         return 0.0
     relevant_set = set(str(r).strip() for r in relevant)
@@ -209,30 +105,11 @@ def compute_mrr_single(
 
 
 def compute_mrr(samples: Sequence[RetrievalSample]) -> float:
-    """
-    Compute Mean Reciprocal Rank (MRR) over a collection of retrieval samples.
-
-    Only samples that have non-empty ``relevant_sections`` contribute to the
-    mean (queries where the IPC RAG is not expected to surface anything are
-    excluded, rather than penalising the MRR unfairly).
-
-    Args:
-        samples: Collection of :class:`RetrievalSample` objects.
-
-    Returns:
-        Mean Reciprocal Rank as a float in [0, 1].  Returns 0.0 for an empty
-        or all-excluded sample set.
-
-    Example:
-        >>> s1 = RetrievalSample("q1", ["420", "406"], "", ["420"])
-        >>> s2 = RetrievalSample("q2", ["302", "420"], "", ["420"])
-        >>> compute_mrr([s1, s2])
-        0.75
-    """
+    """Compute Mean Reciprocal Rank (MRR) over a collection of retrieval samples."""
     rrs: List[float] = []
     for sample in samples:
         if not sample.relevant_sections:
-            # This query has no IPC ground truth — skip for MRR
+
             continue
         rr = compute_mrr_single(sample.retrieved_sections, sample.relevant_sections)
         rrs.append(rr)
@@ -246,20 +123,11 @@ def compute_hit_rate_at_k(
     samples: Sequence[RetrievalSample],
     k: int = 5,
 ) -> float:
-    """
-    Compute Hit Rate @ k averaged over all samples that have ground truth.
-
-    Args:
-        samples: Collection of :class:`RetrievalSample` objects.
-        k:       Cut-off rank.
-
-    Returns:
-        Float in [0, 1].
-    """
+    """Compute Hit Rate @ k averaged over all samples that have ground truth."""
     hits: List[float] = []
     for sample in samples:
         if not sample.relevant_sections:
-            continue  # No IPC ground truth for this query
+            continue
         hit = compute_hit_rate(sample.retrieved_sections, sample.relevant_sections, k=k)
         hits.append(hit)
 
@@ -268,31 +136,8 @@ def compute_hit_rate_at_k(
     return round(sum(hits) / len(hits), 4)
 
 
-# ---------------------------------------------------------------------------
-# Context Precision  (keyword-based fallback — no LLM required)
-# ---------------------------------------------------------------------------
-
-
 def _keyword_precision_score(context: str, keywords: List[str]) -> float:
-    """
-    Lightweight keyword-overlap proxy for Context Precision.
-
-    Used when:
-      • No LLM judge is available (offline / unit-test mode).
-      • The query has no relevant IPC sections (constitutional queries) and
-        we still want a numeric precision signal.
-
-    Algorithm:
-      For each keyword in *keywords*, check whether it appears (case-insensitive)
-      in *context*.  Score = matched_keywords / total_keywords.
-
-    Args:
-        context:  Concatenated retrieved text.
-        keywords: Expected keywords from the ground-truth entry.
-
-    Returns:
-        Float in [0, 1].  Returns 0.0 if context or keywords are empty.
-    """
+    """Lightweight keyword-overlap proxy for Context Precision."""
     if not context or not keywords:
         return 0.0
     context_lower = context.lower()
@@ -304,37 +149,19 @@ def compute_context_precision(
     query: str,
     context: str,
     keywords: Optional[List[str]] = None,
-    judge=None,  # Optional[LLMJudge]  — avoid hard import for offline use
+    judge=None,
 ) -> float:
-    """
-    Compute Context Precision for a single query (synchronous entry-point).
-
-    Strategy
-    --------
-    * If *judge* is provided → delegates to :meth:`LLMJudge.context_precision`
-      (async; called via ``asyncio.run`` if no event loop is active, or
-      awaited if one is running).
-    * Otherwise → falls back to keyword-overlap scoring using *keywords*.
-
-    Args:
-        query:    The user query string.
-        context:  All retrieved text chunks concatenated.
-        keywords: Ground-truth keywords to match against (fallback mode).
-        judge:    Optional :class:`~app.metrics.llm_judge.LLMJudge` instance.
-
-    Returns:
-        Float in [0, 1].
-    """
+    """Compute Context Precision for a single query (synchronous entry-point)."""
     if not context:
         return 0.0
 
     if judge is not None:
-        # Run the async judge in whichever event-loop context we are in
+
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # We are already inside an async context — create a task
-                # Callers should use compute_context_precision_async instead
+
+
                 logger.debug(
                     "compute_context_precision called synchronously from async "
                     "context; falling back to keyword scoring."
@@ -349,7 +176,7 @@ def compute_context_precision(
                 "LLM judge failed for context_precision: %s — falling back.", exc
             )
 
-    # Keyword fallback
+
     return _keyword_precision_score(context, keywords or [])
 
 
@@ -357,23 +184,9 @@ async def compute_context_precision_async(
     query: str,
     context: str,
     keywords: Optional[List[str]] = None,
-    judge=None,  # Optional[LLMJudge]
+    judge=None,
 ) -> float:
-    """
-    Async version of :func:`compute_context_precision`.
-
-    Prefer this function when you are already inside an ``async`` function
-    (e.g. the evaluator loop).
-
-    Args:
-        query:    The user query string.
-        context:  All retrieved text chunks concatenated.
-        keywords: Ground-truth keywords (fallback when judge is None).
-        judge:    Optional :class:`~app.metrics.llm_judge.LLMJudge` instance.
-
-    Returns:
-        Float in [0, 1].
-    """
+    """Async version of :func:`compute_context_precision`."""
     if not context:
         return 0.0
 
@@ -390,40 +203,22 @@ async def compute_context_precision_async(
     return _keyword_precision_score(context, keywords or [])
 
 
-# ---------------------------------------------------------------------------
-# Aggregate: compute all retrieval metrics in one call
-# ---------------------------------------------------------------------------
-
-
 async def compute_all_retrieval_metrics(
     samples: Sequence[RetrievalSample],
-    judge=None,  # Optional[LLMJudge]
+    judge=None,
 ) -> RetrievalMetricsResult:
-    """
-    Compute Hit Rate @ 1/3/5, MRR, and Context Precision for a full batch.
-
-    Context Precision for each sample is computed in parallel (all samples
-    whose context is non-empty), using the LLM judge when available and
-    keyword scoring otherwise.
-
-    Args:
-        samples: Sequence of :class:`RetrievalSample` objects — one per query.
-        judge:   Optional :class:`~app.metrics.llm_judge.LLMJudge`.
-
-    Returns:
-        :class:`RetrievalMetricsResult` with all metrics populated.
-    """
+    """Compute Hit Rate @ 1/3/5, MRR, and Context Precision for a full batch."""
     samples = list(samples)
 
-    # ── Hit Rate ─────────────────────────────────────────────────────────────
+
     hr1 = compute_hit_rate_at_k(samples, k=1)
     hr3 = compute_hit_rate_at_k(samples, k=3)
     hr5 = compute_hit_rate_at_k(samples, k=5)
 
-    # ── MRR ──────────────────────────────────────────────────────────────────
+
     mrr = compute_mrr(samples)
 
-    # ── Context Precision (parallel) ─────────────────────────────────────────
+
     precision_tasks = [
         compute_context_precision_async(
             query=s.query,
@@ -443,7 +238,7 @@ async def compute_all_retrieval_metrics(
         else 0.0
     )
 
-    # ── Diagnostics ──────────────────────────────────────────────────────────
+
     queries_with_gt = sum(1 for s in samples if s.relevant_sections)
     queries_with_ctx = sum(1 for s in samples if s.retrieved_context.strip())
 
@@ -458,11 +253,6 @@ async def compute_all_retrieval_metrics(
         queries_with_relevant_sections=queries_with_gt,
         queries_with_context=queries_with_ctx,
     )
-
-
-# ---------------------------------------------------------------------------
-# Pretty-printer helper
-# ---------------------------------------------------------------------------
 
 
 def print_retrieval_report(result: RetrievalMetricsResult) -> None:
@@ -484,7 +274,7 @@ def print_retrieval_report(result: RetrievalMetricsResult) -> None:
     print(f"  Context Precision (mean)     : {result.context_precision_mean:.4f}")
     print(sep)
 
-    # Per-query breakdown
+
     if result.samples:
         print("\n  Per-query precision breakdown:")
         print(f"  {'#':<4} {'Precision':<12} {'Query (truncated)'}")

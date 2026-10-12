@@ -1,30 +1,5 @@
 #!/usr/bin/env python3
-"""
-eval_iltur_retrieval.py — LLM-free retrieval evaluation on IL-TUR `lsi`.
-
-Draws a seeded sample of IL-TUR cases and scores section rankings against each
-case's label set. Labels are bare section numbers (their cases mix IPC and CrPC:
-label 482 is CrPC 482 quashing, 438 anticipatory bail), so scoring is by number:
-  statutes   windowed statute retrieval combined across the narrative
-             (app/tools/fact_statutes.py)
-  precedent  similar past IL-TUR train+dev cases voting for their sections
-             (app/tools/precedent_rag.py)
-  fused      weighted RRF of the two (statutes 0.25, precedent 1.0: tuned on dev)
-  popularity no-input baseline: always the most frequent labels
-Reports Hit@k, MRR, nDCG@k, MAP, macro-F1@k (the metric IL-TUR's lsi task is scored
-with) and 95% bootstrap intervals. Hit@k and MRR are lenient here (about 4 gold labels
-per case, and one label in a third of them), so read every system against the
-popularity row: a system that doesn't beat it adds nothing.
-
-Tune on --split dev (each queried dev case is masked out of the precedent index);
-report on --split test, which is
-never indexed.
-
-Usage (conda env legal_chatbot_env, from server/):
-    python eval_iltur_retrieval.py --tag baseline                    # test, all systems
-    python eval_iltur_retrieval.py --split dev --skip-statutes       # fast precedent tuning
-    python eval_iltur_retrieval.py --sample-size 20 --tag smoke
-"""
+"""eval_iltur_retrieval.py — LLM-free retrieval evaluation on IL-TUR `lsi`."""
 
 import argparse
 import asyncio

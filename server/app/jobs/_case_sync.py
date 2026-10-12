@@ -1,7 +1,4 @@
-"""
-Job bodies for app/jobs/hearing_reminders.py. Split out so the scheduler
-module only imports plain functions, not FastAPI router internals.
-"""
+"""Job bodies for app/jobs/hearing_reminders.py."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -14,7 +11,7 @@ from app.tools.case_sync import sync_case_events
 
 _STALE_AFTER = timedelta(hours=6)
 
-# (window label, timedelta before the hearing, notification type)
+
 _REMINDER_WINDOWS = [
     ("7d", timedelta(days=7), "hearing_reminder_7d"),
     ("1d", timedelta(days=1), "hearing_reminder_1d"),
@@ -56,9 +53,8 @@ async def run_send_hearing_reminders() -> None:
 
         for _label, delta, notif_type in _REMINDER_WINDOWS:
             target = now + delta
-            # Hearings within 30 minutes of the target offset: twice the job's
-            # 15-minute interval, so one missed tick doesn't skip a reminder
-            # (per-event dedup below prevents repeats).
+
+
             window_start = target - timedelta(minutes=30)
             window_end = target
 
@@ -71,8 +67,8 @@ async def run_send_hearing_reminders() -> None:
             ).all()
 
             for event in upcoming:
-                # Dedup per hearing EVENT (not per case): a case with multiple
-                # hearings must get a reminder for each, so key on the event id.
+
+
                 already_sent = session.exec(
                     select(Notification).where(
                         Notification.related_case_event_id == event.id,

@@ -1,6 +1,4 @@
-"""
-Database engine and session handling for the PostgreSQL database.
-"""
+"""Database engine and session handling for the PostgreSQL database."""
 
 from functools import lru_cache
 
@@ -11,7 +9,7 @@ from app.config import get_settings
 
 def _normalize_url(url: str) -> str:
     """Convert a Prisma-style DATABASE_URL to an SQLAlchemy one."""
-    # Prisma URLs carry a ?schema=... query param that libpq rejects.
+
     base = url.split("?", 1)[0]
     return base.replace("postgresql://", "postgresql+psycopg://", 1)
 

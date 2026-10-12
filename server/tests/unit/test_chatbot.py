@@ -1,6 +1,4 @@
-"""Chatbot workflow tests. No Ollama, embeddings or database: the LLM, the
-router classifier and the retrieval tools are replaced with fakes so these
-exercise the real compiled graph and streaming lifecycle."""
+"""Chatbot workflow tests."""
 
 import asyncio
 import inspect
@@ -22,14 +20,8 @@ from app.prompts import (
 from app.tool_dispatch import ToolInvocationResult, select_tools
 
 
-# --------------------------------------------------------------------------
-# Fakes
-# --------------------------------------------------------------------------
-
-
 class FakeLLM:
-    """Stands in for ChatOllama. Output opens with a thinking preamble closed
-    by </think>, as the real model's does."""
+    """Stands in for ChatOllama."""
 
     def __init__(self, answers=("An answer.",), fail=None, hang=False):
         self.answers = list(answers)
@@ -106,7 +98,7 @@ def _report(score, flagged=(), llm_succeeded=True):
         overall_score=score,
         llm_succeeded=llm_succeeded,
         flagged=items,
-        confirmed_flagged=items,  # the fakes model claims both signals agree on
+        confirmed_flagged=items,
     )
 
 
@@ -169,11 +161,7 @@ class Rig:
         async def fast_text(prompt, timeout):
             return "rewritten statute query"
 
-        # Default (tiebreak_result=None): simulates "the LLM is also unsure" —
-        # preserves the pre-tiebreaker behaviour (falls straight through to the
-        # clarifying question) for every test that isn't specifically about the
-        # tie-breaker. Never makes a real call, so ambiguous-routing tests stay
-        # fast and offline regardless of Ollama/network availability.
+
         async def tiebreak(contenders, user_input):
             self.tiebreak_calls.append((frozenset(contenders), user_input))
             if tiebreak_raises is not None:
@@ -200,11 +188,6 @@ def run(coro):
     return asyncio.run(coro)
 
 
-# --------------------------------------------------------------------------
-# B1: client disconnect must cancel the generation
-# --------------------------------------------------------------------------
-
-
 def test_disconnect_cancels_generation_and_frees_slot(monkeypatch):
     rig = Rig(monkeypatch, FakeLLM(), _classification("general_query"), [_statute()])
 
@@ -222,16 +205,16 @@ def test_disconnect_cancels_generation_and_frees_slot(monkeypatch):
 
     async def scenario():
         graph = HangingGraph()
-        rig.bot._turn_graph = graph  # hang the workflow; the memory layer stays real
+        rig.bot._turn_graph = graph
         gen = rig.bot.stream_chat("hello there", "sess")
         first = await gen.__anext__()
         assert first == {"type": "token", "content": "partial "}
         assert rig.bot._in_flight == 1
-        await gen.aclose()  # what Starlette does when the client goes away
+        await gen.aclose()
         await asyncio.wait_for(graph.cancelled.wait(), timeout=2)
         assert rig.bot._active_stream_tasks == {}
         assert rig.bot._in_flight == 0
-        # the question was recorded; no reply was ever produced
+
         assert await rig.bot.get_session_history("sess") == [
             {"role": "user", "content": "hello there"}
         ]
@@ -257,7 +240,7 @@ def test_stop_stream_still_cancels(monkeypatch):
             events.append(e)
         assert events[-1]["type"] == "stopped"
         assert events[-1]["response"] == "partial "
-        # the partial text the user saw is kept as the assistant turn
+
         assert await rig.bot.get_session_history("sess") == [
             {"role": "user", "content": "hello there"},
             {"role": "assistant", "content": "partial "},
@@ -275,14 +258,9 @@ def test_concurrency_cap_rejects_when_busy(monkeypatch):
         rig.bot._in_flight = 1
         with pytest.raises(cb.ChatBusyError):
             await rig.bot.chat("hi", "s")
-        assert rig.bot._in_flight == 1  # the rejected call must not leak a slot
+        assert rig.bot._in_flight == 1
 
     run(scenario())
-
-
-# --------------------------------------------------------------------------
-# B3: one graph serves streaming and non-streaming
-# --------------------------------------------------------------------------
 
 
 def test_stream_runs_the_compiled_graph_and_streams_tokens(monkeypatch):
@@ -308,11 +286,6 @@ def test_chat_and_stream_agree(monkeypatch):
                _classification("general_query"), [_statute()], [_report(1.0)])
     plain = run(rig2.bot.chat("Can an FIR be quashed by the High Court?", "s"))["response"]
     assert streamed.strip() == plain.strip()
-
-
-# --------------------------------------------------------------------------
-# B7 / clarification routing
-# --------------------------------------------------------------------------
 
 
 def _state(text, doc=None, messages=()):
@@ -348,16 +321,14 @@ def test_ambiguous_report_vs_law_question(monkeypatch):
 
 
 def test_tiebreak_never_runs_on_unambiguous_routing(monkeypatch):
-    """The latency guarantee: the fast path (the overwhelming majority of
-    traffic) must stay a pure embedding lookup with zero LLM calls."""
+    """The latency guarantee: the fast path (the overwhelming majority of traffic) must stay a pure embedding lookup with zero LLM calls."""
     rig = Rig(monkeypatch, FakeLLM(), _classification("general_query"), [_statute()])
     run(cb.classify_intent(_state("Can an FIR be quashed by the High Court?")))
     assert rig.tiebreak_calls == []
 
 
 def test_tiebreak_never_runs_when_no_action_intent_contends(monkeypatch):
-    """Ambiguous but no find_lawyer/crime_report among the contenders — the
-    existing silent-default behaviour, not something worth an extra LLM call."""
+    """Ambiguous but no find_lawyer/crime_report among the contenders — the existing silent-default behaviour, not something worth an extra LLM call."""
     ambiguous = _classification("general_query", ["document_analysis"], ambiguous=True, margin=0.01)
     rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     run(cb.classify_intent(_state("my landlord is cheating me")))
@@ -374,7 +345,7 @@ def test_tiebreak_resolution_skips_the_clarifying_question(monkeypatch):
         (frozenset({"general_query", "find_lawyer"}), "my landlord is cheating me")
     ]
     assert out["trace"]["routing"]["tiebreak"]["resolved"] == "find_lawyer"
-    # falls through to the normal flow — tool selection still runs
+
     assert out["selected_tools"] == ["lawyer_recommender"]
 
 
@@ -396,8 +367,7 @@ def test_tiebreak_exception_fails_open_to_the_clarifying_question(monkeypatch):
 
 
 class FakeTiebreakLLM(FakeLLM):
-    """A schema-constrained fake: setting `.format` exercises the same
-    invoke_llm_safely branch a real ChatOllama(format=...) instance would."""
+    """A schema-constrained fake: setting `.format` exercises the same invoke_llm_safely branch a real ChatOllama(format=...) instance would."""
 
     def __init__(self, answer_json):
         super().__init__((answer_json,))
@@ -425,9 +395,8 @@ def test_resolve_ambiguity_returns_none_when_the_model_is_unsure(monkeypatch):
 
 
 def test_resolve_ambiguity_rejects_an_answer_outside_the_offered_candidates(monkeypatch):
-    # Defensive: even if the model somehow returns a label that wasn't in this
-    # call's enum (schema drift, a stale cached instance), it must not be
-    # trusted as a resolution.
+
+
     resolved, _ = _resolve(monkeypatch, FakeTiebreakLLM('{"intent": "crime_report"}'))
     assert resolved is None
 
@@ -473,10 +442,7 @@ def test_tiebreak_llm_is_cached_per_candidate_set():
 
 
 def test_explicit_written_questions_are_never_clarified(monkeypatch):
-    """Regression: live against the project's own 18-query eval set
-    (tests/test_chatbot.py TEST_PROMPTS), 6 of 18 canonical legal questions —
-    all explicit written-out questions — were intercepted and never answered,
-    on embedding-classifier margins as small as 0.001. Every one had a "?"."""
+    """Regression: live against the project's own 18-query eval set (tests/test_chatbot.py TEST_PROMPTS), 6 of 18 canonical legal questions — all explicit written-out questions — were..."""
     ambiguous = _classification("general_query", ["find_lawyer", "crime_report"],
                                  ambiguous=True, margin=0.006)
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
@@ -514,11 +480,6 @@ def test_clarification_routes_to_end_without_retrieval(monkeypatch):
     assert result["intent"] == "clarify"
     assert result["response"].startswith(CLARIFY_PREFIX)
     assert rig.statute_calls == [] and rig.llm.calls == 0
-
-
-# --------------------------------------------------------------------------
-# A3: retrieval grading; A4: grounding retry; B6: disclaimer up front
-# --------------------------------------------------------------------------
 
 
 def test_weak_retrieval_is_retried_once_widened(monkeypatch):
@@ -573,15 +534,15 @@ def test_low_grounding_score_regenerates_once_with_targeted_retrieval(monkeypatc
     types = [e["type"] for e in events]
     assert types.count("reset") == 1
     assert rig.llm.calls == 2 and rig.verify_calls == 2
-    # the regeneration searched for the unsupported citation
+
     assert rig.statute_calls[1][0] == "Section 999 of the IPC"
     assert events[-1]["response"].strip() == "Second draft supported."
     assert events[-1]["trace"]["grounding"]["regenerated"] is True
 
 
 def test_unadjudicated_low_score_does_not_regenerate(monkeypatch):
-    # The correction LLM failing (no JSON) leaves only the blunt deterministic
-    # score; that must not cost a second generation.
+
+
     rig = Rig(monkeypatch, FakeLLM(["Draft."]), _classification("general_query"),
               [_statute()], [_report(0.1, flagged=["x"], llm_succeeded=False)])
     events = run(rig.stream())
@@ -614,7 +575,7 @@ def test_giveup_with_failing_retry_shows_the_note_once_and_is_not_verified(monke
     done = events[-1]
     assert first.calls == 1 and second.calls == 1
     assert done["response"].startswith("I wasn't able to finish")
-    assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1  # not twice
+    assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1
     assert rig.verify_calls == 0
     assert done["trace"]["grounding"] == {"verified": False, "reason": "generation_failed"}
     assert done["trace"]["generation"] == {
@@ -636,7 +597,7 @@ def test_giveup_retry_recovers_without_the_user_ever_seeing_the_note(monkeypatch
     assert done["response"].strip() == "Concise grounded answer."
     assert cb._INCOMPLETE_GENERATION_NOTE not in "".join(_tokens(events))
     assert any(e["type"] == "status" and e["stage"] == "retrying" for e in events)
-    assert rig.verify_calls == 1  # the recovered answer is verified like any other
+    assert rig.verify_calls == 1
     assert done["trace"]["generation"] == {
         "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": False,
         "concise_gates": {
@@ -665,7 +626,7 @@ def test_giveup_retry_is_skipped_when_too_much_time_has_passed(monkeypatch):
               [_statute()], [_report(1.0)], retry_llm=second)
     events = run(rig.stream())
     assert second.prompts == []
-    # the note was withheld on the first attempt, so it must still reach the user
+
     assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1
     assert events[-1]["response"].startswith("I wasn't able to finish")
 
@@ -684,7 +645,7 @@ def test_retry_prompt_genuinely_differs_from_the_first(monkeypatch):
     concise, concise_ctx = cb._build_answer_prompt(state, concise=True)
     assert len(concise_ctx) < len(normal_ctx)
     assert "under 300 words" in concise and "under 300 words" not in normal
-    # truncation cut on a provision boundary, not mid-entry
+
     assert concise_ctx.rstrip().endswith("word")
 
 
@@ -812,11 +773,6 @@ def test_citation_only_mode_no_ops_case_check_when_case_rag_uninitialized(monkey
     assert text == answer and report is None
 
 
-# --------------------------------------------------------------------------
-# B4 / B9: LLM invocation
-# --------------------------------------------------------------------------
-
-
 def test_non_streaming_is_the_default_and_never_touches_the_queue():
     async def scenario():
         queue = asyncio.Queue()
@@ -854,21 +810,16 @@ def test_circuit_breaker_opens_then_probes(monkeypatch):
         assert llm.calls == 3
         with pytest.raises(cb.LLMUnavailableError):
             await call()
-        assert llm.calls == 3  # failed fast, Ollama not touched
+        assert llm.calls == 3
 
-        cb._llm_breaker.open_until = time.monotonic() - 1  # cooldown over
+        cb._llm_breaker.open_until = time.monotonic() - 1
         with pytest.raises(RuntimeError):
-            await call()  # one probe...
+            await call()
         assert llm.calls == 4
         with pytest.raises(cb.LLMUnavailableError):
-            await call()  # ...and a single failure re-opens it
+            await call()
 
     run(scenario())
-
-
-# --------------------------------------------------------------------------
-# B2: persistence
-# --------------------------------------------------------------------------
 
 
 def test_persist_chat_result_stores_canonical_english(monkeypatch):
@@ -902,15 +853,10 @@ def test_persist_turn_message_arguments_are_keyword_only():
     assert params["assistant_message"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
-# --------------------------------------------------------------------------
-# Sessions
-# --------------------------------------------------------------------------
-
-
 def test_in_memory_fallback_respects_max_sessions(monkeypatch):
     monkeypatch.setenv("MAX_SESSIONS", "2")
     get_settings.cache_clear()
-    bot = cb.LegalChatbot()  # default saver is the in-memory fallback
+    bot = cb.LegalChatbot()
 
     async def scenario():
         for sid in ("a", "b", "c"):
@@ -937,16 +883,11 @@ def test_clear_session_cancels_in_flight_generation_and_forgets_history():
     run(scenario())
 
 
-# --------------------------------------------------------------------------
-# Pure helpers
-# --------------------------------------------------------------------------
-
-
 def test_decompose_question():
     two = ("Can Parliament restrict social media speech citing public order? "
            "How would courts test its constitutionality under Article 19?")
     assert len(cb.decompose_question(two)) == 2
-    # a dependent fragment is not a standalone question
+
     assert cb.decompose_question("Can an FIR be quashed by the High Court? On what grounds?") == []
     assert cb.decompose_question("Is anticipatory bail available for economic offences?") == []
     enumerated = ("Explain (a) what cheating means under the penal law and "
@@ -983,10 +924,6 @@ def test_sanitize_untrusted_document_blocks_fence_breakout():
     assert "Rent is 5000." in clean
 
 
-# --------------------------------------------------------------------------
-# Schema-constrained calls (the grounding-correction LLM)
-# --------------------------------------------------------------------------
-
 _CORRECTION_JSON = (
     '[{"index": 1, "status": "SUPPORTED", "corrected": "Bail may be granted under s.438."},'
     ' {"index": 2, "status": "UNGROUNDED", "corrected": "The sources do not confirm this."}]'
@@ -994,8 +931,7 @@ _CORRECTION_JSON = (
 
 
 class ConstrainedJSONLLM(FakeLLM):
-    """Grammar-constrained decoding (ChatOllama(format=schema)): the reply is
-    the JSON itself, with no <think> block at all."""
+    """Grammar-constrained decoding (ChatOllama(format=schema)): the reply is the JSON itself, with no <think> block at all."""
 
     format = {"type": "array"}
 
@@ -1020,9 +956,7 @@ def test_unconstrained_reply_without_a_think_block_is_still_a_giveup():
 
 
 def test_grounding_adjudication_parses_the_constrained_llm_reply():
-    """End to end through the same call shape gq_verify uses: previously the
-    reply was discarded as a give-up, llm_succeeded stayed False, and neither
-    claim correction nor the regeneration trigger could ever fire."""
+    """End to end through the same call shape gq_verify uses: previously the reply was discarded as a give-up, llm_succeeded stayed False, and neither claim correction nor the..."""
     from app.tools import grounding_verifier as gv
 
     sentences = [
@@ -1039,10 +973,6 @@ def test_grounding_adjudication_parses_the_constrained_llm_reply():
     assert result[1] == ("UNGROUNDED", "The sources do not confirm this.")
 
 
-# --------------------------------------------------------------------------
-# Concise-first for simple, well-retrieved questions
-# --------------------------------------------------------------------------
-
 CONCISE_MARK = "under 300 words"
 
 
@@ -1056,7 +986,7 @@ def test_simple_well_retrieved_question_gets_the_concise_prompt_first(monkeypatc
               [_statute()], [_report(1.0)])
     prompt, done = _first_prompt(rig)
     assert CONCISE_MARK in prompt
-    assert rig.llm.calls == 1  # one pass, no retry needed
+    assert rig.llm.calls == 1
     assert done["trace"]["generation"]["variant"] == "concise"
 
 
@@ -1123,8 +1053,8 @@ def test_concise_gates_are_reported_in_the_trace_even_when_disabled(monkeypatch)
     rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
               [_statute()], [_report(1.0)])
     events = run(rig.stream())
-    # The gate breakdown is independent of the enable flag — it reflects
-    # whether the query WOULD have qualified, not whether the fast path ran.
+
+
     assert events[-1]["trace"]["generation"]["concise_gates"] == {
         "good_retrieval": True, "single_part": True,
         "short_query": True, "not_multi_offense": True,

@@ -1,15 +1,4 @@
-"""
-Structure-aware chunking of cleaned Supreme Court judgments.
-
-A judgment is split into its headnote (the reporter's summary of the law — dense
-with statute references) and its body. Chunks are built from whole paragraphs,
-merged up to a word budget; an over-long paragraph is split at sentence
-boundaries with one sentence of overlap, never mid-sentence. Every chunk carries
-the case metadata and the statute citations found in its own text, so retrieval
-results can be cited ("Case, [1985] 3 S.C.R. 985") and filtered by section.
-
-Chunk `text` is the clean passage only; callers add any embedding prefix.
-"""
+"""Structure-aware chunking of cleaned Supreme Court judgments."""
 
 from __future__ import annotations
 
@@ -55,12 +44,7 @@ def _words(text: str) -> int:
 
 
 def split_sections(paragraphs: List[str]) -> Dict[str, List[str]]:
-    """Separate a judgment's paragraphs into header, headnote and body.
-
-    The body starts after "... delivered by" when the reporter's front matter has
-    one, else after the jurisdiction line and any counsel lines. Documents with
-    none of these markers are treated as all body.
-    """
+    """Separate a judgment's paragraphs into header, headnote and body."""
     limit = min(len(paragraphs), 45)
     delivered = next((i for i in range(limit) if _DELIVERED_BY.search(paragraphs[i]) and _words(paragraphs[i]) < 40), None)
     jurisdiction = next((i for i in range(limit) if _JURISDICTION.match(paragraphs[i])), None)
@@ -93,7 +77,7 @@ def _split_long(paragraph: str) -> List[str]:
     sentences: List[str] = []
     for sentence in _SENTENCE.split(paragraph):
         tokens = sentence.split()
-        # OCR that lost its punctuation leaves run-on "sentences": window them.
+
         for start in range(0, len(tokens), TARGET_WORDS):
             sentences.append(" ".join(tokens[start : start + TARGET_WORDS]))
     pieces: List[List[str]] = []
@@ -134,7 +118,7 @@ def _pack(paragraphs: List[str]) -> List[tuple]:
     if text:
         chunks.append((text, first, last))
 
-    # A tiny trailing chunk carries no retrievable meaning on its own: fold it in.
+
     if len(chunks) > 1 and _words(chunks[-1][0]) < MIN_CHUNK_WORDS * 2:
         prev = chunks[-2]
         chunks[-2:] = [(f"{prev[0]}\n\n{chunks[-1][0]}", prev[1], chunks[-1][2])]

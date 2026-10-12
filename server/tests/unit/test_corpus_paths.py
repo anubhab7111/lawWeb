@@ -28,7 +28,7 @@ def test_unset_corpus_uses_legacy_layout(corpus_env):
 
 def test_corpus_dirs_win_once_they_exist(corpus_env, tmp_path):
     corpus_env(tmp_path)
-    assert paths.statutes_dir() == paths.LEGACY_DATA_DIR  # not moved yet
+    assert paths.statutes_dir() == paths.LEGACY_DATA_DIR
     (tmp_path / "statutes").mkdir()
     (tmp_path / "case_law" / "curated").mkdir(parents=True)
     assert paths.statutes_dir() == tmp_path / "statutes"

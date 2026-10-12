@@ -1,24 +1,5 @@
 #!/usr/bin/env python3
-"""
-Move the legacy in-repo source corpus (app/data/...) onto the corpus drive.
-
-  app/data/bare_acts/**                   -> <root>/statutes/bare_acts/**
-  app/data/{mappings,rules,guides,
-            notifications,explanatory}/** -> <root>/statutes/<same>/**
-  app/data/case_law/*.json                -> <root>/case_law/curated/*.json
-
-Relative paths under bare_acts/ are preserved, so the per-PDF fingerprints
-stored in the existing indices stay valid and no rebuild is forced.
-
-Every file is copied, then re-read from the destination and compared by sha256
-against the source. A row per file is written to <root>/manifest/legacy_migration.jsonl.
-Source files are only removed with --delete-source, and only after every file
-verified; nothing is removed if any check failed.
-
-Usage (from server/):
-    python -m app.ingest.migrate_legacy                  # copy + verify
-    python -m app.ingest.migrate_legacy --delete-source  # ...then remove local copies
-"""
+"""Move the legacy in-repo source corpus (app/data/...) onto the corpus drive."""
 
 from __future__ import annotations
 

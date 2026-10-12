@@ -82,5 +82,5 @@ def test_unconfigured_provider_reports_501(client):
 
 
 def test_token_roundtrip():
-    assert calendar_sync  # module imports cleanly
+    assert calendar_sync
     assert calendar_oauth.decrypt_token(calendar_oauth.encrypt_token("t")) == "t"

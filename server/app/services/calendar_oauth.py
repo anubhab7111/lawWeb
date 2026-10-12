@@ -1,9 +1,4 @@
-"""
-OAuth + event push for Google Calendar and Microsoft Outlook (Graph).
-
-Only the refresh token is stored (encrypted with Fernet); access tokens are
-minted per sync. A provider is "configured" when its client id/secret are set.
-"""
+"""OAuth + event push for Google Calendar and Microsoft Outlook (Graph)."""
 
 import base64
 import hashlib

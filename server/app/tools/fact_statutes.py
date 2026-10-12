@@ -1,24 +1,4 @@
-"""
-fact_statutes.py — statute identification from a long fact narrative.
-
-Statute text rarely resembles a narrative of events, and one query cannot carry a
-~7k-character case. So the facts are cut into overlapping sentence windows, each
-window is searched against the statutes (hybrid retrieval + cross-encoder), and the
-evidence is combined across windows. What the offline tuning found (on dev cases):
-
-  * trust only each window's top few reranked provisions — deeper lists add noise
-    that drowns real evidence (depth 4 beats depth 20 by ~8 points Hit@5);
-  * discount sharply by rank (RRF k=5), so a window's best hit counts for much more
-    than its fourth;
-  * search the Acts jointly but weight them: IPC counts fully, the Code of Criminal
-    Procedure lightly (procedural sections rank high for anything police-related, yet
-    IL-TUR labels are bare section numbers that include CrPC ones like 482 and 438),
-    and the new Bharatiya Nyaya Sanhita is translated back to the IPC section it
-    replaced via the official comparative table (app/data/section_maps.json);
-  * a section counts once per window, however many Acts point at it.
-
-The result is a ranking of bare section numbers.
-"""
+"""fact_statutes.py — statute identification from a long fact narrative."""
 
 from __future__ import annotations
 
@@ -68,12 +48,7 @@ def aggregate(
     depth: int = DEPTH,
     rrf_k: int = RRF_K,
 ) -> List[Tuple[str, float]]:
-    """Combine per-window (act, section) rankings into ranked (number, score).
-
-    Each window contributes its top `depth` weighted provisions; a number counts
-    once per window (its best contribution), so evidence has to recur across the
-    narrative to rise.
-    """
+    """Combine per-window (act, section) rankings into ranked (number, score)."""
     weights = weights or ACT_WEIGHTS
     votes: Dict[str, float] = defaultdict(float)
     for window in per_window:

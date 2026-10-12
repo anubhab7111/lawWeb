@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""
-Build the old-code <-> new-code section correspondences from the official tables.
-
-  IPC  1860  <-> Bharatiya Nyaya Sanhita 2023            (IPC_to_BNS_Comparative_Table.pdf)
-  CrPC 1973  <-> Bharatiya Nagarik Suraksha Sanhita 2023 (CrPC_to_BNSS_Comparative_Table.pdf)
-
-Each table lists an old section beside the provision that replaced it, e.g.
-IPC `302 -> BNS 103`, CrPC `482 -> BNSS 528`. Sub-clause suffixes are dropped: the
-index is keyed on base section numbers. Rows the table marks as not carried over
-("-", "Omitted") have no counterpart.
-
-Output: app/data/section_maps.json
-    {"ipc_bns":   {"old_to_new": {...}, "new_to_old": {...}},
-     "crpc_bnss": {"old_to_new": {...}, "new_to_old": {...}}}
-a small fixture, so retrieval never needs the corpus drive.
-
-Usage (from server/):
-    python -m app.ingest.section_maps
-"""
+"""Build the old-code <-> new-code section correspondences from the official tables."""
 
 from __future__ import annotations
 

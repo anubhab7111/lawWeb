@@ -1,9 +1,4 @@
-"""
-Personal Legal Calendar — mostly auto-populated (hearings from My Cases sync,
-lawyer meetings from confirmed bookings — see the additive hook in
-app/routers/bookings.py), plus manual custom entries. Events can be pushed to a
-connected Google or Outlook calendar (see app/services/calendar_oauth.py).
-"""
+"""Personal Legal Calendar — mostly auto-populated (hearings from My Cases sync, lawyer meetings from confirmed bookings — see the additive hook in app/routers/bookings.py), plus..."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -154,8 +149,7 @@ def sync_callback(
     error: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
-    """Browser redirect target after consent — no auth header; the signed
-    `state` identifies the user."""
+    """Browser redirect target after consent — no auth header; the signed `state` identifies the user."""
     _provider_or_404(provider)
     back = f"{get_settings().client_app_url.rstrip('/')}/#/calendar"
     if error or not code or not state:

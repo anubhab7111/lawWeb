@@ -1,21 +1,4 @@
-"""
-base_legal_rag.py — Abstract Base for Multi-Domain Legal RAG Systems
-
-Provides the shared FAISS infrastructure for all domain-specific RAG classes:
-  - CriminalRAGSystem  (criminal_rag.py)
-  - CivilRAGSystem     (civil_rag.py)
-  - ConstitutionalRAGSystem (constitutional_rag.py)
-
-Design principles
------------------
-1. One FAISS index per legal domain → complete isolation between domains.
-2. Generic _parse_legal_sections() preserves ALL sections (including
-   definition-only ones) so civil and constitutional law can be indexed.
-3. Subclasses override _parse_legal_sections() and/or _preprocess_query()
-   to apply domain-appropriate filtering.
-4. Each index is stored under  app/data/faiss_index/<domain>/
-   so indexes don't collide.
-"""
+"""base_legal_rag.py — Abstract Base for Multi-Domain Legal RAG Systems Provides the shared FAISS infrastructure for all domain-specific RAG classes: - CriminalRAGSystem..."""
 
 import asyncio
 import json
@@ -41,26 +24,21 @@ except ImportError as e:
     print(f"RAG dependencies import error: {e}")
 
 
-# ─────────────────────────────────────────────────────────────
-# Shared Data Models
-# ─────────────────────────────────────────────────────────────
-
-
 @dataclass
 class LegalChunk:
     """One atomic legal provision retrieved from the vector store."""
 
-    chunk_id: str  # e.g. "ICA_10", "CON_ART21", "CPC_151"
-    domain: str  # primary domain, e.g. "criminal", "family"
-    act_name: str  # e.g. "Indian Contract Act, 1872"
-    section_number: str  # e.g. "10", "21", "302"
-    title: str  # e.g. "What agreements are contracts"
-    text: str  # Full section / Article text
-    source_file: str  # PDF filename
-    score: float = 0.0  # Relevance score (higher = more relevant)
-    has_punishment: bool = False  # True only for criminal sections
-    # All domains this provision belongs to (a deduped PDF may live in
-    # several bare_acts subdirectories, e.g. constitutional + election).
+    chunk_id: str
+    domain: str
+    act_name: str
+    section_number: str
+    title: str
+    text: str
+    source_file: str
+    score: float = 0.0
+    has_punishment: bool = False
+
+
     domains: List[str] = field(default_factory=list)
 
     def domain_list(self) -> List[str]:
@@ -76,11 +54,6 @@ class LegalContext:
     chunks: List[LegalChunk] = field(default_factory=list)
     sources: List[str] = field(default_factory=list)
     confidence: float = 0.0
-
-
-# ─────────────────────────────────────────────────────────────
-# Shared Helpers
-# ─────────────────────────────────────────────────────────────
 
 
 def _extract_punishment(text: str, max_len: int = 250) -> str:
@@ -117,7 +90,7 @@ def _extract_punishment(text: str, max_len: int = 250) -> str:
 def _infer_act_name(filename: str) -> str:
     """Derive a human-readable Act name from its PDF filename."""
     stem = Path(filename).stem.replace("_", " ")
-    # Strip trailing year artifacts like "1872" already in the stem
+
     stem = re.sub(r"\s+\d{4}$", "", stem)
     return stem
 
@@ -130,16 +103,11 @@ _SCHEDULE_HEADING_RE = re.compile(
     r"\n\s*\d*\[?" + _ORDINALS + r"\s+SCHEDULE\s*\n?\s*\[Articles?\s+\d"
 )
 
-# Genuine substantive section/article text essentially never contains these —
-# they are the standard conventions Indian bare-act PDFs use for amendment
-# footnotes ("Subs. by the ... Amendment Act ... (w.e.f. ...)") and Schedule
-# paragraph headings, both of which can share a number with a real section.
+
 _NOISE_RE = re.compile(
     r"w\.e\.f\.|subs\s*\.?\s*by|\bins\s*\.?\s*by\b|\brep\.\s*by\b|omitted by|schedule"
-    # Amendment-act appendices bundled into bare-act PDFs ("38. Amendment of
-    # section 438. In section 438 of the principal Act, ... shall be
-    # inserted") reuse their own section numbering and otherwise shadow the
-    # real sections they amend.
+
+
     r"|amendment of section|of the principal act|shall be inserted"
     r"|shall be substituted",
     re.IGNORECASE,
@@ -147,12 +115,7 @@ _NOISE_RE = re.compile(
 
 
 def _schedule_boundary(full_text: str) -> Optional[int]:
-    """
-    Position where a genuine Schedule begins (e.g. "1[FIRST SCHEDULE
-    [Articles 1 and 4]"), if any. Schedules/appendices reuse their own
-    paragraph numbering (1, 2, 3, ...) which otherwise collides with real
-    section/article numbers, so callers should stop header-matching here.
-    """
+    """Position where a genuine Schedule begins (e.g."""
     m = _SCHEDULE_HEADING_RE.search(full_text)
     return m.start() if m else None
 
@@ -176,14 +139,7 @@ def get_settings_blend() -> float:
 def blend_rerank_order(
     scored: List[Tuple[str, float]], fused_order: List[str], weight: float
 ) -> List[Tuple[str, float]]:
-    """Order reranked candidates by a weighted reciprocal-rank blend of the
-    cross-encoder's order and the fused retrieval order.
-
-    weight 1.0 = pure cross-encoder order; 0.0 = fused order. A cross-encoder is
-    strong at the top but can bury a candidate both retrievers agreed on; the blend
-    keeps that evidence. Scores stay the cross-encoder's relative ones (used for
-    filtering); only the order changes.
-    """
+    """Order reranked candidates by a weighted reciprocal-rank blend of the cross-encoder's order and the fused retrieval order."""
     by_rerank = sorted(scored, key=lambda pair: pair[1], reverse=True)
     if weight >= 1.0:
         return by_rerank
@@ -197,8 +153,7 @@ def blend_rerank_order(
 
 
 def _is_noise_match(title: str, raw: str) -> bool:
-    """True if a candidate section/article match looks like a footnote or a
-    Schedule paragraph rather than genuine section/article body text."""
+    """True if a candidate section/article match looks like a footnote or a Schedule paragraph rather than genuine section/article body text."""
     return bool(_NOISE_RE.search(title) or _NOISE_RE.search(raw[:250]))
 
 
@@ -209,14 +164,11 @@ def _make_bge_embeddings(device: str) -> Any:
     return HuggingFaceBgeEmbeddings(
         model_name=settings.embedding_model,
         model_kwargs={"device": device},
-        # BGE-M3 (the multilingual default) uses NO query-instruction prefix,
-        # unlike bge-large-en. Passing the en-v1.5 default prefix to M3
-        # silently degrades cross-lingual retrieval, so it is configurable and
-        # blank by default — see config.embedding_query_instruction.
+
+
         query_instruction=settings.embedding_query_instruction,
-        # Small batch_size: a few thousand legal-section chunks at
-        # once can OOM a consumer GPU (e.g. 4GB VRAM) if encoded
-        # in one big batch.
+
+
         encode_kwargs={"normalize_embeddings": True, "batch_size": 16},
     )
 
@@ -226,13 +178,7 @@ _shared_embeddings_lock = asyncio.Lock()
 
 
 async def _get_shared_embeddings() -> Any:
-    """
-    Every domain (civil/criminal/constitutional) uses the identical embedding
-    model — load it once and share the instance instead of one copy per
-    domain. Loading 3 separate 1.3GB copies concurrently (e.g. on first
-    query, when chatbot.py fetches all domains via asyncio.gather) exhausts a
-    4GB consumer GPU; a single shared instance uses the memory once.
-    """
+    """Every domain (civil/criminal/constitutional) uses the identical embedding model — load it once and share the instance instead of one copy per domain."""
     global _shared_embeddings
     if _shared_embeddings is not None:
         return _shared_embeddings
@@ -242,13 +188,8 @@ async def _get_shared_embeddings() -> Any:
 
             device = get_settings().embeddings_device
             if device not in ("cuda", "cpu"):
-                # auto: claim the GPU only if there's currently enough free
-                # VRAM to load the embedding model *and* still leave
-                # ollama_vram_reserve_gb free for Ollama's LLM. Checked
-                # against live free memory (not total card capacity), so a
-                # small GPU can be used when genuinely uncontended and
-                # skipped once Ollama (or anything else) is already holding
-                # most of it.
+
+
                 device = "cpu"
                 try:
                     import torch
@@ -256,9 +197,8 @@ async def _get_shared_embeddings() -> Any:
                     if torch.cuda.is_available():
                         free_bytes, _total_bytes = torch.cuda.mem_get_info()
                         reserve_bytes = get_settings().ollama_vram_reserve_gb * 1024**3
-                        # BGE-M3 weights plus batch-encode working memory —
-                        # observed to run well over its nominal weight size
-                        # under load, so this is deliberately generous.
+
+
                         embeddings_headroom_bytes = 2.0 * 1024**3
                         if free_bytes > reserve_bytes + embeddings_headroom_bytes:
                             device = "cuda"
@@ -283,13 +223,10 @@ _shared_reranker_failed: bool = False
 _shared_reranker_lock = asyncio.Lock()
 
 
-# (query, chunk id) -> cross-encoder probability. A request that retries with a
-# broader search (confidence gate) re-sees most candidates; they are scored once.
 _RERANK_CACHE: Dict[Tuple[str, str], float] = {}
 _RERANK_CACHE_MAX = 4096
 
-# (query, text) -> raw cross-encoder score, shared by callers that score the same
-# pair: case-law retrieval and the unified case-law rerank use identical texts.
+
 _PAIR_CACHE: Dict[Tuple[str, str], float] = {}
 
 
@@ -305,11 +242,7 @@ def cached_predict(reranker: Any, pairs: List[Tuple[str, str]], batch_size: int 
 
 
 async def _get_shared_reranker() -> Optional[Any]:
-    """
-    Shared cross-encoder reranker (same singleton pattern as the embeddings).
-    Returns None if the model can't be loaded — callers must degrade to the
-    fused-retrieval ordering in that case.
-    """
+    """Shared cross-encoder reranker (same singleton pattern as the embeddings)."""
     global _shared_reranker, _shared_reranker_failed
     if _shared_reranker is not None or _shared_reranker_failed:
         return _shared_reranker
@@ -323,11 +256,8 @@ async def _get_shared_reranker() -> Optional[Any]:
 
             device = get_settings().reranker_device
             if device not in ("cuda", "cpu"):
-                # auto: same live-free-VRAM policy as the embeddings. The
-                # headroom is the GPU model's (reranker_model_gpu is what loads
-                # on cuda; v2-m3 needs ~2.5GB, base ~1GB). The load/predict
-                # calls below also retry on cpu if this still contends with
-                # Ollama for VRAM.
+
+
                 device = "cpu"
                 try:
                     import torch
@@ -371,8 +301,7 @@ async def _get_shared_reranker() -> Optional[Any]:
 
 
 def file_fingerprint(path: Path) -> str:
-    """Size plus a hash of the head and tail — detects same-size edits that a
-    size-only check misses, without reading whole PDFs."""
+    """Size plus a hash of the head and tail — detects same-size edits that a size-only check misses, without reading whole PDFs."""
     import hashlib
 
     size = path.stat().st_size
@@ -387,8 +316,7 @@ _WORD_RE = re.compile(r"[A-Za-z]+")
 
 
 def _split_word_count(text: str, vocab: set) -> int:
-    """Adjacent token pairs that only form a vocabulary word when joined
-    ("Magi strate"): pypdf's plain mode splits words at kerning gaps."""
+    """Adjacent token pairs that only form a vocabulary word when joined ("Magi strate"): pypdf's plain mode splits words at kerning gaps."""
     toks = _WORD_RE.findall(text)
     n = 0
     for a, b in zip(toks, toks[1:]):
@@ -399,9 +327,7 @@ def _split_word_count(text: str, vocab: set) -> int:
 
 
 def _choose_extraction(plain: str, layout: Optional[str], parse) -> Tuple[str, List["LegalChunk"]]:
-    """Prefer layout-mode text only when it parses to exactly the same
-    sections and has fewer split words: layout mode fixes kerning splits but
-    loses or invents section headers in some acts (BNS parses to nothing)."""
+    """Prefer layout-mode text only when it parses to exactly the same sections and has fewer split words: layout mode fixes kerning splits but loses or invents section headers in..."""
     plain_chunks = parse(plain)
     if not layout:
         return plain, plain_chunks
@@ -434,13 +360,7 @@ def _bm25_tokenize(text: str) -> List[str]:
 
 
 def _split_long_text(text: str, max_chars: int = 2000, overlap: int = 200) -> List[str]:
-    """
-    Split an oversized section body into overlapping parts on sentence/word
-    boundaries. bge-large truncates input at 512 tokens (~2000 chars), so a
-    very long section embedded whole silently loses its tail; splitting keeps
-    every part retrievable while the shared section metadata ties them back
-    to the same provision.
-    """
+    """Split an oversized section body into overlapping parts on sentence/word boundaries."""
     if len(text) <= max_chars:
         return [text]
 
@@ -449,8 +369,8 @@ def _split_long_text(text: str, max_chars: int = 2000, overlap: int = 200) -> Li
     while start < len(text):
         end = min(start + max_chars, len(text))
         if end < len(text):
-            # Prefer a sentence boundary in the last 40% of the window,
-            # then any whitespace, before a hard cut.
+
+
             window = text[start:end]
             cut = max(window.rfind(". "), window.rfind("; "))
             if cut < int(max_chars * 0.6):
@@ -465,29 +385,19 @@ def _split_long_text(text: str, max_chars: int = 2000, overlap: int = 200) -> Li
 
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;:])\s+(?=[A-Z0-9(])")
-# Abbreviations that precede a period/section-number in Indian statutory
-# text (Rs. 500, S. 302, u/s. 34, Art. 21, v.) — without this, splitting
-# on the period would strand the abbreviation and its number as two
-# separately-scored, individually meaningless fragments.
+
+
 _ABBR = {
     "rs", "s", "ss", "art", "arts", "no", "u/s", "mr", "dr", "cr",
     "govt", "ors", "anr", "v", "sec", "secs",
 }
-# A handful of source PDFs duplicate the section header verbatim before the
-# body (e.g. "419. Punishment for X. 419. Punishment for X.--Whoever..."),
-# which would otherwise split into a bare "419." fragment carrying no
-# content of its own — exactly the kind of empty fragment that can crowd
-# out the one sentence with the actual operative text.
+
+
 _BARE_SECTION_NUM_RE = re.compile(r"^\d{1,4}[A-Za-z]{0,3}\.?$")
 
 
 def _split_into_sentences(text: str) -> List[str]:
-    """
-    Crude sentence/clause split for extractive scoring — same boundary
-    heuristics as _split_long_text, plus guards so a false split (an
-    abbreviation, a bare repeated section number) rejoins into the
-    previous fragment instead of standing alone.
-    """
+    """Crude sentence/clause split for extractive scoring — same boundary heuristics as _split_long_text, plus guards so a false split (an abbreviation, a bare repeated section..."""
     raw_parts = _SENTENCE_SPLIT_RE.split(text)
     parts: List[str] = []
     for part in raw_parts:
@@ -519,18 +429,7 @@ def _content_words(text: str) -> set:
 async def compress_chunks_for_context(
     query: str, chunks: List["LegalChunk"], max_sentences: int = 3
 ) -> List["LegalChunk"]:
-    """
-    Replace each chunk's full section text with just the max_sentences
-    sentences most relevant to `query`, scored by the shared cross-encoder
-    reranker (already resident in memory for chunk-level reranking) — a
-    small LLM's context window is better spent on a few precise sentences
-    than a whole section full of definitions/provisos it doesn't need.
-
-    Sentences are kept in original document order, not score order, so the
-    excerpt still reads as a coherent (if partial) provision rather than a
-    shuffled list of fragments. Chunks already short enough, or all chunks
-    when the reranker is unavailable/fails, pass through unmodified.
-    """
+    """Replace each chunk's full section text with just the max_sentences sentences most relevant to `query`, scored by the shared cross-encoder reranker (already resident in memory..."""
     reranker = await _get_shared_reranker()
     if reranker is None:
         return chunks
@@ -541,10 +440,9 @@ async def compress_chunks_for_context(
     owner: List[Tuple[int, int]] = []
     for i, sentences in enumerate(per_chunk_sentences):
         if len(sentences) <= max_sentences:
-            continue  # already short enough — nothing to gain from scoring
-        # Sentence 0 is always kept. Long sections are pre-filtered lexically so
-        # the cross-encoder (the dominant CPU cost) scores at most
-        # _COMPRESS_CANDIDATES sentences per chunk instead of every one.
+            continue
+
+
         candidates = sorted(
             range(1, len(sentences)),
             key=lambda j: -len(query_words & _content_words(sentences[j])),
@@ -576,42 +474,23 @@ async def compress_chunks_for_context(
             continue
         sentences = per_chunk_sentences[i]
         scores = scores_by_chunk[i]
-        # Anchor on the opening sentence — where a section's operative "(1)"
-        # rule usually lives — then fill the rest by score. Pure top-N-by-score
-        # can strand a later sub-clause ("(2) Notwithstanding...") without the
-        # "(1)" it refers back to, which reads as an incomplete/misleading
-        # excerpt even though each kept sentence scored well on its own.
+
+
         fill = sorted(scores, key=lambda j: scores[j], reverse=True)[: max_sentences - 1]
         top_idx = [0] + fill
-        keep = sorted(top_idx)  # restore document order, not score order
+        keep = sorted(top_idx)
         out.append(replace(chunk, text=" ".join(sentences[j] for j in keep)))
     return out
 
 
-# ─────────────────────────────────────────────────────────────
-# Abstract Base Class
-# ─────────────────────────────────────────────────────────────
-
-
 class BaseLegalRAGSystem(ABC):
-    """
-    Abstract base for domain-specific legal RAG systems.
+    """Abstract base for domain-specific legal RAG systems."""
 
-    Subclasses MUST implement:
-        domain_name     (str property)  — e.g. "criminal"
-        pdf_subdir      (str property)  — subdirectory under bare_acts/
-
-    Subclasses MAY override:
-        _parse_legal_sections()  — to apply domain-specific chunking rules
-        _preprocess_query()      — to add domain vocabulary to the query
-    """
-
-    # ── Subclass contracts ──────────────────────────────────────
 
     @property
     @abstractmethod
     def domain_name(self) -> str:
-        """Short domain identifier, e.g. 'criminal', 'civil', 'constitutional'."""
+        """Short domain identifier, e.g."""
         ...
 
     @property
@@ -620,16 +499,14 @@ class BaseLegalRAGSystem(ABC):
         """Subdirectory under app/data/bare_acts/ holding this domain's PDFs."""
         ...
 
-    # ── Init ────────────────────────────────────────────────────
 
     def __init__(self, data_dir: Optional[str] = None):
-        # data_dir given: everything (indices and source PDFs) lives under it.
-        # Otherwise indices stay in the repo and source PDFs resolve via the
-        # corpus root (app/ingest/paths.py), falling back to the legacy layout.
+
+
         self.data_dir = Path(data_dir or "app/data")
         self._statutes_dir = Path(data_dir) if data_dir else statutes_dir()
         self._bare_acts_dir = self._statutes_dir / "bare_acts" / self.pdf_subdir
-        # Each domain gets its own FAISS index directory
+
         self._faiss_dir = self.data_dir / "faiss_index" / self.domain_name
         self._meta_path = self._faiss_dir / "meta.pkl"
         self._cache_path = self._faiss_dir / "sections.json"
@@ -638,11 +515,10 @@ class BaseLegalRAGSystem(ABC):
         self.embeddings: Optional[Any] = None
         self.initialized: bool = False
         self._init_lock = asyncio.Lock()
-        self._chunks: Dict[str, LegalChunk] = {}  # chunk_id → LegalChunk
-        self._bm25: Optional[Any] = None  # rank_bm25.BM25Okapi over _chunks
-        self._bm25_ids: List[str] = []  # chunk_id per BM25 corpus row
+        self._chunks: Dict[str, LegalChunk] = {}
+        self._bm25: Optional[Any] = None
+        self._bm25_ids: List[str] = []
 
-    # ── Public API ───────────────────────────────────────────────
 
     async def initialize(self) -> bool:
         """Initialize (or resume from cache) this domain's vector store."""
@@ -688,19 +564,7 @@ class BaseLegalRAGSystem(ABC):
                 return False
 
     async def build_offline(self, device: str) -> bool:
-        """
-        Force-build (or confirm up-to-date) this domain's index using an
-        explicit, throwaway embeddings instance — independent of the shared
-        query-time singleton (`_get_shared_embeddings`).
-
-        Used by the offline-indexing startup step: it's called with
-        device="cuda" while the LLM hasn't claimed any VRAM yet, then the
-        embeddings instance is dropped and GPU memory freed before the
-        server starts serving, so Ollama gets the full card afterward.
-        Query-time embedding later still goes through the normal shared
-        singleton (CPU on small GPUs, per _get_shared_embeddings), unaffected
-        by whatever happened here.
-        """
+        """Force-build (or confirm up-to-date) this domain's index using an explicit, throwaway embeddings instance — independent of the shared query-time singleton..."""
         if not HAS_RAG_DEPS:
             return False
         if not await self._should_rebuild():
@@ -738,28 +602,7 @@ class BaseLegalRAGSystem(ABC):
         candidate_pool: int = 30,
         rerank_pool: int = 20,
     ) -> LegalContext:
-        """
-        Hybrid retrieval: dense (FAISS) + sparse (BM25) candidates fused with
-        Reciprocal Rank Fusion, then reranked by a cross-encoder.
-
-        Args:
-            query:        User query (preprocessed before dense/sparse search).
-            k:            Maximum chunks to return.
-            min_score:    Minimum relevance RELATIVE to the top hit (reranker
-                          probabilities are ordinal, not calibrated).
-            domains:      Optional domain filter (e.g. ["criminal"]); matches
-                          any of a chunk's domains.
-            use_reranker: Disable to skip the cross-encoder stage.
-            acts:         Optional exact act names (e.g. ["Indian Penal Code"]);
-                          candidates outside them are never considered, so a
-                          search scoped to one Act isn't crowded out by its
-                          namesakes in other Acts (IPC vs BNS vs CrPC).
-            candidate_pool / rerank_pool: candidates taken from each retriever /
-                          passed to the cross-encoder. Deeper pools raise recall.
-
-        Returns:
-            LegalContext with matched chunks sorted by score.
-        """
+        """Hybrid retrieval: dense (FAISS) + sparse (BM25) candidates fused with Reciprocal Rank Fusion, then reranked by a cross-encoder."""
         if not self.initialized:
             await self.initialize()
 
@@ -807,13 +650,7 @@ class BaseLegalRAGSystem(ABC):
         acts: Optional[List[str]] = None,
         extra_candidates: Optional[List[str]] = None,
     ) -> List[LegalChunk]:
-        """
-        Shared hybrid pipeline: dense + BM25 → RRF fusion → cross-encoder
-        rerank → top-k LegalChunks (score-filtered, sorted desc).
-
-        `search_query` may be keyword-expanded; `rerank_query` should be the
-        natural-language query, which cross-encoders score more reliably.
-        """
+        """Shared hybrid pipeline: dense + BM25 → RRF fusion → cross-encoder rerank → top-k LegalChunks (score-filtered, sorted desc)."""
         loop = asyncio.get_event_loop()
         domain_set = set(domains) if domains else None
         act_set = set(acts) if acts else None
@@ -822,11 +659,11 @@ class BaseLegalRAGSystem(ABC):
             raw = md.get("domains") or md.get("domain") or ""
             return [d for d in raw.split(",") if d]
 
-        # ── Dense candidates ────────────────────────────────────
+
         search_kwargs: Dict[str, Any] = {"k": candidate_pool}
         if domain_set or act_set:
-            # FAISS post-filters, so overfetch before the filter is applied; one
-            # Act is a few percent of the index, so scoping by Act needs more.
+
+
             search_kwargs["fetch_k"] = candidate_pool * (60 if act_set else 5)
             search_kwargs["filter"] = lambda md: (
                 (not domain_set or bool(set(_md_domains(md)) & domain_set))
@@ -845,10 +682,10 @@ class BaseLegalRAGSystem(ABC):
             cid = doc.metadata.get("chunk_id", "")
             if cid and cid not in dense_rank:
                 dense_rank[cid] = rank
-                # Legacy L2→[0,1] conversion, kept for the no-reranker fallback
+
                 dense_score[cid] = max(0.0, 1.0 - (float(distance) / 2.0))
 
-        # ── Sparse (BM25) candidates ────────────────────────────
+
         sparse_rank: Dict[str, int] = {}
         if self._bm25 is not None:
             tokens = _bm25_tokenize(search_query)
@@ -872,7 +709,7 @@ class BaseLegalRAGSystem(ABC):
                     sparse_rank[cid] = rank
                     rank += 1
 
-        # ── Reciprocal Rank Fusion ──────────────────────────────
+
         fused: Dict[str, float] = {}
         for cid, rank in dense_rank.items():
             fused[cid] = fused.get(cid, 0.0) + 1.0 / (60 + rank)
@@ -894,19 +731,14 @@ class BaseLegalRAGSystem(ABC):
         if not candidates:
             return []
 
-        # ── Cross-encoder rerank (graceful fallback to fused order) ──
-        # Cross-encoder probabilities are ordinal, not calibrated: a clearly
-        # relevant pair may score 0.04 while garbage scores 0.0001. So the
-        # reranker decides the ORDER, and filtering uses confidence RELATIVE
-        # to the best candidate (with an absolute garbage floor), not the raw
-        # probability. Reported chunk.score = prob / top_prob.
+
         RERANK_GARBAGE_FLOOR = 1e-4
         scored: List[Tuple[str, float]] = []
         reranker = await _get_shared_reranker() if use_reranker else None
         if reranker is not None:
             try:
-                # Same header the embedder sees: without it a section body like
-                # "whoever does X shall be punished..." doesn't say which law it is.
+
+
                 todo = [cid for cid in candidates if (rerank_query, cid) not in _RERANK_CACHE]
                 if todo:
                     pairs = [(rerank_query, _rerank_text(self._chunks[cid])) for cid in todo]
@@ -914,8 +746,8 @@ class BaseLegalRAGSystem(ABC):
                         None, lambda: reranker.predict(pairs, batch_size=16)
                     )
                     fresh = [float(s) for s in logits]
-                    # Some sentence-transformers versions already apply sigmoid to
-                    # single-label cross-encoders; only normalize raw logits.
+
+
                     if any(s < 0.0 or s > 1.0 for s in fresh):
                         fresh = [_sigmoid(s) for s in fresh]
                     if len(_RERANK_CACHE) > _RERANK_CACHE_MAX:
@@ -930,13 +762,13 @@ class BaseLegalRAGSystem(ABC):
                         if prob >= RERANK_GARBAGE_FLOOR
                     ]
                     scored = blend_rerank_order(scored, candidates, get_settings_blend())
-                # else: nothing plausibly relevant — fall back to fused order
+
             except Exception as e:
                 print(f"[{self.domain_name}] Rerank failed ({e}) — using fused order.")
                 scored = []
         if not scored:
-            # Fused order with legacy dense scores; BM25-only candidates get a
-            # floor just above typical min_score so exact-term hits survive.
+
+
             scored = [(cid, dense_score.get(cid, 0.35)) for cid in candidates]
 
         chunks: List[LegalChunk] = []
@@ -945,8 +777,8 @@ class BaseLegalRAGSystem(ABC):
             if score < min_score:
                 continue
             cached = self._chunks[cid]
-            # A long section split into parts can flood top-k with near
-            # duplicates; keep only the best-scored part per section.
+
+
             section_key = (cached.act_name, cached.section_number)
             if section_key in seen_sections:
                 continue
@@ -973,11 +805,7 @@ class BaseLegalRAGSystem(ABC):
     def find_section(
         self, act_hint: str, section: str, max_parts: int = 2
     ) -> List[LegalChunk]:
-        """
-        Deterministic lookup of a statutory provision by act-name hint and
-        section number (e.g. ("Indian Penal Code", "420")). Returns up to
-        `max_parts` chunks (long sections are stored as ordered parts).
-        """
+        """Deterministic lookup of a statutory provision by act-name hint and section number (e.g."""
         hint = act_hint.lower().strip()
         want = section.lower().replace("article", "").strip()
         hits = [
@@ -986,7 +814,7 @@ class BaseLegalRAGSystem(ABC):
             if c.section_number.lower().replace("article", "").strip() == want
             and (not hint or hint in c.act_name.lower())
         ]
-        hits.sort(key=_natural_key)  # parts in order (_p1, _p2, …, _p10)
+        hits.sort(key=_natural_key)
         return hits[:max_parts]
 
     def _build_bm25(self):
@@ -1012,51 +840,23 @@ class BaseLegalRAGSystem(ABC):
         self._bm25 = BM25Okapi(corpus)
         print(f"[{self.domain_name}] BM25 index built over {len(corpus)} chunks.")
 
-    # ── Domain hooks (override in subclasses) ──────────────────
 
     def _preprocess_query(self, query: str) -> str:
-        """
-        Optionally expand the query with domain-specific vocabulary.
-        Base implementation returns the query unchanged.
-        Subclasses override for domain-aware enhancement.
-        """
+        """Optionally expand the query with domain-specific vocabulary."""
         return query
 
     def _parse_legal_sections(
         self, full_text: str, source_file: str
     ) -> List[LegalChunk]:
-        """
-        Generic legal section parser.
-
-        Splits text on numbered section headers (e.g. "10. What agreements …")
-        and creates one LegalChunk per section.
-
-        KEY DIFFERENCE from the old crime_rag.py parser:
-        - NO punishment-clause filter (LEGAL FILTER 1 / LEGAL FILTER 2 are GONE).
-        - Definition-only sections like Indian Contract Act § 10 ARE indexed.
-        - Subclasses can apply stricter filters for their domain.
-        """
+        """Generic legal section parser."""
         chunks: List[LegalChunk] = []
         act_name = _infer_act_name(source_file)
 
-        # Stop before any Schedule: schedules restart their own paragraph
-        # numbering (1, 2, 3, ...), which otherwise collides with real
-        # section numbers and pollutes the index with schedule text.
+
         boundary = _schedule_boundary(full_text)
         search_text = full_text[:boundary] if boundary else full_text
 
-        # Match  "  10.  What agreements are contracts"  style headers.
-        # \s* (not \s+) after the number: some Acts (e.g. BNS 2023) run the
-        # subsection straight on, e.g. "103.(1) Whoever commits murder...".
-        # An optional "N[" or "N*[" prefix is tolerated: amended sections are
-        # often annotated with a footnote-bracket marker, e.g. "3[226. Power
-        # of..." or "6*[366A. Procuration of minor girl".
-        # The title may also terminate at end-of-line: several bare-act PDFs
-        # (e.g. Consumer Protection Act 2019) run the section body straight
-        # on and the first sentence wraps before any period, which otherwise
-        # makes the header unmatchable and merges sections. TOC lines match
-        # too as a result, but the chunk-id dedup below already prefers the
-        # longest clean candidate, so the body wins over the TOC entry.
+
         header_pattern = re.compile(
             r"\n\s*(?:\d+\*?\[)?(\d{1,3}[A-Z]{0,2})\.\s*([^.\n\u2014]{3,}?)(?:[.\u2014]|(?=\n))\s*",
             re.MULTILINE,
@@ -1064,7 +864,7 @@ class BaseLegalRAGSystem(ABC):
         matches = list(header_pattern.finditer(search_text))
 
         if not matches:
-            # Fallback: treat the entire text as a single chunk
+
             if len(full_text.strip()) > 50:
                 chunk_id = (
                     f"{self.domain_name.upper()[:3]}_{Path(source_file).stem}_FULL"
@@ -1097,10 +897,8 @@ class BaseLegalRAGSystem(ABC):
                 continue
 
             punishment = _extract_punishment(raw)
-            # Derive a prefix from the act's stem for unique chunk IDs
-            # The FULL act name, not a truncated prefix: "Indian Penal Code" and
-            # "Indian Evidence Act" (or the three Bharatiya acts) share their first
-            # six letters, and colliding chunk ids silently overwrite each other.
+
+
             prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())
             chunk_id = f"{self.domain_name.upper()[:3]}_{prefix}_{sec_num}"
 
@@ -1119,17 +917,9 @@ class BaseLegalRAGSystem(ABC):
 
         return chunks
 
-    # ── Private: Vector Store Lifecycle ────────────────────────
 
     async def _should_rebuild(self) -> bool:
-        """True if the index is absent, stale, or the source PDFs changed.
-
-        Staleness is decided by a (relative_path -> size) fingerprint stored
-        in meta.pkl, not filesystem mtimes: a fresh `git checkout`/clone/
-        worktree resets every file's mtime to checkout time even when its
-        content is unchanged, which would otherwise force a full re-embed
-        on every environment that just checked the repo out.
-        """
+        """True if the index is absent, stale, or the source PDFs changed."""
         if not self._faiss_dir.exists() or not self._meta_path.exists():
             return True
         if not self._cache_path.exists():
@@ -1141,18 +931,16 @@ class BaseLegalRAGSystem(ABC):
             return True
         stored_fingerprint = meta.get("pdf_fingerprint")
         if stored_fingerprint is None:
-            return True  # meta.pkl predates fingerprinting — rebuild once
-        # Vectors are model-specific: an index built with a different embedding
-        # model must be rebuilt, or queries embedded by the new model would be
-        # scored against incompatible stored vectors.
+            return True
+
+
         from app.config import get_settings
 
         if meta.get("embedding_model") != get_settings().embedding_model:
             return True
         if not any(self._bare_acts_dir.rglob("*.pdf")):
-            # Sources live on a removable drive; a query-serving process must
-            # never try to rebuild just because it isn't mounted (an empty
-            # leftover directory counts as unmounted too).
+
+
             print(
                 f"[{self.domain_name}] Source PDFs unavailable ({self._bare_acts_dir}) "
                 f"— serving the existing index without a staleness check."
@@ -1168,12 +956,7 @@ class BaseLegalRAGSystem(ABC):
         }
 
     def _collect_pdf_sources(self) -> List[Tuple[Path, str, List[str]]]:
-        """
-        Enumerate (pdf_path, primary_domain, domains) triples to index.
-        Base implementation: every PDF under the domain's directory belongs
-        to this domain. The unified system overrides this to walk all
-        domains and dedupe PDFs that appear in several of them.
-        """
+        """Enumerate (pdf_path, primary_domain, domains) triples to index."""
         return [
             (p, self.domain_name, [self.domain_name])
             for p in sorted(self._bare_acts_dir.rglob("*.pdf"))
@@ -1182,17 +965,11 @@ class BaseLegalRAGSystem(ABC):
     def _parse_pdf(
         self, full_text: str, source_file: str, primary_domain: str
     ) -> List[LegalChunk]:
-        """Parse one PDF's text into chunks. Overridable per-domain dispatch."""
+        """Parse one PDF's text into chunks."""
         return self._parse_legal_sections(full_text, source_file)
 
     async def _build_vectorstore(self):
-        """
-        1. Collect source PDFs (deduped across domains by subclasses).
-        2. Parse into legal chunks via _parse_pdf().
-        3. Split oversized sections into overlapping parts.
-        4. Embed chunk text and build a FAISS index.
-        5. Persist index + JSON cache.
-        """
+        """1."""
         if not self._bare_acts_dir.exists():
             print(
                 f"[{self.domain_name}] WARNING: PDFs directory not found — "
@@ -1240,12 +1017,7 @@ class BaseLegalRAGSystem(ABC):
             print(f"[{self.domain_name}] No chunks parsed — aborting build.")
             return
 
-        # A given chunk_id can legitimately collide across a document (e.g. a
-        # footnote/amendment citation like "1. Subs. by Act 3 of 1951..." or a
-        # table-of-contents entry re-using the same section number). Prefer a
-        # candidate that doesn't look like footnote/schedule noise; among
-        # equally "clean" candidates, keep the longest (genuine section bodies
-        # are almost always longer than a TOC line or citation).
+
         self._chunks = {}
         best_score: Dict[str, tuple] = {}
         for c in all_chunks:
@@ -1296,10 +1068,7 @@ class BaseLegalRAGSystem(ABC):
     def _split_oversized_chunks(
         chunks: Dict[str, LegalChunk],
     ) -> Dict[str, LegalChunk]:
-        """
-        Replace any chunk whose body exceeds the embedder's useful window
-        with overlapping "_pN" part-chunks carrying the same section metadata.
-        """
+        """Replace any chunk whose body exceeds the embedder's useful window with overlapping "_pN" part-chunks carrying the same section metadata."""
         result: Dict[str, LegalChunk] = {}
         n_split = 0
         for cid, chunk in chunks.items():
@@ -1393,8 +1162,7 @@ class BaseLegalRAGSystem(ABC):
         print(f"[{self.domain_name}] FAISS index saved to {self._faiss_dir}")
 
     def _warn_if_chunk_cache_mismatch(self):
-        """sections.json from a different build than the FAISS files (e.g. only the FAISS
-        files copied into a worktree) silently drops every dense hit it can't resolve."""
+        """sections.json from a different build than the FAISS files (e.g."""
         if self.vector_store is None:
             return
         doc_ids = {d.metadata.get("chunk_id") for d in self.vector_store.docstore._dict.values()}

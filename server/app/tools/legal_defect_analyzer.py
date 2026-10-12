@@ -1,20 +1,4 @@
-"""
-Legal Defect Analyzer (Layer 3) — ReAct Pattern
-Uses Reasoning-then-Action (ReAct) prompting for document validation.
-
-2-Step LLM Pipeline:
-  STEP 1 — THINK:   LLM reasons about what the document type requires
-                     (governing statutes, mandatory elements, formalities)
-  STEP 2 — ANALYZE: LLM reads the actual document text, cross-checks each
-                     requirement against the text AND the regex findings,
-                     and writes the final defect report with Act/Section/Case
-                     Law citations and remediation
-
-IMPORTANT: This module NEVER provides binding legal opinions.
-All output is framed as:
-"Based on statutory requirements and standard drafting practices,
-the following potential issues were identified…"
-"""
+"""Legal Defect Analyzer (Layer 3) — ReAct Pattern Uses Reasoning-then-Action (ReAct) prompting for document validation."""
 
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,12 +12,7 @@ from app.prompts import (
     sanitize_untrusted_document,
 )
 
-# ============================================================================
-# Disclaimer Templates
-# ============================================================================
 
-# THINK sees only the document type, sub-type and jurisdiction, never the document,
-# so its output is reused for every later document of the same kind.
 _THINK_CACHE: Dict[tuple, str] = {}
 
 DISCLAIMER_HEADER = (
@@ -54,30 +33,10 @@ DISCLAIMER_FOOTER = (
 
 
 class LegalDefectAnalyzer:
-    """
-    Layer 3: ReAct-based legal reasoning and defect explanation.
-
-    Instead of a single monolithic LLM prompt, this analyzer uses a
-    2-step Reasoning-then-Action (ReAct) pipeline:
-
-    1. THINK   — LLM reasons about requirements (no document text yet)
-    2. ANALYZE — LLM reads document + regex findings, cross-checks, and
-                 produces the final report
-
-    This dramatically improves accuracy because:
-    - The LLM first builds an independent mental model of requirements
-    - It then reads the document text directly (not just regex results)
-    - It can catch false positives/negatives from the regex layer
-    - Each step's output feeds into the next, creating a reasoning chain
-    """
+    """Layer 3: ReAct-based legal reasoning and defect explanation."""
 
     def __init__(self, llm):
-        """
-        Initialize with an LLM instance.
-
-        Args:
-            llm: ChatOllama or compatible LLM instance
-        """
+        """Initialize with an LLM instance."""
         self.llm = llm
 
     async def analyze_defects(
@@ -89,34 +48,17 @@ class LegalDefectAnalyzer:
         think_output: Optional[str] = None,
         stream: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Perform comprehensive legal defect analysis using the ReAct pipeline.
-
-        Args:
-            classification: Layer 1 document classification result
-            validation: Layer 2 statutory validation result
-            law_context: Indian law context from RAG tool
-            document_text: Original document text (up to ~5000 chars)
-
-        Returns:
-            Dict with structured defect analysis, reasoning trace, and formatted response
-        """
+        """Perform comprehensive legal defect analysis using the ReAct pipeline."""
         reasoning_trace: Dict[str, str] = {}
 
-        # ==================================================================
-        # STEP 1: THINK — Reason about requirements
-        # ==================================================================
+
         print("[ReAct] Step 1/2: THINK — Reasoning about requirements...")
         if think_output is None:
             think_output = await self.think(classification)
         reasoning_trace["think"] = think_output
         print(f"[ReAct] THINK complete ({len(think_output)} chars)")
 
-        # ==================================================================
-        # STEP 2: ANALYZE — Check the document and produce the final report.
-        # (A separate OBSERVE call used to sit here; the small model spent its
-        # whole token budget thinking through it and usually fell back.)
-        # ==================================================================
+
         print("[ReAct] Step 2/2: ANALYZE — Producing final report...")
         if stream:
             from app.chatbot import emit_text
@@ -133,7 +75,7 @@ class LegalDefectAnalyzer:
         reasoning_trace["analyze"] = analyze_output
         print(f"[ReAct] ANALYZE complete ({len(analyze_output)} chars)")
 
-        # Build the final formatted response
+
         formatted_response = self._format_final_response(
             classification, validation, law_context, analyze_output, reasoning_trace
         )
@@ -150,9 +92,6 @@ class LegalDefectAnalyzer:
             "document_type": classification.document_type,
         }
 
-    # ======================================================================
-    # ReAct Step Implementations
-    # ======================================================================
 
     async def think(self, classification: DocumentClassification) -> str:
         """THINK step, cached per document kind; fallbacks are not cached."""
@@ -171,10 +110,7 @@ class LegalDefectAnalyzer:
         return _THINK_CACHE[key]
 
     async def _step_think(self, classification: DocumentClassification) -> str:
-        """
-        STEP 1: THINK — LLM reasons about what the document requires.
-        No document text is provided yet — purely reasoning from knowledge.
-        """
+        """STEP 1: THINK — LLM reasons about what the document requires."""
         prompt = REACT_THINK_PROMPT.format(
             document_type=classification.document_type,
             sub_type=classification.sub_type or "N/A",
@@ -190,7 +126,7 @@ class LegalDefectAnalyzer:
     @staticmethod
     def _regex_findings(validation: StatutoryValidationResult) -> Dict[str, str]:
         """Layer 2 findings as prompt text."""
-        # Format present elements
+
         present_str = ""
         if validation.present_elements:
             present_items = []
@@ -202,7 +138,7 @@ class LegalDefectAnalyzer:
         else:
             present_str = "  (none detected)"
 
-        # Format missing elements
+
         missing_str = ""
         if validation.missing_elements:
             missing_items = []
@@ -215,7 +151,7 @@ class LegalDefectAnalyzer:
         else:
             missing_str = "  (none — all mandatory elements found by regex)"
 
-        # Format non-compliance
+
         nc_str = ""
         if validation.non_compliance:
             nc_items = []
@@ -239,11 +175,8 @@ class LegalDefectAnalyzer:
         document_text: str,
         stream: bool = False,
     ) -> str:
-        """
-        STEP 2: ANALYZE — LLM checks the document against the THINK checklist and
-        the regex findings, with law context, and writes the final defect report.
-        """
-        # Format law context
+        """STEP 2: ANALYZE — LLM checks the document against the THINK checklist and the regex findings, with law context, and writes the final defect report."""
+
         acts_str = (
             ", ".join(law_context.applicable_acts)
             if law_context.applicable_acts
@@ -265,7 +198,7 @@ class LegalDefectAnalyzer:
             else "  None"
         )
 
-        # Format API references
+
         api_refs_str = ""
         if law_context.references:
             ref_items = []
@@ -301,14 +234,10 @@ class LegalDefectAnalyzer:
             print(f"[ReAct] ANALYZE step error: {e}")
             return self._fallback_analyze(classification, validation, law_context)
 
-    # ======================================================================
-    # LLM Invocation
-    # ======================================================================
 
     @staticmethod
     async def _strip_unverified_cases(text: str) -> Tuple[str, List[str]]:
-        """Only cases in the indexed landmark corpus may stay in the report; if
-        the corpus is unavailable nothing can be verified, so every case goes."""
+        """Only cases in the indexed landmark corpus may stay in the report; if the corpus is unavailable nothing can be verified, so every case goes."""
         from app.tools.case_citation_verifier import strip_unverified_cases
         from app.tools.case_law_rag import get_case_law_rag_system
 
@@ -320,8 +249,7 @@ class LegalDefectAnalyzer:
         return strip_unverified_cases(text, rag.find_case if ready else (lambda name: None))
 
     async def _invoke_llm(self, prompt: str, stream: bool = False) -> str:
-        """Invoke the LLM with a prompt and return the response content. A give-up
-        is not streamed: the caller falls back and the handler replaces the text."""
+        """Invoke the LLM with a prompt and return the response content."""
         from app.chatbot import _INCOMPLETE_GENERATION_NOTE, invoke_llm_safely
 
         text = await invoke_llm_safely(self.llm, prompt, stream=stream, notify_incomplete=False)
@@ -329,9 +257,6 @@ class LegalDefectAnalyzer:
             raise RuntimeError("LLM did not finish this step")
         return text
 
-    # ======================================================================
-    # Fallback Methods (when LLM is unavailable)
-    # ======================================================================
 
     def _fallback_think(self, classification: DocumentClassification) -> str:
         """Generate a basic THINK output without LLM."""
@@ -388,9 +313,6 @@ class LegalDefectAnalyzer:
 
         return "\n".join(parts)
 
-    # ======================================================================
-    # Response Formatting
-    # ======================================================================
 
     def _format_final_response(
         self,
@@ -413,11 +335,11 @@ class LegalDefectAnalyzer:
         """Everything before the ANALYZE text, ending with its heading."""
         parts = []
 
-        # Header with disclaimer
+
         parts.append(DISCLAIMER_HEADER)
         parts.append("")
 
-        # Document Classification Summary
+
         parts.append("## 📄 Document Classification")
         parts.append(f"**Type:** {classification.document_type}")
         if classification.sub_type:
@@ -429,7 +351,7 @@ class LegalDefectAnalyzer:
             )
         parts.append("")
 
-        # Compliance Overview
+
         score = validation.compliance_score
         emoji = (
             "➖"
@@ -451,7 +373,7 @@ class LegalDefectAnalyzer:
         )
         parts.append("")
 
-        # Reasoning Trace Summary (collapsed sections)
+
         if "think" in reasoning_trace:
             parts.append("<details>")
             parts.append(
@@ -464,7 +386,7 @@ class LegalDefectAnalyzer:
             parts.append("</details>")
             parts.append("")
 
-        # Main Analysis (ANALYZE step output) follows the heading.
+
         parts.append("## ⚖️ Legal Analysis")
         return "\n".join(parts)
 
@@ -472,7 +394,7 @@ class LegalDefectAnalyzer:
         """Everything after the ANALYZE text."""
         parts = [""]
 
-        # Applicable Law
+
         if law_context.applicable_acts:
             parts.append("## 📚 Applicable Indian Law")
             for act in law_context.applicable_acts:
@@ -485,21 +407,21 @@ class LegalDefectAnalyzer:
                 parts.append(f"- {sec}")
             parts.append("")
 
-        # State-specific notes
+
         if law_context.state_specific_notes:
             parts.append("## 🏛️ State-Specific Notes")
             for note in law_context.state_specific_notes:
                 parts.append(f"- {note}")
             parts.append("")
 
-        # Precedents
+
         if law_context.precedent_notes:
             parts.append("## 📎 Relevant Case Law")
             for p in law_context.precedent_notes:
                 parts.append(f"- {p}")
             parts.append("")
 
-        # Footer disclaimer
+
         parts.append(DISCLAIMER_FOOTER)
 
         return "\n".join(parts)

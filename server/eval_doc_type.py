@@ -1,14 +1,4 @@
-"""Document type: gold set, reference fitting, and gate (test accuracy >= 0.90).
-
-Gold (tests/gold/doc_type.jsonl): 15 documents per type, 5 reference ("dev") + 10 test. Court orders
-are real Supreme Court judgments from the corpus drive and FIRs are real scans from the ICDAR 2023 FIR
-dataset (OCR text cached locally); both are stored as ids and never committed. The other 11 types are
-hand-written (tests/gold/doc_type/synthetic/). Each document is judged on its first 2,000 characters.
-
-    python eval_doc_type.py build-gold
-    python eval_doc_type.py fit            # embed the dev documents into the reference file
-    python eval_doc_type.py score --system regex|embedding --split dev|test
-"""
+"""Document type: gold set, reference fitting, and gate (test accuracy >= 0.90)."""
 
 import argparse
 import asyncio

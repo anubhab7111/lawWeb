@@ -1,33 +1,5 @@
 #!/usr/bin/env python3
-"""
-score_iltur.py — per-case label scores for a whole IL-TUR `lsi` split, cached.
-
-Each system maps a case's facts to {label name: score} over the official 100-label
-vocabulary (exact names: "Section 294(b)" is not "Section 294"). Scores for every
-case of a split are written in resumable shards to
-<corpus>/builds/scores/<system>/<split>/shard_NNNN.pkl, so decision rules and fusion
-(`report_iltur.py`) can be tuned in seconds instead of re-running retrieval.
-
-Systems:
-  precedent   similar past IL-TUR train+dev cases vote for their labels
-              (dev cases are masked out of the index when scoring dev)
-
-  judgments   Supreme Court passages similar to the facts vote for the sections
-              their judgments cite; judgments overlapping the scored split's IL-TUR
-              cases (decontaminate.py) are masked here, never removed from the index
-  reranker    the fine-tuned statute cross-encoder rescores the top candidates
-              proposed by precedent and the classifier (needs their scores)
-
-Robustness variants of precedent (written as their own systems):
-  --memory train        mask every dev case: train-only memory, like the paper's
-                        baselines, which learned from the train split alone
-  --exclude-overlap F   also mask, per case, every indexed case sharing at least a
-                        fraction F of its 10-word shingles (near-duplicate facts)
-
-Usage (from server/):
-    EMBEDDINGS_DEVICE=cuda python score_iltur.py precedent --split dev
-    EMBEDDINGS_DEVICE=cuda python score_iltur.py precedent --split test
-"""
+"""score_iltur.py — per-case label scores for a whole IL-TUR `lsi` split, cached."""
 
 import argparse
 import json
@@ -96,7 +68,7 @@ class PrecedentScorer:
         for s in ("train", "dev"):
             for r in pd.read_parquet(lsi_dir() / f"{s}.parquet", columns=["id", "label_ids"]).itertuples():
                 id_to_names[str(r.id)] = [names[i] for i in r.label_ids]
-        # label names in the index's own case order (its meta stores bare numbers)
+
         self.case_labels = [id_to_names[cid] for cid in self.index.case_ids]
         self.lookup = {cid: i for i, cid in enumerate(self.index.case_ids)}
         self.mask_self = split != "test"
@@ -104,7 +76,7 @@ class PrecedentScorer:
         if memory == "train":
             dev_ids = pd.read_parquet(lsi_dir() / "dev.parquet", columns=["id"])["id"].astype(str)
             self.always_masked = {self.lookup[c] for c in dev_ids if c in self.lookup}
-        # per-case masks: case id -> indexed case ids sharing too much text
+
         self.overlap = {cid: {self.lookup[o] for o in others if o in self.lookup} for cid, others in (overlap or {}).items()}
         emb = _make_bge_embeddings(device)
         emb.client.max_seq_length = 256

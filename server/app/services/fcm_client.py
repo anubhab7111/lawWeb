@@ -1,10 +1,4 @@
-"""
-Firebase Cloud Messaging push sender (HTTP v1 API).
-
-Credentials come from FCM_SERVICE_ACCOUNT_JSON — either a path to the service
-account file or the JSON itself. When unset, push is simply unavailable
-(`push_configured()` is False and the client hides the option).
-"""
+"""Firebase Cloud Messaging push sender (HTTP v1 API)."""
 
 import json
 from functools import lru_cache
@@ -52,8 +46,7 @@ def _access_token() -> str:
 
 
 def send_push(fcm_token: str, title: str, body: str, link: Optional[str] = None) -> bool:
-    """Send one notification. Returns True on success, False on a transient
-    failure; raises PushTokenInvalid when the token should be discarded."""
+    """Send one notification."""
     if not push_configured() or not fcm_token:
         return False
 

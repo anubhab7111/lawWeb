@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""
-Build the judgment retrieval index (app/tools/judgment_rag.py) from the chunked
-Supreme Court corpus.
-
-Selection: every chunk of every processed judgment — the whole corpus is
-retrievable. Each chunk also records `doc_sections`, the bare section numbers of all
-IPC and CrPC provisions its judgment cites (IL-TUR labels are bare numbers whose
-cases mix both codes), which section voting uses.
-
-Nothing is excluded at build time. Judgments overlapping IL-TUR test/dev cases
-(app/ingest/decontaminate.py) are masked only when the benchmark is scored.
-
-The index is IVF with 8-bit scalar quantisation (about 1 GB for the ~1.07M chunks),
-searched with a configurable nprobe.
-
-Three resumable phases, year by year (memory stays small):
-  select    <corpus>/builds/judgments/selected/year=YYYY.jsonl.gz
-  embed     <corpus>/builds/judgments/emb/year=YYYY.npz   (fp16, keyed by chunk id)
-  assemble  app/data/faiss_index/judgments/  (FAISS IVF-SQ8 + SQLite/FTS5 + meta.json)
-
-Run with Ollama idle:
-    EMBEDDINGS_DEVICE=cuda python -m app.ingest.build_judgment_index
-"""
+"""Build the judgment retrieval index (app/tools/judgment_rag.py) from the chunked Supreme Court corpus."""
 
 from __future__ import annotations
 
@@ -108,9 +86,7 @@ def _save_vectors(path: Path, ids: List[str], vecs: np.ndarray) -> None:
 
 
 def migrate_embeddings(years: List[int]) -> None:
-    """One-time: year=YYYY.npy (positional, tied to that year's selection) ->
-    year=YYYY.npz keyed by chunk id, so a changed selection reuses old vectors.
-    Must run before the selection is regenerated."""
+    """One-time: year=YYYY.npy (positional, tied to that year's selection) -> year=YYYY.npz keyed by chunk id, so a changed selection reuses old vectors."""
     sel = corpus_path("builds", "judgments", "selected")
     emb = corpus_path("builds", "judgments", "emb")
     for year in years:
@@ -152,7 +128,7 @@ def phase_embed(years: List[int], device: str) -> None:
         if missing:
             texts = [embed_text(c) for c in missing]
             parts = []
-            for i in range(0, len(texts), 128):  # short bursts, so the duty cycle lowers average power
+            for i in range(0, len(texts), 128):
                 parts.append(pr.encode_texts(embeddings, texts[i : i + 128], batch_size=32).astype(np.float16))
                 guard.step()
             fresh = np.concatenate(parts)

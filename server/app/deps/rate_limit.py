@@ -1,12 +1,4 @@
-"""In-memory sliding-window rate limit for the LLM-backed chat endpoints.
-
-Per process, which is correct for this deployment (a single uvicorn worker —
-see CLAUDE.md). Each generation can hold the 4GB GPU for up to three minutes,
-so unauthenticated callers in particular must not be able to queue them
-without bound. Behind a reverse proxy, request.client.host is the proxy's
-address; configure the proxy to pass the real client address (uvicorn's
---proxy-headers) before relying on the per-IP limit.
-"""
+"""In-memory sliding-window rate limit for the LLM-backed chat endpoints."""
 
 import time
 from collections import defaultdict, deque
@@ -30,8 +22,7 @@ def _prune(now: float) -> None:
 
 
 def check_rate_limit(key: str, limit: int, now: Optional[float] = None) -> Optional[int]:
-    """Record a hit for `key`. Returns None if allowed, else the seconds until
-    the oldest hit leaves the window."""
+    """Record a hit for `key`."""
     now = time.monotonic() if now is None else now
     if len(_hits) > _MAX_TRACKED_KEYS:
         _prune(now)

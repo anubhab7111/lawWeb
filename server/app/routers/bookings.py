@@ -1,8 +1,4 @@
-"""
-Booking/payment endpoints using the Braintree Python SDK (Sandbox),
-ported from the old Express server/src/routes/bookings.ts.
-Credentials come strictly from settings (.env) — no hardcoded fallbacks.
-"""
+"""Booking/payment endpoints using the Braintree Python SDK (Sandbox), ported from the old Express server/src/routes/bookings.ts."""
 
 import math
 import uuid
@@ -45,8 +41,8 @@ class CheckoutRequest(BaseModel):
     paymentMethodNonce: Optional[str] = None
     lawyerId: Optional[str] = None
     userId: Optional[str] = None
-    appointmentDate: Optional[str] = None  # YYYY-MM-DD
-    appointmentTime: Optional[str] = None  # HH:MM, half-hour slots
+    appointmentDate: Optional[str] = None
+    appointmentTime: Optional[str] = None
 
 
 @router.get("/client_token")
@@ -54,7 +50,7 @@ def client_token():
     """One-time token authorizing the frontend to render the payment UI."""
     try:
         result = get_gateway().client_token.generate({})
-        # The client reads this with response.text()
+
         return PlainTextResponse(result)
     except Exception as e:
         print(f"Braintree Token Error: {e}")
@@ -95,13 +91,7 @@ def checkout(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Charge the nonce received from the client and record the booking.
-
-    The booking is always attributed to the authenticated caller — body.userId
-    is ignored — so a caller can't create/charge bookings on someone else's
-    behalf. The amount is recomputed server-side (see below) rather than trusted.
-    A repeated Idempotency-Key returns the original result without charging again.
-    """
+    """Charge the nonce received from the client and record the booking."""
     if idempotency_key:
         prior = session.exec(
             select(Booking).where(
@@ -113,7 +103,7 @@ def checkout(
                 return {"status": "success", "transactionId": prior.transaction_id}
             return _error(409, "This payment is already being processed")
 
-    # ── Validate BEFORE charging so a bad request never captures money ──
+
     if not body.amount or not body.paymentMethodNonce or not body.lawyerId:
         return _error(400, "Missing required checkout fields")
     try:
@@ -127,17 +117,13 @@ def checkout(
     if lawyer is None:
         return _error(400, "Lawyer not found")
 
-    # The client charges hourly_rate + a 5% platform fee (client Payment.tsx).
-    # Recompute the total here and reject any mismatch so the client can't
-    # dictate the price. Mirror JS Math.round (round-half-up) with floor(x+0.5)
-    # rather than Python's banker's rounding, or an even .5 fee would diverge.
+
     fee = math.floor(lawyer.hourly_rate * 0.05 + 0.5)
     expected_total = Decimal(lawyer.hourly_rate + fee)
     if amount != expected_total:
         return _error(400, "Amount does not match the lawyer's rate")
 
-    # Reserve the slot with a pending row first: it blocks a concurrent booking
-    # of the same slot and survives a crash between charge and confirmation.
+
     taken = session.exec(
         select(Booking.id).where(
             Booking.lawyer_id == lawyer.id,
@@ -175,7 +161,7 @@ def checkout(
             session.add(row)
             session.commit()
 
-    # ── Charge (own error scope: a failure here means no money captured) ──
+
     try:
         result = get_gateway().transaction.sale(
             {
@@ -199,10 +185,7 @@ def checkout(
             status_code=400, content={"status": "error", "message": result.message}
         )
 
-    # ── Charge succeeded: confirm the booking in a SEPARATE error scope ──
-    # A DB failure here must NOT be reported as a failed payment (the card was
-    # already charged), or the user will retry and be double-charged. The
-    # pending row remains for manual reconciliation.
+
     transaction_id = result.transaction.id
     try:
         booking = session.get(Booking, booking_id)
@@ -212,9 +195,7 @@ def checkout(
         session.commit()
         print(f"✅ Success: Payment settled for User {current_user.id}")
 
-        # Personal Legal Calendar: best-effort, isolated from the payment
-        # result — a calendar-write failure must never turn a successful
-        # payment into an error response.
+
         try:
             start_at = datetime.fromisoformat(
                 f"{booking.appointment_date}T{booking.appointment_time}"
@@ -237,8 +218,8 @@ def checkout(
         return {"status": "success", "transactionId": transaction_id}
     except Exception as e:
         session.rollback()
-        # RECONCILIATION: money captured but booking not confirmed. Log loudly
-        # so this can be reconciled manually against Braintree settlements.
+
+
         print(
             f"⚠️ RECONCILIATION NEEDED: charged transaction {transaction_id} "
             f"for user {current_user.id} / lawyer {body.lawyerId} (booking {booking_id}) "
@@ -257,8 +238,7 @@ def user_bookings(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Confirmed appointments for a user, newest first. Scoped to the caller —
-    the path id must match the authenticated user (no cross-user reads)."""
+    """Confirmed appointments for a user, newest first."""
     if user_id != current_user.id:
         raise MessageHTTPException(status_code=404, detail="Not found")
     try:

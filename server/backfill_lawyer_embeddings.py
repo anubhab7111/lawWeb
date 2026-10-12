@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-backfill_lawyer_embeddings.py — compute bio_embedding for lawyers that don't
-have one yet (e.g. after adding the pgvector column, or after seeding new
-demo lawyers).
-
-Usage:
-    python backfill_lawyer_embeddings.py          # only rows missing an embedding
-    python backfill_lawyer_embeddings.py --all    # re-embed EVERY lawyer
-
-Use --all after switching the embedding model (e.g. to BGE-M3): existing
-bio_embedding values are non-NULL but were produced by the old model and are
-incompatible with new query vectors, so they must be regenerated.
-"""
+"""backfill_lawyer_embeddings.py — compute bio_embedding for lawyers that don't have one yet (e.g."""
 
 import argparse
 import asyncio
@@ -19,8 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure server/ directory is in path and is the CWD, since config/data paths
-# resolve relative to CWD elsewhere in this codebase.
+
 _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)

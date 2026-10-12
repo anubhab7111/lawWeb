@@ -1,9 +1,4 @@
-"""
-Notification feed + preferences. This is also the router Smart Notifications
-(Phase 4) reuses unchanged — every new producer just calls
-app.services.notification_dispatch.send_notification(), so no new router
-was needed there.
-"""
+"""Notification feed + preferences."""
 
 from datetime import datetime, timezone
 

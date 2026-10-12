@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""
-Keep IL-TUR test cases out of the retrieval corpus.
-
-IL-TUR cases are drawn from real Supreme Court / High Court judgments, so a
-judgment in our index can contain a test case's facts verbatim — and, with them,
-the very sections we are scored on. This finds those judgments.
-
-Method: every IL-TUR *test* case is reduced to a set of hashed 10-word shingles
-(<ENTITY> masks break a shingle rather than match it). A judgment is flagged for
-a test case when it shares at least `min_shingles` distinct shingles with that one
-case: boilerplate legal phrasing shares a handful, verbatim reuse of a fact
-section shares hundreds. Near-verbatim only — a paraphrase would slip through,
-which is why the residual risk is reported alongside the numbers.
-
-Usage (from server/):
-    python -m app.ingest.decontaminate                 # scan every processed SC year
-    python -m app.ingest.decontaminate --years 1985
-"""
+"""Keep IL-TUR test cases out of the retrieval corpus."""
 
 from __future__ import annotations
 
@@ -76,7 +59,7 @@ def shingle_hashes(tokens: List[str], n: int = SHINGLE_WORDS) -> np.ndarray:
 class TestShingles:
     """Sorted shingle hashes of all test cases, each mapped to its case."""
 
-    __test__ = False  # not a pytest class
+    __test__ = False
 
     hashes: np.ndarray
     case_of: np.ndarray
@@ -115,7 +98,7 @@ def contaminated_cases(
     pos = np.searchsorted(index.hashes, h)
     pos = np.clip(pos, 0, len(index.hashes) - 1)
     hit = index.hashes[pos] == h
-    # A shingle shared by several test cases counts for each; equal hashes are adjacent.
+
     counts: Counter = Counter()
     for p in pos[hit]:
         j = p

@@ -1,9 +1,4 @@
-"""
-Shared case-sync logic used by both the on-demand routes in
-app/routers/cases.py (save / manual re-sync) and the scheduled job in
-app/jobs/_case_sync.py. Kept out of the router module so the scheduler
-doesn't need to import FastAPI router internals.
-"""
+"""Shared case-sync logic used by both the on-demand routes in app/routers/cases.py (save / manual re-sync) and the scheduled job in app/jobs/_case_sync.py."""
 
 from datetime import datetime, timezone
 from typing import List
@@ -24,9 +19,7 @@ def _event_key(event_type, title, event_date, source_id):
 
 
 async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]:
-    """Fetches history from the provider, inserts any new events, generates
-    an AI summary for new orders, and returns the newly-inserted events (so
-    callers — e.g. the hearing-reminders job — can act on new orders)."""
+    """Fetches history from the provider, inserts any new events, generates an AI summary for new orders, and returns the newly-inserted events (so callers — e.g."""
     provider = get_case_data_provider()
     if not case.cnr:
         return []
@@ -37,8 +30,7 @@ async def sync_case_events(session: Session, case: SavedCase) -> List[CaseEvent]
         print(f"[CaseSync] sync failed for case {case.id}: {e}")
         return []
 
-    # The session is plain blocking SQLAlchemy, so every DB step runs in the
-    # thread pool (one step at a time); only the LLM summary is awaited here.
+
     new_events, order_jobs = await run_in_threadpool(_insert_new_events, session, case, history)
 
     for event_id, record in order_jobs:
@@ -83,8 +75,7 @@ def _insert_new_events(session: Session, case: SavedCase, history):
         session.flush()
         new_events.append(event)
 
-        # A new hearing auto-populates the Personal Legal Calendar, keyed by
-        # related_case_event_id (unique) so re-syncs can't duplicate it.
+
         if record.event_type == "hearing" and event.event_date:
             session.add(
                 CalendarEvent(
@@ -110,7 +101,7 @@ def _finish_sync(session: Session, case: SavedCase, events: List[CaseEvent]) -> 
     case.last_synced_at = datetime.now(timezone.utc)
     session.add(case)
     session.commit()
-    # Load what callers read next (event fields) while still off the event loop.
+
     session.refresh(case)
     for event in events:
         session.refresh(event)

@@ -11,10 +11,10 @@ def test_reads_a_plausible_cpu_temperature():
 def test_duty_cycle_idles_in_proportion_to_work(monkeypatch):
     monkeypatch.setattr(thermal, "cpu_package_temp", lambda: 50.0)
     g = thermal.ThermalGuard(duty=0.5, threads=2, check_every=1e9)
-    time.sleep(0.1)  # "work"
+    time.sleep(0.1)
     t0 = time.time()
     g.step()
-    assert 0.08 < time.time() - t0 < 0.3  # idles about as long as it worked
+    assert 0.08 < time.time() - t0 < 0.3
 
 
 def test_pauses_when_hot_until_cool(monkeypatch):
@@ -22,8 +22,8 @@ def test_pauses_when_hot_until_cool(monkeypatch):
     monkeypatch.setattr(thermal, "cpu_package_temp", lambda: next(temps))
     monkeypatch.setattr(thermal.time, "sleep", lambda s: None)
     g = thermal.ThermalGuard(duty=1.0, threads=2, check_every=0)
-    g.step()  # median 94 -> pause; median 90 still hot; median 72 resumes
-    assert next(temps, None) is None  # all three rounds of samples consumed
+    g.step()
+    assert next(temps, None) is None
 
 
 def test_a_momentary_spike_does_not_pause(monkeypatch):

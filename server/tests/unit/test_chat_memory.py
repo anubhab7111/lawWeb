@@ -1,7 +1,4 @@
-"""Conversation memory via LangGraph checkpoints: multi-turn context, survival
-across a 'restart', account isolation, and — the design's key property — that
-only plain message history is ever checkpointed. Postgres tests use the scratch
-database (see conftest)."""
+"""Conversation memory via LangGraph checkpoints: multi-turn context, survival across a 'restart', account isolation, and — the design's key property — that only plain message..."""
 
 import asyncio
 import os
@@ -38,16 +35,16 @@ def test_later_turns_see_earlier_ones(monkeypatch):
     history = run(scenario())
     assert [m["role"] for m in history] == ["user", "assistant", "user", "assistant"]
     assert history[0]["content"] == "What is anticipatory bail?"
-    # the second turn's prompt carried the first exchange as context
+
     assert "What is anticipatory bail?" in rig.llm.prompts[1]
 
 
 def test_history_survives_a_restart(monkeypatch):
-    saver = InMemorySaver()  # stands in for the durable store
+    saver = InMemorySaver()
     first = _rig(monkeypatch, saver=saver)
     run(first.bot.chat("What is anticipatory bail?", "s"))
 
-    second = _rig(monkeypatch, saver=saver)  # a fresh process, same store
+    second = _rig(monkeypatch, saver=saver)
     run(second.bot.chat("And for economic offences?", "s"))
     assert "What is anticipatory bail?" in second.llm.prompts[0]
 
@@ -68,9 +65,7 @@ def test_accounts_do_not_share_a_thread_even_with_the_same_session_id(monkeypatc
 
 
 def test_only_message_history_is_checkpointed(monkeypatch):
-    """The turn graph's state (tool results holding retriever objects, sets,
-    uploaded text) must never reach the checkpointer: LangGraph's serializer
-    fails on arbitrary objects and flattens exceptions."""
+    """The turn graph's state (tool results holding retriever objects, sets, uploaded text) must never reach the checkpointer: LangGraph's serializer fails on arbitrary objects and..."""
     saver = InMemorySaver()
     rig = _rig(monkeypatch, saver=saver)
     run(rig.bot.chat("What is anticipatory bail?", "s", document_content="SECRET DOC " * 50))
@@ -78,10 +73,10 @@ def test_only_message_history_is_checkpointed(monkeypatch):
     tup = saver.get_tuple({"configurable": {"thread_id": "s"}})
     channels = {k for k in tup.checkpoint["channel_values"] if not k.startswith(("branch:", "__"))}
     assert channels == {"messages"}
-    # and the turn graph did not inherit the saver as a nested checkpoint
+
     namespaces = {ns for thread in saver.storage.values() for ns in thread}
     assert namespaces == {""}
-    # nothing about the uploaded document leaked into memory
+
     assert "SECRET DOC" not in repr(tup.checkpoint["channel_values"])
 
 
@@ -96,7 +91,7 @@ def test_seed_session_primes_an_empty_thread_only(monkeypatch):
         await rig.bot.seed_session("s", [{"role": "user", "content": "stale db read"}])
         return await rig.bot.get_session_history("s")
 
-    assert run(scenario()) == seeded  # a live thread is never clobbered
+    assert run(scenario()) == seeded
 
 
 def test_history_is_capped_at_twenty_messages(monkeypatch):
@@ -120,11 +115,6 @@ def test_thread_id_is_stamped_with_activity_time_for_cleanup(monkeypatch):
     assert tup.metadata["last_active"].endswith("+00:00")
 
 
-# --------------------------------------------------------------------------
-# Postgres (scratch database)
-# --------------------------------------------------------------------------
-
-
 def _db_url():
     return get_settings().database_url or os.environ["DATABASE_URL"]
 
@@ -140,7 +130,7 @@ def test_postgres_checkpointer_persists_across_a_restart_and_reaps_idle_threads(
         finally:
             await pool.close()
 
-        # "restart": a brand new pool, saver and chatbot on the same database
+
         pool2, saver2 = await checkpointing.open_postgres_saver(_db_url())
         try:
             second = _rig(monkeypatch, saver=saver2)
@@ -149,7 +139,7 @@ def test_postgres_checkpointer_persists_across_a_restart_and_reaps_idle_threads(
             await second.bot.chat("And for economic offences?", tid_active)
             assert "What is anticipatory bail?" in second.llm.prompts[0]
 
-            # age one thread past retention by rewriting its activity stamp
+
             async with pool2.connection() as conn:
                 await conn.execute(
                     "UPDATE checkpoints SET metadata = jsonb_set(metadata, '{last_active}', "
@@ -233,14 +223,14 @@ def test_authenticated_thread_is_reseeded_from_the_db_transcript(monkeypatch):
         )
 
         async def scenario():
-            # another account presenting the same session id gets nothing
+
             await chat_router._seed_from_db_if_needed(s, rig.bot, other, sid)
             assert await rig.bot.has_session(chat_router._memory_key(other, sid)) is False
-            # the owner's empty thread is primed from chat_messages...
+
             await chat_router._seed_from_db_if_needed(s, rig.bot, owner, sid)
             key = chat_router._memory_key(owner, sid)
             history = await rig.bot.get_session_history(key)
-            # ...and a guest never touches the database
+
             await chat_router._seed_from_db_if_needed(s, rig.bot, None, sid)
             return history
 

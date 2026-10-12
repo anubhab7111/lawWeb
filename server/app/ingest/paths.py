@@ -1,13 +1,4 @@
-"""
-Where corpus data lives.
-
-Raw and derived corpus data (PDFs, judgments, chunks, caches) is kept on an
-external drive, `LAWWEB_CORPUS_ROOT`; only vector/lexical indices live in the
-repo. The drive is removable, so nothing that serves queries may depend on it —
-build/ingest code calls `require_corpus()`, serving code just loads the index.
-With no corpus root configured, the legacy in-repo layout (`app/data/...`) is
-used, which keeps a fresh clone working until its data is moved.
-"""
+"""Where corpus data lives."""
 
 from pathlib import Path
 from typing import Optional

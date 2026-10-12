@@ -1,11 +1,4 @@
-"""Crime-report statute retrieval on ILSIC lay questions that cite IPC sections.
-
-hit@k: any of the k returned sections (BNS mapped back to IPC by the official table) is cited.
-offence share: returned sections from substantive penal Acts (not CrPC/BNSS/evidence/definitions).
-BNS share: returned penal sections cited under the BNS (in force since 1 July 2024).
-
-    python eval_crime_sections.py --split dev|test [--limit N]
-"""
+"""Crime-report statute retrieval on ILSIC lay questions that cite IPC sections."""
 import argparse
 import ast
 import asyncio

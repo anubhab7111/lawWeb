@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""
-Export the IL-TUR `lsi` splits to parquet on the corpus drive, with labels
-decoded from ClassLabel ids to section numbers.
-
-  iltur/lsi/{train,dev,test}.parquet   id, sentences, labels (section numbers), label_ids
-  iltur/lsi/statutes.parquet           label name + statute text for the 100 labels
-  iltur/lsi/EXPORT.json                counts, label stats, licence
-
-The test split is exported for evaluation only. `assert_disjoint` enforces that no
-case id appears in more than one split, so nothing evaluated on can be indexed.
-
-IL-TUR is CC BY-NC-SA 4.0 (non-commercial).
-
-Usage (from server/):
-    python -m app.ingest.iltur_export
-"""
+"""Export the IL-TUR `lsi` splits to parquet on the corpus drive, with labels decoded from ClassLabel ids to section numbers."""
 
 from __future__ import annotations
 

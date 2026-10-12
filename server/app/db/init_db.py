@@ -1,9 +1,4 @@
-"""
-Initialize the database: create tables from schema.sql if they are missing,
-then seed the Indian lawyer directory (app/data/lawyers.json) and embed their bios. Idempotent — safe to run repeatedly.
-
-Usage: python -m app.db.init_db [--skip-embeddings]
-"""
+"""Initialize the database: create tables from schema.sql if they are missing, then seed the Indian lawyer directory (app/data/lawyers.json) and embed their bios."""
 
 import json
 import sys
@@ -71,8 +66,7 @@ def init_db(embed: bool = True) -> None:
     else:
         print("Tables already exist, skipping schema.sql")
 
-    # Incremental changes for existing dev DBs — see app/db/migrations.py
-    # for the convention (there is no Alembic in this project).
+
     run_migrations(engine)
 
     with Session(engine) as session:

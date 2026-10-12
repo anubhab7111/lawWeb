@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""
-report_iltur.py — official-protocol IL-TUR `lsi` results from cached scores.
-
-Reads per-case scores written by score_iltur.py (and the classifier), fits each
-decision rule on the full dev split and reports macro-F1 exactly as the IL-TUR
-leaderboard computes it, on the full dev and test splits. With several systems it
-also fits a weighted fusion (weights and thresholds chosen on dev only).
-
-Published reference points (IL-TUR, ACL 2024; macro-F1, full test):
-  LeSICiN 28.08 (SOTA) | InLegalBERT 26.23 | GPT-4 0-shot 23.99 | LegalBERT 21.74 | BERT 18.44
-
-Usage (from server/):
-    python report_iltur.py precedent
-    python report_iltur.py precedent classifier --fuse
-"""
+"""report_iltur.py — official-protocol IL-TUR `lsi` results from cached scores."""
 
 import argparse
 import itertools

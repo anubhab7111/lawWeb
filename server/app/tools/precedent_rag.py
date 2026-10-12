@@ -1,17 +1,4 @@
-"""
-precedent_rag.py — statute identification from similar past cases.
-
-Indexes windows of IL-TUR `lsi` train+dev case facts (each case carries its
-labelled IPC/CrPC sections). Given a new fact pattern, the nearest past cases
-vote for their sections; the similarity-weighted votes are a ranked list of
-candidate sections that complements statute-text retrieval (facts rarely
-resemble statute wording, but they resemble other cases' facts).
-
-The index is FAISS (fp16 scalar-quantised inner product) plus a small
-metadata file, stored under app/data/faiss_index/precedent/. It is loaded
-lazily and memory-mapped, so it costs nothing until a fact-pattern query
-arrives. The IL-TUR test split is never indexed (see app/ingest/iltur_export.py).
-"""
+"""precedent_rag.py — statute identification from similar past cases."""
 
 from __future__ import annotations
 
@@ -29,8 +16,8 @@ INDEX_FILE = "index.faiss"
 META_FILE = "meta.json"
 WINDOW_CASE_FILE = "window_case_idx.npy"
 
-INDEX_WINDOWS = 4  # windows embedded per indexed case
-QUERY_WINDOWS = 8  # windows retrieved per query case
+INDEX_WINDOWS = 4
+QUERY_WINDOWS = 8
 NEIGHBORS = 20
 VOTE_POWER = 8.0
 
@@ -60,13 +47,7 @@ def vote_labels(
     exclude: Optional[Set[int]] = None,
     power: float = VOTE_POWER,
 ) -> Dict[str, float]:
-    """Similarity-weighted label votes from per-query-window neighbours.
-
-    neighbor_sims / neighbor_cases are (Q, K): for each query window, the
-    similarity and owning case of its nearest indexed windows. A case counts
-    once per query window (its best window), and every query window carries
-    equal weight, so long fact patterns aren't dominated by one passage.
-    """
+    """Similarity-weighted label votes from per-query-window neighbours."""
     scores: Dict[str, float] = defaultdict(float)
     q = neighbor_sims.shape[0]
     for sims, cases in zip(neighbor_sims, neighbor_cases):
@@ -143,7 +124,7 @@ class PrecedentIndex:
         power: float = VOTE_POWER,
         exclude: Optional[Set[int]] = None,
     ) -> List[Tuple[str, float]]:
-        # Over-fetch when excluding, so masked cases don't shrink the neighbourhood.
+
         sims, cases = self.search(query_vecs, k, extra=k if exclude else 0)
         return rank_votes(vote_labels(sims, cases, self.meta["case_labels"], exclude, power))
 
@@ -164,11 +145,7 @@ async def retrieve_precedent_sections(
     power: float = VOTE_POWER,
     exclude_case_ids: Optional[Iterable[str]] = None,
 ) -> List[Tuple[str, float]]:
-    """Candidate sections (number, score) voted by the most similar past cases.
-
-    `facts` is the case narrative as a list of sentences. Returns [] when the
-    precedent index has not been built.
-    """
+    """Candidate sections (number, score) voted by the most similar past cases."""
     from app.tools.base_legal_rag import _get_shared_embeddings
 
     index = get_precedent_index()

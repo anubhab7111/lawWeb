@@ -1,12 +1,4 @@
-"""
-Bare Act Explorer — "Section 302" or "arrest without warrant" -> section
-text, landmark judgments, plain-language AI explanation.
-
-Reuses the existing unified statute index and case-law index; no new
-FAISS index, no new embedding model. A literal "Section N" query
-short-circuits to UnifiedLegalRAGSystem.find_section()'s exact metadata
-match instead of paying for full hybrid retrieval + rerank.
-"""
+"""Bare Act Explorer — "Section 302" or "arrest without warrant" -> section text, landmark judgments, plain-language AI explanation."""
 
 from __future__ import annotations
 
@@ -34,7 +26,7 @@ class BareActResult:
     matches: List[LegalChunk] = field(default_factory=list)
     landmark_judgments: List[CaseRecord] = field(default_factory=list)
     explanation: Optional[str] = None
-    ambiguous: bool = False  # multiple acts share this section number
+    ambiguous: bool = False
 
 
 _explanation_cache = TTLCache(maxsize=512, ttl=get_settings().cache_ttl_seconds)
@@ -57,8 +49,8 @@ async def explore_bare_act(
 
     if section is not None:
         matches = rag.find_section(act_hint, section, max_parts=5)
-        # Bare number ("302") can exist in multiple acts (IPC vs. others) —
-        # surface every act's version rather than silently picking one.
+
+
         distinct_acts = {c.act_name for c in matches}
         result = BareActResult(
             query=query,

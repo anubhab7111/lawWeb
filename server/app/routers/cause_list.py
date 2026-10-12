@@ -1,9 +1,4 @@
-"""
-Court Cause List Search — cache-first over app/tools/case_data_provider.py.
-Public (no auth required — search doesn't need a saved case). Filters are
-applied in-process over the (small, single-day/single-court) cached result
-set rather than as JSONB queries.
-"""
+"""Court Cause List Search — cache-first over app/tools/case_data_provider.py."""
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -20,7 +15,7 @@ from app.tools.case_data_provider import CaseDataProviderError, get_case_data_pr
 
 router = APIRouter(prefix="/api/cause-list", tags=["cause-list"])
 
-_CACHE_TTL_SECONDS = 3600  # cause lists are published once/day but hit repeatedly
+_CACHE_TTL_SECONDS = 3600
 
 
 COURTS = [
@@ -41,12 +36,13 @@ COURTS = [
 def _is_fresh(fetched_at: Optional[datetime]) -> bool:
     return (
         fetched_at is not None
-        and (datetime.now(timezone.utc) - fetched_at).total_seconds() < _CACHE_TTL_SECONDS
+        and (datetime.now(timezone.utc) - fetched_at).total_seconds()
+        < _CACHE_TTL_SECONDS
     )
 
 
 def _read_cache(court: str, list_date: str):
-    """(entries, fetched_at) for a cached list, or None. Blocking — run in a thread."""
+    """(entries, fetched_at) for a cached list, or None."""
     with Session(get_engine()) as session:
         row = session.exec(
             select(CauseListCache).where(
@@ -57,11 +53,12 @@ def _read_cache(court: str, list_date: str):
 
 
 def _store_cache(court: str, list_date: str, entries_json: list):
-    """Upsert one cached list and prune rows older than two days. Blocking."""
+    """Upsert one cached list and prune rows older than two days."""
     with Session(get_engine()) as session:
         session.exec(
             delete(CauseListCache).where(
-                CauseListCache.fetched_at < datetime.now(timezone.utc) - timedelta(days=2)
+                CauseListCache.fetched_at
+                < datetime.now(timezone.utc) - timedelta(days=2)
             )
         )
         row = session.exec(
@@ -78,7 +75,7 @@ def _store_cache(court: str, list_date: str, entries_json: list):
         try:
             session.commit()
         except IntegrityError:
-            # A concurrent request inserted the same (court, date) first.
+
             session.rollback()
             row = session.exec(
                 select(CauseListCache).where(

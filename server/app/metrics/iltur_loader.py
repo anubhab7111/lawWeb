@@ -1,13 +1,4 @@
-"""
-Loader for the IL-TUR (Indian Legal Text Understanding & Reasoning) benchmark
-— specifically its `lsi` (Legal Statute Identification) subtask, used by
-tests/test_chatbot.py (default dataset) to sample real case-fact patterns
-for evaluating the chatbot's statute-citation accuracy.
-
-IL-TUR is gated on HuggingFace (CC BY-NC-SA 4.0, non-commercial): accept the
-license at https://huggingface.co/datasets/Exploration-Lab/IL-TUR and set
-HUGGINGFACE_TOKEN in server/.env before using this module.
-"""
+"""Loader for the IL-TUR (Indian Legal Text Understanding & Reasoning) benchmark — specifically its `lsi` (Legal Statute Identification) subtask, used by tests/test_chatbot.py..."""
 
 import random
 import re
@@ -76,11 +67,7 @@ def load_iltur_lsi_test_split():
 def sample_iltur_cases(
     n: int = 20, seed: Optional[int] = None, split: str = "test"
 ) -> List[Dict[str, Any]]:
-    """Randomly sample n rows from an IL-TUR lsi split (default: test).
-
-    seed=None (default) draws a fresh random sample every call. Pass a seed
-    for a reproducible sample across runs.
-    """
+    """Randomly sample n rows from an IL-TUR lsi split (default: test)."""
     rows = load_iltur_lsi_split(split)
     rng = random.Random(seed)
     indices = rng.sample(range(len(rows)), min(n, len(rows)))
@@ -102,11 +89,7 @@ def label_names() -> List[str]:
 
 
 def _section_number(label: Any) -> str:
-    """"Section 302" / "Section 120B" / "Section 294(b)" -> "302" / "120B" / "294".
-
-    Sub-clause suffixes are dropped and letter suffixes kept: the index is keyed
-    on the base section number.
-    """
+    """"Section 302" / "Section 120B" / "Section 294(b)" -> "302" / "120B" / "294"."""
     match = re.search(r"\d+[A-Za-z]{0,2}", str(label))
     return match.group(0).upper() if match else str(label)
 
@@ -114,8 +97,7 @@ def _section_number(label: Any) -> str:
 def decode_labels(
     labels: Sequence[Any], names: Optional[Sequence[str]] = None
 ) -> List[str]:
-    """IL-TUR lsi rows carry ClassLabel ints (35 -> "Section 304"); decode them
-    to deduplicated section numbers. Already-textual labels pass through."""
+    """IL-TUR lsi rows carry ClassLabel ints (35 -> "Section 304"); decode them to deduplicated section numbers."""
     out: List[str] = []
     for label in labels:
         if isinstance(label, int) and not isinstance(label, bool):
@@ -127,17 +109,9 @@ def decode_labels(
 
 
 def iltur_case_to_ground_truth(row: Dict[str, Any], prompt: str) -> GroundTruthEntry:
-    """Build a GroundTruthEntry from an IL-TUR lsi row for Hit Rate@k / MRR scoring.
-
-    reference_answer/expected_acts/relevant_keywords are left empty: IL-TUR's
-    ground truth is a statute-section label set, not a gold prose answer, so
-    only the section-based metrics (Hit Rate@k, MRR) are meaningful here —
-    the LLM-judge metrics degrade gracefully for domain="unknown"-style empty
-    ground truth, same as any other query MetricsEvaluator can't find a
-    reference answer for.
-    """
+    """Build a GroundTruthEntry from an IL-TUR lsi row for Hit Rate@k / MRR scoring."""
     statutes = _statute_section_numbers()
-    # "Section 294" and "Section 294(b)" are separate labels but one section number
+
     sections = list(dict.fromkeys(statutes[i] for i in row["labels"]))
     return GroundTruthEntry(
         query=prompt,

@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""
-Package the trained statute classifier for serving.
-
-Copies the best checkpoint (<corpus>/builds/classifier/<tag>/best.pt) into the repo's
-index area (app/data/faiss_index/statute_classifier/, gitignored like the indices) with
-the per-label decision thresholds fitted on the full IL-TUR dev split, so the chatbot
-never needs the corpus drive.
-
-Usage (from server/):  python -m app.ingest.export_statute_classifier --tag c2
-"""
+"""Package the trained statute classifier for serving."""
 
 from __future__ import annotations
 

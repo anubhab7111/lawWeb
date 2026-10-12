@@ -1,9 +1,4 @@
-"""
-Conversation-thread retention. Chat memory lives in Postgres checkpoints (see
-app.checkpointing); guests and idle sessions would otherwise accumulate forever.
-Authenticated users lose nothing: their transcript is in chat_messages and a
-thread with no checkpoint is re-seeded from it on the next message.
-"""
+"""Conversation-thread retention."""
 
 import logging
 

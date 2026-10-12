@@ -1,18 +1,4 @@
-"""
-citation_verifier.py — post-generation statutory citation check (no LLM).
-
-Extracts every "Section N of the X Act" / "Article N" claim from a generated
-answer and checks it against the indexed statute corpus:
-
-  - verified:    the section exists under the cited act
-  - wrong_act:   the section number exists, but only under a different act
-                 (the classic hallucination: right number, wrong statute)
-  - unverified:  not found in the indexed corpus at all (may be a real
-                 provision of a statute we don't index — flagged, not called
-                 false)
-
-Case names are NOT checked (no case-law corpus yet — Phase 4).
-"""
+"""citation_verifier.py — post-generation statutory citation check (no LLM)."""
 
 from __future__ import annotations
 
@@ -22,8 +8,7 @@ from typing import List, Tuple
 
 from app.tools.legal_query_parser import ACT_HINTS
 
-# "Section 420 of the IPC", "Section 438, CrPC", "Sections 73 and 74 of the
-# Indian Contract Act", "u/s 302 IPC", "Article 21 of the Constitution"
+
 _CITE_RE = re.compile(
     r"(?:\b(?:sections?|secs?\.?)\s+(\d{1,4}[A-Z]{0,2})(?:\(\d+[a-z]?\))?\b"
     r"|\bu/s\s*(\d{1,4}[A-Z]{0,2})\b"
@@ -31,21 +16,21 @@ _CITE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# "Sections 73 and 74", "Articles 14, 19 and 21" — the numbers after the first.
+
 _NUMBER_RE = re.compile(r"\d{1,4}[A-Za-z]{0,2}")
 _CITE_LIST_RE = re.compile(r"(?:\s*(?:,|and|&)\s*\d{1,4}[A-Za-z]{0,2}(?:\(\d+[a-z]?\))?)+")
 
-# Sort longest-first so "code of criminal procedure" beats "crpc" etc.
+
 _ACT_ALIASES = sorted(ACT_HINTS.items(), key=lambda kv: -len(kv[0]))
 
 
 @dataclass
 class CitationCheck:
-    raw: str  # e.g. "Section 420 of the IPC"
+    raw: str
     section: str
-    act_hint: str  # resolved act-name hint ("" if none found nearby)
-    status: str  # verified | not_retrieved | wrong_act | unverified
-    found_in: List[str] = field(default_factory=list)  # acts that DO have it
+    act_hint: str
+    status: str
+    found_in: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -88,8 +73,7 @@ def _is_sentence_end(text: str, i: int) -> bool:
 
 
 def _sentence_bounds(text: str, start: int, end: int) -> Tuple[int, int]:
-    """Bounds of the sentence containing [start, end), so act-hint search
-    doesn't bleed into a neighbouring citation's own act name."""
+    """Bounds of the sentence containing [start, end), so act-hint search doesn't bleed into a neighbouring citation's own act name."""
     left = 0
     for i in range(start - 1, -1, -1):
         if text[i] == "." and _is_sentence_end(text, i):
@@ -104,12 +88,7 @@ def _sentence_bounds(text: str, start: int, end: int) -> Tuple[int, int]:
 
 
 def _act_hint_near(text: str, start: int, end: int, is_article: bool) -> str:
-    """
-    Resolve which act a citation refers to from its own sentence, preferring
-    the alias positioned CLOSEST to the citation (not just longest-alias-
-    wins) — "Section 420 of the IPC. Section 438 of the CrPC..." must not
-    let "CrPC" in the next sentence steal the first citation's act.
-    """
+    """Resolve which act a citation refers to from its own sentence, preferring the alias positioned CLOSEST to the citation (not just longest-alias- wins) — "Section 420 of the IPC."""
     left, right = _sentence_bounds(text, start, end)
     window = text[left:right].lower()
     offset = start - left
@@ -132,13 +111,7 @@ def _act_hint_near(text: str, start: int, end: int, is_article: bool) -> str:
 
 @dataclass
 class CitationOccurrence:
-    """One raw citation mention in the answer, with its resolved act hint.
-
-    Unlike ``VerificationReport.checks`` (deduplicated — one entry per unique
-    provision cited anywhere in the answer), this keeps every mention so
-    callers that need to tie a citation back to the specific sentence it
-    appears in (e.g. claim-level grounding) can do so.
-    """
+    """One raw citation mention in the answer, with its resolved act hint."""
 
     start: int
     end: int
@@ -173,16 +146,7 @@ def iter_citation_occurrences(answer: str) -> List[CitationOccurrence]:
 
 
 def verify_citations(answer: str, rag, retrieved_sections=None) -> VerificationReport:
-    """
-    Check every statutory citation in `answer` against the chunk index of
-    an initialized RAG system (must expose find_section()).
-
-    When ``retrieved_sections`` (a set of normalized section-number strings,
-    e.g. ``{"438", "482", "21"}``) is supplied, a citation that exists in the
-    corpus but was NOT among the sections actually retrieved for this query is
-    flagged ``not_retrieved`` — the model stated it from general knowledge
-    rather than from the grounded context.
-    """
+    """Check every statutory citation in `answer` against the chunk index of an initialized RAG system (must expose find_section())."""
     report = VerificationReport()
     seen: set = set()
 
@@ -200,7 +164,7 @@ def verify_citations(answer: str, rag, retrieved_sections=None) -> VerificationR
             report.checks.append(CitationCheck(occ.raw, occ.section, occ.act_hint, status))
             continue
 
-        # Right number, wrong act?
+
         anywhere = rag.find_section("", occ.section, max_parts=5)
         acts = sorted({c.act_name for c in anywhere})
         status = "wrong_act" if (occ.act_hint and acts) else "unverified"
@@ -212,10 +176,7 @@ def verify_citations(answer: str, rag, retrieved_sections=None) -> VerificationR
 
 
 def verification_footer(report: VerificationReport) -> str:
-    """
-    Human-readable footer appended to answers when any citation could not
-    be confirmed. Silent when everything verified (no noise on good answers).
-    """
+    """Human-readable footer appended to answers when any citation could not be confirmed."""
     problems = report.wrong_act + report.unverified + report.not_retrieved
     if not problems:
         return ""

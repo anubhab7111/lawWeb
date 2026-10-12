@@ -1,31 +1,4 @@
-"""
-Translation service backed by IndicTrans2 (AI4Bharat), served via CTranslate2.
-
-Two distilled checkpoints are loaded lazily and shared process-wide (the same
-singleton-with-lock pattern as the embedding model): ``indic-en`` for
-query→English and ``en-indic`` for answer→user-language. Everything runs on CPU
-by default so the 4GB VRAM stays reserved for Ollama's LLM.
-
-Why CTranslate2 rather than transformers: this environment runs transformers 5.x
-(required by sentence-transformers / BGE-M3 / the reranker), but IndicTrans2's
-HuggingFace ``trust_remote_code`` modeling + tokenizer were written for
-transformers ~4.x and break on 5.x in several places. CTranslate2 runs the model
-with its own inference engine and needs no transformers modeling code at all, so
-it stays compatible without downgrading the rest of the stack. We use the
-non-gated CTranslate2 conversions of Raj Dabre's rotary IndicTrans2 distilled
-200M models (``adalat-ai/ct2-rotary-indictrans2-*``); tokenization is done with
-the bundled SentencePiece models plus ``IndicProcessor`` for normalization,
-language-tagging and script transliteration.
-
-Design guarantees:
-- Legal references are masked (see :mod:`entity_guard`) before translation and
-  restored after, so citations survive verbatim (Requirement 3).
-- ``translate_batch`` is blocking, so it is offloaded to a thread and the public
-  API is async (Requirement 7).
-- Results are cached in a TTLCache keyed on (src, tgt, text) when enabled.
-- Any failure returns the *input text unchanged* and logs — the conversation
-  continues in English rather than breaking (Requirement 9).
-"""
+"""Translation service backed by IndicTrans2 (AI4Bharat), served via CTranslate2."""
 
 from __future__ import annotations
 
@@ -44,21 +17,12 @@ from .lang_map import ENGLISH_TAG
 
 logger = logging.getLogger(__name__)
 
-# Generation cap — legal answers are bounded; keeps CPU latency predictable.
+
 _MAX_NEW_TOKENS = 512
 
 
 def _install_transformers_compat_shim() -> None:
-    """Make ``IndicTransToolkit`` importable under transformers 5.x.
-
-    IndicTransToolkit's package ``__init__`` imports ``PreTrainedTokenizerBase``
-    from ``transformers.tokenization_utils``, but transformers 5.x dropped that
-    re-export (it lives at the top level / in ``tokenization_utils_base`` now).
-    Re-attaching it lets us keep transformers 5.x for the rest of the stack
-    (BGE-M3, reranker, sentence-transformers) instead of pinning an old release.
-    We only use IndicProcessor for text normalization — no transformers modeling
-    code is loaded, since CTranslate2 runs the model.
-    """
+    """Make ``IndicTransToolkit`` importable under transformers 5.x."""
     try:
         import transformers.tokenization_utils as _tu
 
@@ -75,8 +39,7 @@ _MAX_SEGMENT_CHARS = 400
 
 
 def split_for_translation(line: str, limit: int = _MAX_SEGMENT_CHARS) -> list[str]:
-    """Split one line into pieces the translator can take whole, on sentence
-    ends first and on word boundaries for a sentence that is itself too long."""
+    """Split one line into pieces the translator can take whole, on sentence ends first and on word boundaries for a sentence that is itself too long."""
     if len(line) <= limit:
         return [line]
     pieces: list[str] = []
@@ -106,8 +69,7 @@ def _cache_key(text: str, src: str, tgt: str) -> str:
 
 
 class _Direction:
-    """One translation direction: a CTranslate2 translator plus its source/target
-    SentencePiece models."""
+    """One translation direction: a CTranslate2 translator plus its source/target SentencePiece models."""
 
     __slots__ = ("translator", "sp_src", "sp_tgt")
 
@@ -134,13 +96,13 @@ class IndicTrans2Service:
             else None
         )
 
-    # ------------------------------------------------------------------ load
+
     def _resolve_device(self) -> str:
         device = get_settings().translation_device
         if device in ("cuda", "cpu"):
             return device
-        # "auto": only take the GPU when it is comfortably large; on the 4GB
-        # target card the VRAM is worth far more to Ollama, so default to CPU.
+
+
         try:
             import torch
 
@@ -154,12 +116,7 @@ class IndicTrans2Service:
 
     @staticmethod
     def _load_direction(repo: str, device: str) -> "_Direction":
-        """Download a CTranslate2 IndicTrans2 repo and load its translator + spm.
-
-        The repos nest the model one directory deep
-        (``<name>-ct2/ctranslate2_model/{model.bin,config.json,vocab/model.SRC,…}``),
-        so we locate the folder holding ``model.bin`` rather than hardcoding it.
-        """
+        """Download a CTranslate2 IndicTrans2 repo and load its translator + spm."""
         import os
 
         import ctranslate2
@@ -185,12 +142,12 @@ class IndicTrans2Service:
         return _Direction(translator, sp_src, sp_tgt)
 
     def _load_blocking(self) -> None:
-        """Download + load both directions. Runs in an executor thread."""
+        """Download + load both directions."""
         _install_transformers_compat_shim()
 
         try:
             from IndicTransToolkit.processor import IndicProcessor
-        except ImportError:  # older/newer package layout
+        except ImportError:
             from IndicTransToolkit import IndicProcessor  # type: ignore
 
         settings = get_settings()
@@ -226,15 +183,13 @@ class IndicTrans2Service:
                 logger.warning("IndicTrans2 unavailable (%s); staying English-only", exc)
             return self._loaded
 
-    # ------------------------------------------------------------- translate
+
     def _translate_blocking(self, text: str, src_tag: str, tgt_tag: str) -> str:
         assert self._processor is not None
         direction = self._indic_en if tgt_tag == ENGLISH_TAG else self._en_indic
         assert direction is not None
 
-        # The model handles a bounded sequence, so translate line by line (and
-        # sentence by sentence inside long lines) in one batch; blank lines and
-        # markdown line structure are kept as-is.
+
         lines = text.split("\n")
         segments: list[tuple[int, str]] = []
         for i, line in enumerate(lines):
@@ -250,11 +205,7 @@ class IndicTrans2Service:
             masked_parts.append(masked)
             mappings.append(mapping)
 
-        # IndicProcessor normalizes and prepends the two flores language tags:
-        # "<src_tag> <tgt_tag> <normalized text>". CTranslate2 expects a list of
-        # subword tokens, and the tags are atomic vocabulary entries (not part of
-        # the SentencePiece model), so keep them intact and SPM-encode only the
-        # sentence body.
+
         preprocessed = self._processor.preprocess_batch(
             masked_parts, src_lang=src_tag, tgt_lang=tgt_tag
         )
@@ -280,11 +231,7 @@ class IndicTrans2Service:
         )
 
     async def translate(self, text: str, src_tag: str, tgt_tag: str) -> str:
-        """Translate ``text`` from ``src_tag`` to ``tgt_tag`` (IndicTrans2 tags).
-
-        Returns the input unchanged on any failure (never raises). No-op when
-        source and target tags are identical.
-        """
+        """Translate ``text`` from ``src_tag`` to ``tgt_tag`` (IndicTrans2 tags)."""
         if not text or not text.strip() or src_tag == tgt_tag:
             return text
 
@@ -315,8 +262,7 @@ _service: Optional[IndicTrans2Service] = None
 
 
 def get_translation_service() -> IndicTrans2Service:
-    """Return the process-wide translation service (constructed on first use;
-    models still load lazily inside it)."""
+    """Return the process-wide translation service (constructed on first use; models still load lazily inside it)."""
     global _service
     if _service is None:
         _service = IndicTrans2Service()

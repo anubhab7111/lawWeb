@@ -1,28 +1,4 @@
-"""
-Statutory Requirements Validator (Layer 2)
-Pure rule-based engine — NO LLM dependency.
-
-For each document type, validates against:
-- Mandatory elements required by Indian statutes
-- Standard drafting practices recognized by courts
-- State-specific requirements (stamp duty, registration, etc.)
-
-Sources of authority:
-- Indian Registration Act, 1908
-- Indian Stamp Act, 1899 (+ State Stamp Acts)
-- Transfer of Property Act, 1882
-- Indian Contract Act, 1872
-- Code of Civil Procedure, 1908 (CPC)
-- Code of Criminal Procedure, 1973 (CrPC) / BNSS 2023
-- Indian Penal Code, 1860 (IPC) / BNS 2023
-- Indian Evidence Act, 1872 / BSA 2023
-- Power of Attorney Act, 1882
-- Indian Partnership Act, 1932
-- Indian Succession Act, 1925
-- Negotiable Instruments Act, 1881
-- Rent Control Acts (State-specific)
-- Notaries Act, 1952
-"""
+"""Statutory Requirements Validator (Layer 2) Pure rule-based engine — NO LLM dependency."""
 
 import re
 from typing import Dict, Any, List, Optional
@@ -36,7 +12,7 @@ class ChecklistItem:
     element: str
     description: str
     statute_reference: str
-    severity: str  # "mandatory" | "recommended" | "best_practice"
+    severity: str
     present: bool = False
     details: str = ""
 
@@ -53,7 +29,7 @@ class StatutoryValidationResult:
     present_elements: List[Dict[str, Any]] = field(default_factory=list)
     non_compliance: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    compliance_score: Optional[float] = None  # None: no checklist for this type
+    compliance_score: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -73,10 +49,6 @@ def format_score(score: Optional[float]) -> str:
     """Compliance score for display; None means no checklist exists for the type."""
     return "not assessed" if score is None else f"{score:.0%}"
 
-
-# ============================================================================
-# Statutory Checklists per Document Type
-# ============================================================================
 
 AFFIDAVIT_CHECKLIST: List[Dict[str, Any]] = [
     {
@@ -1070,9 +1042,6 @@ CHARGESHEET_CHECKLIST: List[Dict[str, Any]] = [
     },
 ]
 
-# ============================================================================
-# Checklist Registry
-# ============================================================================
 
 CHECKLIST_REGISTRY: Dict[str, List[Dict[str, Any]]] = {
     "Affidavit": AFFIDAVIT_CHECKLIST,
@@ -1092,12 +1061,7 @@ CHECKLIST_REGISTRY: Dict[str, List[Dict[str, Any]]] = {
 
 
 class StatutoryValidator:
-    """
-    Rule-based statutory requirements validator (Layer 2).
-
-    NO LLM dependency. Pure pattern matching against statutory checklists.
-    LLMs reason — rules verify.
-    """
+    """Rule-based statutory requirements validator (Layer 2)."""
 
     def __init__(self):
         self.checklists = CHECKLIST_REGISTRY
@@ -1105,16 +1069,7 @@ class StatutoryValidator:
     def validate(
         self, document_text: str, document_type: str
     ) -> StatutoryValidationResult:
-        """
-        Validate a document against its statutory checklist.
-
-        Args:
-            document_text: Full text of the document
-            document_type: Classified document type from Layer 1
-
-        Returns:
-            StatutoryValidationResult with detailed compliance analysis
-        """
+        """Validate a document against its statutory checklist."""
         checklist = self.checklists.get(document_type)
         if not checklist:
             return StatutoryValidationResult(
@@ -1145,7 +1100,7 @@ class StatutoryValidator:
             severity = item["severity"]
             patterns = item["patterns"]
 
-            # Check if any pattern matches
+
             found = False
             matched_patterns = []
 
@@ -1174,7 +1129,7 @@ class StatutoryValidator:
                 elif severity == "recommended":
                     non_compliance.append(entry)
 
-        # Additional non-compliance checks
+
         additional_nc = self._check_additional_compliance(document_type, text)
         non_compliance.extend(additional_nc)
 
@@ -1182,7 +1137,7 @@ class StatutoryValidator:
         passed = len(present_elements)
         failed = total_checks - passed
 
-        # Compliance score: mandatory items weighted heavily
+
         if mandatory_total > 0:
             compliance_score = mandatory_passed / mandatory_total
         else:
@@ -1207,7 +1162,7 @@ class StatutoryValidator:
         issues = []
 
         if document_type == "Affidavit":
-            # Check if affidavit uses first person consistently
+
             if not re.search(
                 r"\bi\b.*\b(?:state|affirm|declare|depose)\b", text, re.IGNORECASE
             ):
@@ -1221,7 +1176,7 @@ class StatutoryValidator:
                 )
 
         elif document_type == "Sale Deed":
-            # Check if consideration amount is in words AND figures
+
             has_amount_figures = bool(re.search(r"(?:rs\.?|₹|inr)\s*[\d,]+", text))
             has_amount_words = bool(
                 re.search(
@@ -1241,7 +1196,7 @@ class StatutoryValidator:
                 )
 
         elif document_type == "Rent Agreement":
-            # Check for rent escalation clause
+
             if not re.search(
                 r"(?:escalation|increment|increase|hike|revision)\s*(?:of\s*)?(?:rent|rental)",
                 text,
@@ -1256,7 +1211,7 @@ class StatutoryValidator:
                 )
 
         elif document_type == "Power of Attorney":
-            # Check for duration/validity period
+
             if not re.search(
                 r"(?:valid(?:ity)?|duration|effective|in\s*force)\s*(?:for|till|until|period|from)",
                 text,
@@ -1273,7 +1228,6 @@ class StatutoryValidator:
         return issues
 
 
-# Singleton
 _validator: Optional[StatutoryValidator] = None
 
 

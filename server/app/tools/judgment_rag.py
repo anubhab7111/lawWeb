@@ -1,15 +1,4 @@
-"""
-judgment_rag.py — retrieval over chunked Supreme Court judgments.
-
-Dense (FAISS, fp16 scalar-quantised inner product) and lexical (SQLite FTS5 BM25)
-retrieval over judgment passages, fused with RRF. Passages carry the case name,
-citation and the statute sections they cite, so results can be quoted with a
-citation and boosted toward specific provisions ("passages that discuss IPC 302").
-
-Stored under app/data/faiss_index/judgments/ — vectors, chunk text and metadata are
-all inside the repo tree, so serving never touches the corpus drive. Loaded lazily
-and memory-mapped.
-"""
+"""judgment_rag.py — retrieval over chunked Supreme Court judgments."""
 
 from __future__ import annotations
 
@@ -92,7 +81,7 @@ def insert_chunks(
 class JudgmentIndex:
     def __init__(self, index_dir: Path = INDEX_DIR, nprobe: int = 64):
         self.dir = index_dir
-        self.nprobe = nprobe  # IVF lists probed per query: recall vs speed
+        self.nprobe = nprobe
         self._index: Any = None
         self._db: Optional[sqlite3.Connection] = None
         self.meta: Dict = {}
@@ -116,12 +105,12 @@ class JudgmentIndex:
             )
         try:
             self._index = faiss.read_index(str(self.dir / INDEX_FILE), faiss.IO_FLAG_MMAP)
-        except RuntimeError:  # index types without mmap support load into RAM
+        except RuntimeError:
             self._index = faiss.read_index(str(self.dir / INDEX_FILE))
         try:
             faiss.extract_index_ivf(self._index).nprobe = self.nprobe
         except RuntimeError:
-            pass  # flat index: exhaustive search, no nprobe
+            pass
         self._db = sqlite3.connect(f"file:{self.dir / DB_FILE}?mode=ro", uri=True, check_same_thread=False)
 
     def _fetch(self, rows: Sequence[int]) -> Dict[int, JudgmentPassage]:
@@ -162,13 +151,7 @@ class JudgmentIndex:
         normalize: bool = True,
         exclude_docs: Optional[set] = None,
     ) -> Dict[str, float]:
-        """IPC sections voted by the judgments whose passages best match the query.
-
-        Like the precedent index: each query window's nearest passages vote once
-        per judgment (best passage), weighted by similarity**power, for every IPC
-        section the judgment cites. `normalize` divides by sqrt(#sections cited)
-        so sprawling judgments don't outvote focused ones.
-        """
+        """IPC sections voted by the judgments whose passages best match the query."""
         assert self._db is not None or self.available
         per_window = self.dense(query_vecs, k)
         rows = sorted({row for hits in per_window for row, _ in hits})
@@ -242,8 +225,7 @@ class JudgmentIndex:
         boost_sections: Sequence[str] = (),
         pool: int = 40,
     ) -> List[JudgmentPassage]:
-        """Hybrid retrieval: dense + lexical fused by RRF; passages citing one of
-        boost_sections (e.g. "IPC:302") get an extra rank-fusion vote."""
+        """Hybrid retrieval: dense + lexical fused by RRF; passages citing one of boost_sections (e.g."""
         scores: Dict[int, float] = defaultdict(float)
         sources: Dict[int, set] = defaultdict(set)
         for hits in self.dense(query_vecs, pool):

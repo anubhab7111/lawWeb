@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-rebuild_rag_indices.py — CLI tool to force-rebuild FAISS indexes for specific domains.
-Usage:
-    python rebuild_rag_indices.py --all
-    python rebuild_rag_indices.py --domain constitutional
-    python rebuild_rag_indices.py --domain criminal
-"""
+"""rebuild_rag_indices.py — CLI tool to force-rebuild FAISS indexes for specific domains."""
 
 import asyncio
 import argparse
@@ -36,38 +30,35 @@ async def rebuild_domain(domain: str):
 
     print(f"\n[Rebuild] Processing domain: {domain}...")
 
-    # 1. Get the system
+
     system = DOMAINS[domain]()
 
-    # Sources may sit on a removable drive: refuse before deleting the old
-    # index, or an unmounted drive would leave no index at all.
+
     source_dir = getattr(system, "_bare_acts_dir", None) or case_law_dir()
     if not Path(source_dir).is_dir():
         print(f"  Error: source directory {source_dir} not found (drive mounted?). Aborting.")
         return
 
-    # 2. Identify the FAISS directory
+
     faiss_dir = _SERVER_DIR / "app" / "data" / "faiss_index" / domain
 
-    # 3. Delete existing index if it exists
+
     if faiss_dir.exists():
         print(f"  Removing existing index at {faiss_dir}...")
         shutil.rmtree(faiss_dir)
 
-    # 4. Force rebuild with a throwaway embedding model on CUDA. This bypasses
-    # the query-time shared singleton, whose auto policy may use CPU to reserve
-    # VRAM for Ollama.
+
     print(f"  Building new index from PDFs...")
     success = await system.build_offline(device=REBUILD_DEVICE)
 
     if success:
-        # Bare-act systems hold `_chunks`; the case-law system holds `_cases`.
+
         indexed = getattr(system, "_chunks", None)
         if indexed is None:
             indexed = getattr(system, "_cases", None) or {}
         print(f"  Successfully rebuilt '{domain}' index with {len(indexed)} item(s).")
 
-        # Diagnostic: per-domain chunk counts in the unified index
+
         if domain == "unified":
             counts = {}
             for c in system._chunks.values():
@@ -77,11 +68,7 @@ async def rebuild_domain(domain: str):
     else:
         print(f"  Failed to rebuild '{domain}' index.")
 
-    # Each domain's embedding model stays resident in GPU/CPU memory for the
-    # life of this process (systems are cached singletons), and the FAISS
-    # vector_store also holds its own reference to the embeddings object —
-    # both must be dropped (and garbage-collected) before the CUDA cache
-    # actually frees up, or the next domain has no headroom.
+
     system.embeddings = None
     system.vector_store = None
     try:

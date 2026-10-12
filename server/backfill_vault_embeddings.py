@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""
-backfill_vault_embeddings.py — re-embed Legal Document Vault chunks.
-
-Vault chunk vectors live in vault_document_embeddings and are produced by the
-shared embedding model. After switching that model (e.g. to BGE-M3) the stored
-vectors are incompatible with new query vectors, so every indexed document must
-be re-embedded from its already-extracted text (no re-download / re-OCR).
-
-Usage:
-    python backfill_vault_embeddings.py          # docs with no embeddings yet
-    python backfill_vault_embeddings.py --all    # re-embed EVERY indexed doc
-"""
+"""backfill_vault_embeddings.py — re-embed Legal Document Vault chunks."""
 
 import argparse
 import asyncio
@@ -44,10 +33,7 @@ async def main() -> None:
             select(VaultDocument).where(VaultDocument.extracted_text.is_not(None))
         ).all()
 
-        # Capture id + text as plain values now, while the session is live:
-        # index_vault_document runs after this block closes, and session.commit()
-        # below expires ORM attributes, so reading doc.* later would raise
-        # DetachedInstanceError.
+
         targets: list[tuple[str, str]] = []
         for doc in docs:
             has_vectors = session.exec(
@@ -63,8 +49,8 @@ async def main() -> None:
             return
 
         print(f"Re-embedding {len(targets)} vault document(s)...")
-        # Clear stale vectors first — index_vault_document appends, so without
-        # this a --all run would duplicate chunks.
+
+
         for doc_id, _text in targets:
             session.exec(
                 delete(VaultDocumentEmbedding).where(
@@ -73,7 +59,7 @@ async def main() -> None:
             )
         session.commit()
 
-    # index_vault_document opens its own session per document.
+
     for doc_id, text in targets:
         await index_vault_document(doc_id, text)
 

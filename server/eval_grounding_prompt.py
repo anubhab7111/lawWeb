@@ -1,9 +1,4 @@
-"""A/B the grounding-correction prompt on the real LLM verify batches recorded by
-`eval_grounding.py collect`: seconds per call, and each prompt's verdicts scored against
-the labelled claims in tests/gold/grounding.jsonl.
-
-    python eval_grounding_prompt.py
-"""
+"""A/B the grounding-correction prompt on the real LLM verify batches recorded by `eval_grounding.py collect`: seconds per call, and each prompt's verdicts scored against the..."""
 
 import asyncio
 import json

@@ -1,16 +1,4 @@
-"""
-Evaluate the legal chatbot.
-
-Default mode draws a fresh random sample of real case-fact patterns from
-IL-TUR (Indian Legal Text Understanding & Reasoning, `lsi` subtask) every
-run — use --seed for a reproducible sample. IL-TUR is gated on HuggingFace:
-accept the license at https://huggingface.co/datasets/Exploration-Lab/IL-TUR
-and set HUGGINGFACE_TOKEN in server/.env before running with no arguments.
-
-Pass --dataset builtin to instead use the original hand-curated prompt
-lists (TEST_PROMPTS / EXTENDED_PROMPTS), which require no network access
-or HF token.
-"""
+"""Evaluate the legal chatbot."""
 
 import argparse
 import asyncio
@@ -49,9 +37,6 @@ class _Tee:
         self._fh.flush()
 
 
-# ============================================================================
-# Test prompts — covering the domains that previously had accuracy issues
-# ============================================================================
 TEST_PROMPTS = [
     "Can Parliament pass a law restricting social media speech citing \u201cpublic order\u201d? How would courts test its constitutionality under Article 19?",
     "Is the Right to Privacy absolute in India? Under what circumstances can the State legally conduct surveillance?",
@@ -73,9 +58,7 @@ TEST_PROMPTS = [
     "What legal rights does a live-in partner have over shared property?",
 ]
 
-# Extended prompts covering the domains added by the unified all-domain RAG
-# index. Queries match app/metrics/ground_truth_extended.py exactly.
-# Enabled with --extended.
+
 EXTENDED_PROMPTS = [
     "What are the grounds for divorce under the Hindu Marriage Act?",
     "Can elderly parents claim maintenance from their children in India?",
@@ -113,16 +96,11 @@ def prepare_iltur_prompts(sample_size: int, seed: "int | None"):
     for row in rows:
         prompt = iltur_case_to_prompt(row)
         gt_entry = iltur_case_to_ground_truth(row, prompt)
-        GROUND_TRUTH.append(gt_entry)  # mutate in place — evaluator holds this same list object
+        GROUND_TRUTH.append(gt_entry)
         prompts.append(prompt)
         print(f"  id={row.get('id')} sections={gt_entry.get('relevant_sections')}")
 
     return prompts
-
-
-# ============================================================================
-# Pass 1 — run the chatbot and collect raw answers
-# ============================================================================
 
 
 async def run_evaluation(prompts=None):
@@ -141,7 +119,7 @@ async def run_evaluation(prompts=None):
         start = time.time()
 
         try:
-            # Use a fresh session per prompt to avoid context leakage
+
             session_id = f"eval_{i}"
             result = await chatbot.chat(message=prompt, session_id=session_id)
             answer = result.get("response", "ERROR: No response")
@@ -168,11 +146,6 @@ async def run_evaluation(prompts=None):
     return results
 
 
-# ============================================================================
-# Basic CSV save (Pass 1 only)
-# ============================================================================
-
-
 def save_csv(results: list, path: "str | Path"):
     """Save raw chatbot results to a CSV file."""
     fieldnames = ["query", "intent", "answer", "response_time_s"]
@@ -181,11 +154,6 @@ def save_csv(results: list, path: "str | Path"):
         writer.writeheader()
         writer.writerows(results)
     print(f"Results saved to {path}")
-
-
-# ============================================================================
-# Basic summary (Pass 1 only)
-# ============================================================================
 
 
 def print_summary(results: list):
@@ -207,33 +175,13 @@ def print_summary(results: list):
     print(f"{'=' * 60}\n")
 
 
-# ============================================================================
-# Pass 2 — full 9-metric evaluation
-# ============================================================================
-
-
 async def run_metrics_evaluation(
     chatbot_results: list,
     timestamp: str,
     use_llm_judge: bool = True,
     prefix: str = "",
 ) -> None:
-    """
-    Run the MetricsEvaluator over the chatbot results and save both
-    a metrics CSV and a full JSON report.
-
-    Parameters
-    ----------
-    chatbot_results : list[dict]
-        Output of run_evaluation().
-    timestamp : str
-        Timestamp string used for output filenames.
-    use_llm_judge : bool
-        True  -> uses the OpenRouter LLM-as-judge (slower, higher quality).
-        False -> uses keyword heuristics only     (fast,  offline mode).
-    prefix : str
-        Prepended to output filenames (e.g. "iltur_" for IL-TUR-sourced runs).
-    """
+    """Run the MetricsEvaluator over the chatbot results and save both a metrics CSV and a full JSON report."""
     try:
         from app.metrics.evaluator import MetricsEvaluator
     except ImportError as e:
@@ -251,28 +199,23 @@ async def run_metrics_evaluation(
         max_concurrent_judge_calls=3,
     )
 
-    # Run all metrics
+
     eval_results = await evaluator.run(chatbot_results)
 
-    # Print the rich report to stdout
+
     evaluator.print_report(eval_results)
 
-    # Save detailed CSV (one row per query, all 9 metrics as columns)
+
     metrics_csv_path = RESULTS_DIR / f"{prefix}metrics_{timestamp}.csv"
     evaluator.save_csv(eval_results, metrics_csv_path)
 
-    # Save full JSON (includes per-query reasoning strings + aggregate)
+
     metrics_json_path = RESULTS_DIR / f"{prefix}metrics_{timestamp}.json"
     evaluator.save_json(eval_results, metrics_json_path)
 
     print(f"\n[Metrics] Reports written:")
     print(f"  CSV  -> {metrics_csv_path}")
     print(f"  JSON -> {metrics_json_path}\n")
-
-
-# ============================================================================
-# Entry point
-# ============================================================================
 
 
 def parse_args() -> argparse.Namespace:
@@ -375,7 +318,7 @@ async def main() -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     prefix = "iltur_" if args.dataset == "iltur" else ""
 
-    # Save the complete console output of this run to its own log file.
+
     run_log_path = RESULTS_DIR / f"{prefix}run_{timestamp}.log"
     log_fh = open(run_log_path, "w", encoding="utf-8")
     sys.stdout = _Tee(sys.__stdout__, log_fh)
@@ -392,9 +335,8 @@ async def main() -> None:
 
 
 async def _run(args: argparse.Namespace, timestamp: str, prefix: str) -> None:
-    # ------------------------------------------------------------------
-    # Pass 1: assemble prompts from the selected dataset
-    # ------------------------------------------------------------------
+
+
     if (args.extended or args.extended_only) and args.dataset != "builtin":
         print("[Dataset] --extended/--extended-only implies --dataset builtin.\n")
         args.dataset = "builtin"
@@ -408,7 +350,7 @@ async def _run(args: argparse.Namespace, timestamp: str, prefix: str) -> None:
             prompts = TEST_PROMPTS
         if args.sample is not None:
             prompts = prompts[: max(0, args.sample)]
-    else:  # args.dataset == "iltur"
+    else:
         sample_size = args.sample if args.sample is not None else 20
         try:
             prompts = prepare_iltur_prompts(sample_size, args.seed)
@@ -427,7 +369,7 @@ async def _run(args: argparse.Namespace, timestamp: str, prefix: str) -> None:
 
         settings = get_settings()
         daily_limit = getattr(settings, "openrouter_daily_limit", 50)
-        estimated_calls = len(prompts)  # one batched judge call per query
+        estimated_calls = len(prompts)
         print(
             f"[Budget] This run may make up to {estimated_calls} OpenRouter judge "
             f"calls against a daily budget of {daily_limit} "
@@ -438,14 +380,12 @@ async def _run(args: argparse.Namespace, timestamp: str, prefix: str) -> None:
 
     chatbot_results = await run_evaluation(prompts)
 
-    # Save the basic CSV (same format as before, always written)
+
     basic_csv_path = RESULTS_DIR / f"{prefix}eval_results_{timestamp}.csv"
     save_csv(chatbot_results, basic_csv_path)
     print_summary(chatbot_results)
 
-    # ------------------------------------------------------------------
-    # Pass 2 (optional): full metrics evaluation
-    # ------------------------------------------------------------------
+
     if run_metrics:
         await run_metrics_evaluation(
             chatbot_results=chatbot_results,

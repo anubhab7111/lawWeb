@@ -1,36 +1,4 @@
-"""
-criminal_rag.py — Criminal Law Domain RAG System
-
-Handles: IPC 1860, BNS 2023, CrPC 1973, BNSS 2023, Indian Evidence Act, BSA 2023
-Source PDFs: app/data/bare_acts/criminal/
-
-Key design decisions
---------------------
-* Punishment-clause filter is applied PER-ACT, not uniformly. Substantive penal
-  statutes (IPC, BNS, NDPS, POCSO, SC/ST Atrocities Act, PMLA) only index
-  chargeable sections (those with an explicit "shall be punished"/"punishable"
-  clause) — this prevents the LLM from citing procedural definitions as
-  offences. Procedural/evidentiary codes (CrPC, BNSS, Indian Evidence Act, BSA)
-  have no offence-creating clauses by nature — applying the same filter to them
-  would index almost nothing (e.g. CrPC §482 quashing-FIR power, §438
-  anticipatory bail — routinely cited sections — have no punishment clause and
-  would be silently dropped). For those Acts, all parsed sections are indexed.
-
-* _preprocess_query() is SAFE: it maps genuine criminal vocabulary only.
-  REMOVED dangerous mappings:
-    - AI / algorithm / financial-loss  →  causing death by negligence  ❌
-    - cryptocurrency / blockchain      →  criminal breach of trust      ❌
-    - "fraud/scam/financial" (generic) →  cheating                     ❌
-  KEPT safe mappings:
-    - stabbed / slash                  →  grievous hurt / hurt          ✅
-    - killed / dead                    →  culpable homicide / murder    ✅
-    - kidnap / abduct                  →  kidnapping / abduction        ✅
-    - sexual assault / rape            →  rape / sexual intent          ✅
-
-* retrieve_sections() retains the same signature as the old CrimeRAGSystem
-  so the chatbot.py handle_crime_report node works with zero changes (aside
-  from swapping the import).
-"""
+"""criminal_rag.py — Criminal Law Domain RAG System Handles: IPC 1860, BNS 2023, CrPC 1973, BNSS 2023, Indian Evidence Act, BSA 2023 Source PDFs: app/data/bare_acts/criminal/ Key..."""
 
 from __future__ import annotations
 
@@ -51,10 +19,6 @@ from app.tools.base_legal_rag import (
     _extract_punishment,
 )
 
-# ─────────────────────────────────────────────────────────────
-# Data models (kept for backward compatibility with chatbot.py)
-# ─────────────────────────────────────────────────────────────
-
 
 @dataclass
 class CrimeFeatures:
@@ -63,7 +27,7 @@ class CrimeFeatures:
     violence: bool = False
     death: bool = False
     weapon: str = ""
-    intent: str = "unknown"  # intentional | reckless | negligent | unknown
+    intent: str = "unknown"
     property_loss: bool = False
     sexual: bool = False
     fraud: bool = False
@@ -106,11 +70,6 @@ class CrimeContext:
     relevant_passages: List[str]
     sources: List[str]
     confidence: float
-
-
-# ─────────────────────────────────────────────────────────────
-# Crime Feature Extraction  (same logic as the old crime_rag.py)
-# ─────────────────────────────────────────────────────────────
 
 
 def extract_crime_features(text: str) -> CrimeFeatures:
@@ -299,24 +258,12 @@ def extract_crime_features(text: str) -> CrimeFeatures:
     return f
 
 
-# ─────────────────────────────────────────────────────────────
-# Criminal RAG System
-# ─────────────────────────────────────────────────────────────
-
-
-# Chargeable offences often name their penalty without the "shall be punished
-# with" wording _extract_punishment matches ("shall, if the act abetted is
-# committed, be punished with…", "shall be punished in the same manner as…").
-# Only the "be punished <with|in the same manner|as|under>" forms are taken as
-# chargeable: a bare "punishable" also appears in definitions and sentencing
-# rules and would pull those in.
 _CHARGEABLE_PUNISHMENT_RE = re.compile(
     r"\b(?:be|shall be)\s+punished\s+(?:with|in the same manner|as|under)\b",
     re.IGNORECASE,
 )
 
-# Doctrine families matched by embedding similarity to the query. Each entry is
-# (plain-language description, expansion terms appended to the search query).
+
 _DOCTRINE_DESCRIPTIONS = {
     "forgery": (
         "Forgery (IPC 463, 468, 471): making a false document or part of a document with intent "
@@ -383,8 +330,7 @@ _DOCTRINE_DESCRIPTIONS = {
 }
 DOCTRINE_MATCH_MIN_SCORE = 0.50
 
-# Crime reports need the section that defines the offence: procedure/evidence codes are
-# excluded, and offence-creating Acts indexed outside the criminal domain are included.
+
 OFFENCE_DOMAINS = ["criminal", "consumer_cyber_ip", "family", "civil"]
 NON_OFFENCE_ACTS = ("Code of Criminal Procedure", "Bharatiya Nagarik Suraksha Sanhita", "Indian Evidence Act",
                     "Bharatiya Sakshya Adhiniyam")
@@ -399,7 +345,6 @@ def _is_offence_act(act_name: str) -> bool:
     return act_name.startswith(EXTRA_OFFENCE_ACTS) or act_name in _CRIMINAL_ACT_NAMES
 
 
-# Adultery: struck down in Joseph Shine v. Union of India (2018).
 STRUCK_DOWN_IPC = {"497"}
 _IPC_CRIME_TYPES: Optional[dict] = None
 
@@ -412,8 +357,6 @@ def _ipc_crime_type(section: str) -> Optional[str]:
     return _IPC_CRIME_TYPES.get(str(section))
 
 
-# Crime types whose sections are routinely charged together (406/420 with IT Act 66D,
-# 323 with 506, 498A with 304B); a section fits a report whose type shares a family.
 RELATED_CRIME_TYPES = [
     {"theft", "robbery"},
     {"fraud", "cybercrime"},
@@ -424,9 +367,6 @@ RELATED_CRIME_TYPES = [
 ]
 
 
-# The penal section for each crime_reporter type (mapped to BNS by _prefer_bns). Threat pins
-# 503, not 506: the comparative table maps only 503/507 to BNS 351. No murder pin: a threat
-# misread as murder would cite § 302, which is worse than letting retrieval decide.
 CRIME_TYPE_SECTIONS = {
     "theft": "379", "robbery": "392", "assault": "323", "threat": "503", "fraud": "420",
     "harassment": "354", "kidnapping": "363", "rape": "376",
@@ -440,8 +380,7 @@ def _fits_crime_type_pair(section_type: str, crime_type: str) -> bool:
 
 
 def _fits_crime_type(section: str, crime_type: Optional[str]) -> bool:
-    """A classifier-suggested IPC section from an unrelated crime family (cheating on a
-    rape report) is noise; unknown or "general" on either side always fits."""
+    """A classifier-suggested IPC section from an unrelated crime family (cheating on a rape report) is noise; unknown or "general" on either side always fits."""
     section_type = _ipc_crime_type(section)
     if not section_type or not crime_type or crime_type == "general":
         return True
@@ -462,8 +401,7 @@ def _section_crime_types(act_name: str, section: str) -> set:
 
 
 def _fits_report_lead(section: str, prob: float, crime_type: Optional[str]) -> bool:
-    """A classifier lead on a short report from a merely related crime (a threat section
-    on a rape report) needs a confident classifier."""
+    """A classifier lead on a short report from a merely related crime (a threat section on a rape report) needs a confident classifier."""
     if not _fits_crime_type(section, crime_type):
         return False
     return _ipc_crime_type(section) in (None, crime_type) or crime_type in (None, "", "general") \
@@ -476,8 +414,8 @@ def _is_offence_section(act_name: str, section: str) -> bool:
 
 _SUBSECTION_RE = re.compile(r"\((\d{1,2})\)\s*(?=[A-Z])")
 _GAZETTE_HEADER_RE = re.compile(r"Sec\. \d+\] THE GAZETTE OF INDIA EXTRAORDINARY \d*_*")
-# The PDF extracts each page's margin notes ("Rape. Punishment for rape.") just before
-# the next page header, often mid-clause.
+
+
 _MARGIN_NOTE_RE = re.compile(r"(?:^|(?<=\s))[A-Z][^.;:()]{0,80}\.\s*$")
 _STATUTE_WORDS_RE = re.compile(r"\b(shall|[Ww]hoever|punished)\b")
 
@@ -493,9 +431,7 @@ def _strip_page_breaks(text: str) -> str:
 
 
 def _section_punishment(text: str) -> str:
-    """Every subsection's punishment with its condition. BNS folds several IPC sections
-    into one (351(2) intimidation: 2 years; 351(3) threat to kill: 7 years), and the first
-    clause alone understates the graver cases."""
+    """Every subsection's punishment with its condition."""
     parts = _SUBSECTION_RE.split(_strip_page_breaks(text))
     clauses = []
     for num, body in zip(parts[1::2], parts[2::2]):
@@ -505,7 +441,7 @@ def _section_punishment(text: str) -> str:
             if len(condition) > 160:
                 condition = condition[:160].rsplit(" ", 1)[0] + "..."
             clause = f"({num}) {condition}: {punishment}"
-            if clause not in clauses:  # consecutive index parts overlap
+            if clause not in clauses:
                 clauses.append(clause)
     return "; ".join(clauses) if len(clauses) > 1 else _extract_punishment(text)
 
@@ -517,9 +453,7 @@ _CRIMINAL_ACT_NAMES = {
     "Prevention of Corruption Act",
 }
 
-# Query -> IPC section classifier trained on ILSIC lay questions (see the README in
-# its directory). Its top sections, with their BNS equivalents, join the rerank
-# candidate pool, and its best IPC sections lead the results (gated for short questions).
+
 CLASSIFIER_DIR = Path(__file__).resolve().parent.parent / "data" / "criminal_section_classifier"
 CLASSIFIER_TOP_N = 10
 CLASSIFIER_FIRST = 5
@@ -530,22 +464,9 @@ REPORT_NOISE_MIN_SCORE = 0.4
 
 
 class CriminalRAGSystem(BaseLegalRAGSystem):
-    """
-    Criminal law RAG: indexes IPC, BNS, CrPC, BNSS, Evidence Act, BSA, NDPS,
-    POCSO, SC/ST Atrocities Act, PMLA.
+    """Criminal law RAG: indexes IPC, BNS, CrPC, BNSS, Evidence Act, BSA, NDPS, POCSO, SC/ST Atrocities Act, PMLA."""
 
-    Filtering policy:
-      - Substantive penal statutes: only sections with an explicit punishment
-        clause are indexed (see PUNISHMENT_FILTERED_ACTS below).
-      - Procedural/evidentiary codes: no offence-creating clauses exist by
-        design, so all parsed sections are indexed unfiltered.
-      - Query preprocessing maps genuine criminal vocabulary only —
-        civil/tech/AI queries are NOT touched.
-    """
 
-    # Substantive penal statutes — apply the punishment-clause filter.
-    # Everything else parsed from bare_acts/criminal/ (procedural/evidentiary
-    # codes: CrPC, BNSS, Indian Evidence Act, BSA) is indexed unfiltered.
     PUNISHMENT_FILTERED_ACTS = {
         "indian_penal_code_1860",
         "bharatiya_nyaya_sanhita_bns_2023",
@@ -555,11 +476,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         "prevention_of_money_laundering_act_pmla_2002",
     }
 
-    # The penal codes are still filtered at answer time (retrieve_sections), but
-    # their non-chargeable sections must be *indexed*: general provisions and
-    # definitions (IPC 34 common intention, 149, 107/109 abetment, 299/300,
-    # 375) are what case-fact statute identification cites most, and are
-    # otherwise unretrievable. has_punishment stays on each chunk.
+
     INDEX_ALL_SECTIONS = {
         "indian_penal_code_1860",
         "bharatiya_nyaya_sanhita_bns_2023",
@@ -584,8 +501,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         return q
 
     def _classified_sections(self, query: str) -> List[tuple]:
-        """(act, section, probability) for the classifier's top IPC sections, each followed
-        by its BNS equivalent when one is mapped; empty if the classifier is not installed."""
+        """(act, section, probability) for the classifier's top IPC sections, each followed by its BNS equivalent when one is mapped; empty if the classifier is not installed."""
         if self._classifier is None:
             weights = CLASSIFIER_DIR / "weights.npz"
             if not weights.exists():
@@ -600,8 +516,8 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         q = self._query_vector(query)
         if q is None:
             return []
-        # No abstaining on NONE: queries reach this path already routed as criminal, and
-        # on ILSIC dev abstaining dropped hit@5 from 0.82 to 0.65.
+
+
         logits = W @ q + b
         probs = np.exp(logits - logits.max())
         probs /= probs.sum()
@@ -617,9 +533,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         return triples
 
     def _prefer_bns(self, matches: List[SectionMatch]) -> List[SectionMatch]:
-        """Replace each IPC match by its BNS equivalent (official comparative table): the
-        indexed BNS text when there is one, else the IPC text labelled with the BNS number.
-        Duplicates (both codes retrieved for the same offence) collapse to one entry."""
+        """Replace each IPC match by its BNS equivalent (official comparative table): the indexed BNS text when there is one, else the IPC text labelled with the BNS number."""
         from app.tools.fact_statutes import _translation
         from app.tools.unified_legal_rag import get_unified_rag_system
 
@@ -647,9 +561,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
 
     @staticmethod
     def _fits_report(chunk, crime_type: str) -> bool:
-        """On a short report with a known crime type, a reranked section must be that
-        crime's own, or score well and come from a related or untyped offence (cheating
-        on a burglary report and rash driving on a lost bike are noise)."""
+        """On a short report with a known crime type, a reranked section must be that crime's own, or score well and come from a related or untyped offence (cheating on a burglary report..."""
         types = _section_crime_types(chunk.act_name, chunk.section_number)
         if crime_type in types:
             return True
@@ -658,8 +570,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         return chunk.score >= REPORT_NOISE_MIN_SCORE
 
     def _full_section_text(self, act_name: str, section: str, fallback: str) -> str:
-        """A long section is indexed as parts (…_p1, …_p2); later subsections, and their
-        punishments, are only in the later parts."""
+        """A long section is indexed as parts (…_p1, …_p2); later subsections, and their punishments, are only in the later parts."""
         from app.tools.unified_legal_rag import get_unified_rag_system
 
         chunks = get_unified_rag_system()._chunks
@@ -697,39 +608,24 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
     def pdf_subdir(self) -> str:
         return "criminal"
 
-    # ── Overrides ────────────────────────────────────────────────
 
     def _parse_legal_sections(
         self, full_text: str, source_file: str
     ) -> List[LegalChunk]:
-        """
-        Criminal law parser with a per-Act punishment-clause filter.
-
-        Substantive penal statutes (PUNISHMENT_FILTERED_ACTS) only keep
-        sections with a "shall be punished"/"punishable" clause, so the LLM
-        can't cite a definition as a chargeable offence. Procedural/
-        evidentiary codes (CrPC, BNSS, Evidence Act, BSA) have no such clauses
-        by nature — filtering them the same way would index almost nothing,
-        including routinely-cited sections like CrPC §482 (quashing FIRs) or
-        §438 (anticipatory bail) — so those are indexed unfiltered.
-        """
+        """Criminal law parser with a per-Act punishment-clause filter."""
         base_chunks = super()._parse_legal_sections(full_text, source_file)
 
         stem = Path(source_file).stem.lower()
         if stem not in self.PUNISHMENT_FILTERED_ACTS or stem in self.INDEX_ALL_SECTIONS:
             return base_chunks
 
-        # Apply criminal-specific filter: only index sections with punishment
+
         filtered: List[LegalChunk] = []
         for chunk in base_chunks:
             if chunk.has_punishment or _CHARGEABLE_PUNISHMENT_RE.search(chunk.text):
                 filtered.append(chunk)
-            # else: skip definition-only sections — appropriate for IPC/BNS
 
-        # Fallback: some penal acts (e.g. PMLA, POCSO scans) have few
-        # sections whose punishment clause the regex can extract — a strict
-        # filter would nearly empty them. Better an unfiltered act than an
-        # unretrievable one.
+
         if len(filtered) < max(10, len(base_chunks) // 4):
             print(
                 f"  [criminal] Punishment filter kept only {len(filtered)}/"
@@ -739,7 +635,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
 
         return filtered
 
-    # ── Adapter: delegate storage/retrieval to the unified index ──
 
     async def initialize(self) -> bool:
         from app.tools.unified_legal_rag import get_unified_rag_system
@@ -773,18 +668,11 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         )
 
     def _preprocess_query(self, query: str) -> str:
-        """
-        Safe criminal vocabulary enhancement.
-
-        SAFETY RULE: Only expand terms that are unambiguously criminal acts
-        involving physical harm, sexual violence, theft, or explicit fraud.
-        Do NOT map civil torts, financial instruments, or technology concepts
-        to criminal section headings.
-        """
+        """Safe criminal vocabulary enhancement."""
         q = query.lower()
         terms: List[str] = []
 
-        # Physical violence → relevant IPC headings
+
         if any_word(q, ["stabbed", "slash", "cut with knife", "blade"]):
             terms.extend(["grievous hurt", "hurt", "dangerous weapon"])
         if any_word(q, ["beaten", "punched", "hit", "physically assaulted"]):
@@ -792,27 +680,27 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         if any_word(q, ["killed", "murdered", "dead", "death"]):
             terms.extend(["culpable homicide", "murder", "causing death"])
 
-        # Sexual offences
+
         if any_word(q, ["rape", "sexual assault", "molest"]):
             terms.extend(["rape", "sexual intent", "outraging modesty"])
         if any_word(q, ["stalking", "following woman", "monitor woman"]):
             terms.extend(["stalking", "following woman"])
 
-        # Kidnapping / abduction
+
         if any_word(q, ["kidnap", "abduct", "hostage", "ransom"]):
             terms.extend(["kidnapping", "abduction", "ransom"])
 
-        # Domestic violence / dowry (genuinely criminal provisions)
+
         if any_word(q, ["dowry", "498a", "cruelty by husband"]):
             terms.extend(["cruelty by husband", "dowry death", "abetment of suicide"])
 
-        # Explicit criminal fraud / forgery (only when combined with criminal act verbs)
+
         if any_word(q, ["forged", "forgery", "forge", "fake document"]):
             terms.extend(["forgery", "using forged document"])
         if any_word(q, ["cheated me", "cheated out of", "deceived me into"]):
             terms.extend(["cheating", "dishonestly inducing delivery of property"])
 
-        # Electronic evidence (WhatsApp/email/CCTV → statutory vocabulary)
+
         if any_word(q, [
                 "whatsapp",
                 "electronic evidence",
@@ -831,19 +719,19 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-        # FIR / procedure queries
+
         if any_word(q, ["fir", "police complaint", "cognizable", "arrest"]):
             terms.extend(["cognizable offence", "complaint", "investigation"])
 
-        # Bail
+
         if any_word(q, ["bail", "anticipatory bail", "custody"]):
             terms.extend(["bail", "custody", "arrest"])
 
-        # Arson
+
         if any_word(q, ["set fire", "arson", "burnt my house"]):
             terms.extend(["arson", "fire to property"])
 
-        # Criminal trespass (breaking and entering — not civil land disputes)
+
         if any_word(q, ["broke into", "illegal entry", "trespassed into house"]
         ):
             terms.extend(["criminal trespass", "house-breaking"])
@@ -886,7 +774,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         self, query: str, crime_type: str, features: CrimeFeatures
     ) -> str:
         """Build an enhanced search with feature signals (criminal context only)."""
-        parts = [query, query, query]  # 3× weight for original query
+        parts = [query, query, query]
 
         if features.violence and features.death:
             parts.append("murder culpable homicide")
@@ -913,7 +801,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
 
         return " ".join(parts)
 
-    # ── Main retrieval entry-point (backward-compatible API) ────
 
     async def retrieve_sections(
         self,
@@ -923,13 +810,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         k: int = 2,
         offences_only: bool = False,
     ) -> RAGResult:
-        """
-        Full criminal RAG pipeline over the unified hybrid index
-        (BM25 + dense + reranker, filtered to the criminal domain).
-
-        Maintains the same signature as the old CrimeRAGSystem.retrieve_sections()
-        so chatbot.py nodes need only change the import.
-        """
+        """Full criminal RAG pipeline over the unified hybrid index (BM25 + dense + reranker, filtered to the criminal domain)."""
         from app.tools.unified_legal_rag import get_unified_rag_system
 
         unified = get_unified_rag_system()
@@ -960,12 +841,8 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             )
             if offences_only:
                 chunks = [c for c in chunks if _is_offence_section(c.act_name, c.section_number)]
-            # Pinned candidates enter the fused list last, so the rerank/fused blend
-            # buries them; lead with the classifier's best sections instead. It was
-            # trained on long forum narratives, so short questions keep the reranker's
-            # order unless the classifier is confident. On short crime reports it also
-            # must agree with the report's crime type; on long ones the section
-            # classifier beats the crime-type guess (ILSIC dev hit@2 0.66 -> ~0.52).
+
+
             short = len(query.split()) < CLASSIFIER_LONG_QUERY_WORDS
             lead_sections = [
                 (a, s) for a, s, p in classified
@@ -973,11 +850,11 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 and (not offences_only or _is_offence_section(a, s))
                 and not (offences_only and short and not _fits_report_lead(s, p, crime_type))
             ][:CLASSIFIER_FIRST]
-            # Short reports ("someone snatched my phone") give retrieval little to match
-            # on, so the detected crime type's own penal section leads.
+
+
             core = CRIME_TYPE_SECTIONS.get(crime_type) if offences_only and short else None
             if core and crime_type == "property_damage" and any_word(query, ANIMAL_WORDS):
-                core = "429"  # killing or maiming an animal (BNS 325), not general mischief
+                core = "429"
             if core and ("Indian Penal Code", core) not in lead_sections:
                 lead_sections = [("Indian Penal Code", core)] + lead_sections[:CLASSIFIER_FIRST - 1]
             typed_report = offences_only and short and crime_type not in ("", "general")
@@ -1001,12 +878,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                     continue
                 seen.add((chunk.act_name, sec_num))
 
-                # Punishment clause is only required for substantive penal
-                # statutes (IPC/BNS/NDPS/POCSO/etc.) — matches _parse_legal_sections'
-                # per-Act policy. Procedural/evidentiary codes (CrPC, BNSS,
-                # Evidence Act, BSA) have no such clause by design; requiring
-                # one here would silently drop routinely-cited sections like
-                # CrPC §438 (anticipatory bail) or §482 (inherent powers).
+
                 requires_punishment = (
                     Path(chunk.source_file).stem.lower()
                     in self.PUNISHMENT_FILTERED_ACTS
@@ -1104,10 +976,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             confidence=result.confidence,
         )
 
-
-# ─────────────────────────────────────────────────────────────
-# Singleton
-# ─────────────────────────────────────────────────────────────
 
 _criminal_rag: Optional[CriminalRAGSystem] = None
 

@@ -1,10 +1,4 @@
-"""
-Shared notification spine for Hearing Reminders and Smart Notifications.
-Every producer (case sync job, vault upload, cause-list refresh, calendar
-reminders) calls send_notification() rather than writing to email/push/DB
-directly — see the implementation plan's Phase 2/4 for the full list of
-producers this generalizes to.
-"""
+"""Shared notification spine for Hearing Reminders and Smart Notifications."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -20,7 +14,7 @@ from app.services.fcm_client import PushTokenInvalid, push_configured, send_push
 
 def _channel_enabled(prefs: Optional[NotificationPreference], channel: str, type_: str) -> bool:
     if prefs is None:
-        return channel == "in_app"  # safe default with no preferences row yet
+        return channel == "in_app"
     override = prefs.type_overrides.get(type_, {})
     if channel in override:
         return bool(override[channel])
@@ -41,11 +35,7 @@ def send_notification(
     related_case_event_id: Optional[str] = None,
     channels: Optional[List[str]] = None,
 ) -> List[Notification]:
-    """Writes one `notifications` row per channel, then dispatches
-    synchronously. Called from request handlers and scheduled jobs alike —
-    kept synchronous (no async I/O) since email/FCM here are best-effort and
-    a slow SMTP call blocking a background job tick is an acceptable
-    tradeoff at this scale (see plan's reliability risk note)."""
+    """Writes one `notifications` row per channel, then dispatches synchronously."""
     from app.db.models import User
 
     user = session.get(User, user_id)
@@ -86,7 +76,7 @@ def send_notification(
 
         sent = False
         if channel == "in_app":
-            sent = True  # the feed row itself is the delivery
+            sent = True
         elif channel == "email":
             sent = send_email(user.email, title, body)
         elif channel == "push" and prefs and prefs.fcm_token:
@@ -107,19 +97,7 @@ def send_notification(
 
 
 async def send_notification_async(**kwargs) -> List[Notification]:
-    """Awaitable wrapper around send_notification() for callers running on
-    the shared FastAPI/APScheduler event loop (app/jobs/_case_sync.py).
-    send_email() is a blocking smtplib call with a 10s timeout — calling
-    send_notification() directly from an `async def` job body would freeze
-    every concurrent HTTP request for up to that long once SMTP is actually
-    configured. Sync request handlers (e.g. app/routers/vault.py's
-    share_document) can keep calling send_notification() directly — FastAPI
-    already runs those in its own thread pool.
-
-    Opens its OWN Session inside the worker thread rather than reusing the
-    caller's: a SQLAlchemy Session isn't thread-safe, and the caller's session
-    lives on the event-loop thread. Notifications are best-effort and
-    self-committing, so a separate transaction is correct here."""
+    """Awaitable wrapper around send_notification() for callers running on the shared FastAPI/APScheduler event loop (app/jobs/_case_sync.py)."""
     from app.db.engine import get_engine
 
     def _run() -> List[Notification]:

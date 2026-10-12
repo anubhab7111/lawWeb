@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""
-tune_iltur_retrieval.py — cache raw retrieval output for offline tuning.
-
-Full evaluations re-run every retrieval (~40 min per 150 cases). Tuning how the
-per-window results are *aggregated* only needs each window's raw candidates, so
-this records them once, for a seeded sample of IL-TUR **dev** cases:
-
-  statutes    the raw `retrieve_statutes` output per window across the scoped Acts
-              (so per-Act weights, depth and BNS->IPC translation can be tried offline)
-  precedent   the precedent-index votes per case, with the case masked out
-
-The cache goes to <corpus>/builds/tune/.
-
-Usage (from server/):
-    python tune_iltur_retrieval.py cache --sample-size 150 --tag dev150 \\
-        --acts "Indian Penal Code" "Code of Criminal Procedure" "Bharatiya Nyaya Sanhita BNS" \\
-        --min-score 0.0 --candidate-pool 100 --rerank-pool 60 --statute-depth 60
-    python tune_iltur_retrieval.py cache --skip-statutes --precedent      # precedent only (fast)
-"""
+"""tune_iltur_retrieval.py — cache raw retrieval output for offline tuning."""
 
 import argparse
 import asyncio

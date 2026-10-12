@@ -1,10 +1,4 @@
-"""
-Legal Document Vault — secure storage (Cloudflare R2, local-disk fallback in
-dev) plus AI-powered search over per-user documents via pgvector, not a new
-vector DB or FAISS index (see the implementation plan's pgvector-vs-Qdrant
-rationale: already-enabled extension, small per-user document sets, and
-trivial SQL-side permission filtering).
-"""
+"""Legal Document Vault — secure storage (Cloudflare R2, local-disk fallback in dev) plus AI-powered search over per-user documents via pgvector, not a new vector DB or FAISS..."""
 
 import asyncio
 import uuid
@@ -111,9 +105,7 @@ async def upload_document(
     max_size = get_settings().max_document_size_mb * 1024 * 1024
     file_bytes = await read_upload_within_limit(file, max_size)
 
-    # Basename only: strip any directory components from the client-supplied
-    # filename so it can't inject `..`/separators into the storage key (which
-    # the local-disk fallback resolves against LOCAL_VAULT_DIR).
+
     safe_filename = Path(file.filename or "document").name or "document"
     object_key = f"{current_user.id}/{uuid.uuid4()}-{safe_filename}"
 
@@ -202,11 +194,7 @@ def local_download(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Dev-only: serves files from the local-disk storage fallback. Not used
-    when R2 is configured (get_download_url() returns a real presigned URL
-    instead of this path). Takes a document_id (not the raw storage key) so
-    the same ownership/share check as every other document endpoint applies
-    before any bytes are served."""
+    """Dev-only: serves files from the local-disk storage fallback."""
     storage = get_object_storage()
     if not isinstance(storage, LocalDiskObjectStorage):
         raise MessageHTTPException(status_code=404, detail="Not found")
@@ -214,7 +202,7 @@ def local_download(
     try:
         data = storage.read_object(document.object_key)
     except (FileNotFoundError, ValueError):
-        # ValueError == the key escaped LOCAL_VAULT_DIR (path-traversal attempt).
+
         raise MessageHTTPException(status_code=404, detail="Not found")
     filename = Path(document.object_key).name.split("-", 5)[-1] or document.title
     return Response(
@@ -312,10 +300,7 @@ def share_document(
     session.commit()
     session.refresh(permission)
 
-    # Smart Notifications (Phase 4): document_uploaded/shared producer —
-    # reuses the same spine Hearing Reminders uses (see
-    # app/services/notification_dispatch.py). Best-effort: sharing already
-    # succeeded above regardless of whether the notification sends.
+
     try:
         send_notification(
             session,
@@ -379,7 +364,7 @@ async def reindex_document(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Retry indexing (e.g. after a failed/empty extraction or an embedding-model change)."""
+    """Retry indexing (e.g."""
     document = session.get(VaultDocument, document_id)
     if document is None or document.user_id != current_user.id:
         raise MessageHTTPException(status_code=404, detail="Document not found")

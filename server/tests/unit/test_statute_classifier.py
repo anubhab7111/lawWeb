@@ -21,7 +21,7 @@ def test_chunks_are_bounded_wrapped_and_evenly_sampled():
     chunks = sc.chunk_ids(tok, text, max_chunks=3, chunk_len=12)
     assert len(chunks) == 3
     assert all(c[0] == 101 and c[-1] == 102 and len(c) <= 12 for c in chunks)
-    assert chunks[0][1] == 1000 and chunks[-1][-2] == 1099  # first and last tokens kept
+    assert chunks[0][1] == 1000 and chunks[-1][-2] == 1099
     assert sc.chunk_ids(tok, "a b", max_chunks=4, chunk_len=12) == [[101, 1000, 1001, 102]]
 
 

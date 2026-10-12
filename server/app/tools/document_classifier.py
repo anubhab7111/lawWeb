@@ -1,24 +1,4 @@
-"""
-Document Classifier (Layer 1)
-Deterministic classification of Indian legal documents into predefined types.
-Uses keyword/pattern matching with optional LLM fallback at temperature=0.
-
-Supported document types:
-- Sale Deed
-- FIR (First Information Report)
-- Affidavit
-- Agreement to Sell
-- Power of Attorney
-- Rent Agreement
-- Notice (CrPC / CPC)
-- Court Order / Judgment
-- Will / Testament
-- Partnership Deed
-- Bail Application
-- Complaint (under CrPC)
-- Chargesheet
-- Unknown
-"""
+"""Document Classifier (Layer 1) Deterministic classification of Indian legal documents into predefined types."""
 
 import re
 from functools import lru_cache
@@ -48,10 +28,6 @@ class DocumentClassification:
             "jurisdiction_hints": self.jurisdiction_hints,
         }
 
-
-# ============================================================================
-# Pattern Definitions — each document type has weighted indicators
-# ============================================================================
 
 DOCUMENT_PATTERNS: Dict[str, Dict[str, Any]] = {
     "Sale Deed": {
@@ -385,24 +361,13 @@ async def classify_document(document_text: str) -> DocumentClassification:
 
 
 class DocumentClassifier:
-    """
-    Deterministic classifier for Indian legal documents.
-
-    Layer 1 of the document analysis pipeline.
-    Uses weighted pattern matching for reliable, reproducible classification.
-    No LLM dependency — pure rule-based for consistency.
-    """
+    """Deterministic classifier for Indian legal documents."""
 
     def __init__(self):
         self.patterns = DOCUMENT_PATTERNS
 
     def classify(self, document_text: str, vector=None) -> DocumentClassification:
-        """
-        Classify a legal document into a predefined type. With `vector` (the BGE-M3
-        embedding of the first REFERENCE_CHARS characters) and the reference file
-        present, the type comes from the nearest reference documents; otherwise from
-        the weighted regex patterns.
-        """
+        """Classify a legal document into a predefined type."""
         if not document_text or not document_text.strip():
             return DocumentClassification(
                 document_type="Unknown",
@@ -432,12 +397,12 @@ class DocumentClassifier:
             primary_matches = []
             secondary_matches = []
 
-            # Primary indicators carry 3x weight
+
             for pattern in primary:
                 if re.search(pattern, text, re.IGNORECASE):
                     primary_matches.append(pattern)
 
-            # Secondary indicators carry 1x weight
+
             for pattern in secondary:
                 if re.search(pattern, text, re.IGNORECASE):
                     secondary_matches.append(pattern)
@@ -445,15 +410,12 @@ class DocumentClassifier:
             if not primary_matches and not secondary_matches:
                 continue
 
-            # Score calculation:
-            # - Each primary match: 3 points
-            # - Each secondary match: 1 point
-            # - Normalize by total possible points
+
             total_possible = len(primary) * 3 + len(secondary)
             raw_score = len(primary_matches) * 3 + len(secondary_matches)
             normalized_score = (raw_score / total_possible) * type_weight
 
-            # Bonus for having at least one primary match
+
             if primary_matches:
                 normalized_score = min(1.0, normalized_score + 0.2)
 
@@ -469,19 +431,19 @@ class DocumentClassifier:
                 matched_indicators=["No known document patterns matched"],
             )
 
-        # Pick highest scoring type
+
         best_type = max(scores, key=lambda k: scores[k][0])
         best_score, best_matches = scores[best_type]
 
-        # Detect sub-type
+
         sub_type = self._detect_sub_type(best_type, text)
 
-        # Detect jurisdiction hints
+
         jurisdiction_hints = self._detect_jurisdiction(text)
 
         return DocumentClassification(
             document_type=best_type,
-            confidence=min(best_score, 0.99),  # Cap at 0.99 — never absolute
+            confidence=min(best_score, 0.99),
             sub_type=sub_type,
             matched_indicators=best_matches[:10],
             jurisdiction_hints=jurisdiction_hints,
@@ -549,7 +511,7 @@ class DocumentClassifier:
         """Detect jurisdiction hints from the document."""
         hints = []
 
-        # State-level jurisdiction
+
         states = [
             "delhi",
             "maharashtra",
@@ -580,7 +542,7 @@ class DocumentClassifier:
             if re.search(rf"\b{state}\b", text, re.IGNORECASE):
                 hints.append(f"State: {state.title()}")
 
-        # Court-level jurisdiction
+
         court_patterns = [
             (r"supreme\s*court", "Supreme Court of India"),
             (r"high\s*court", "High Court"),
@@ -600,7 +562,6 @@ class DocumentClassifier:
         return hints
 
 
-# Singleton
 _classifier: Optional[DocumentClassifier] = None
 
 

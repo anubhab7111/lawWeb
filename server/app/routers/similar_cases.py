@@ -1,12 +1,4 @@
-"""
-Similar Case Search — upload an order/petition/notice, extract FIRAC, then
-search the existing local case-law and statute RAG stack.
-
-Auth is optional: a logged-in user's search is recorded for history, an
-anonymous search just isn't. No new FAISS index, no new embedding model —
-everything here composes existing tools (document_extractor, firac_extractor,
-legal_retrieval).
-"""
+"""Similar Case Search — upload an order/petition/notice, extract FIRAC, then search the existing local case-law and statute RAG stack."""
 
 from typing import Optional
 

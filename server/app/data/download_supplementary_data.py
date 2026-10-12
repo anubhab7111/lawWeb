@@ -1,41 +1,5 @@
 #!/usr/bin/env python3
-"""
-Supplementary Indian Legal Data Downloader
-==========================================
-
-Downloads and VERIFIES the corpus-expansion data beyond bare acts:
-
-  mappings/    Old-to-new criminal code correspondence tables
-               (IPC↔BNS, CrPC↔BNSS, IEA↔BSA) from BPRD / UP Police.
-               These let the RAG answer "what is IPC 420 under BNS?".
-  rules/       Statutory Rules (procedure layer): POCSO Rules 2020,
-               IT Intermediary Rules 2021, DPDP Rules 2025, E-Commerce
-               Rules 2020, POSH Rules 2013, Notaries Rules 1956, CMV
-               Rules 1989.
-  guides/      Plain-language citizen guides (NALSA schemes, victim
-               compensation).
-  bare_acts/   Statutes new or missing from the main corpus: the three
-               2020 labour codes, Income-tax Act 2025 (replaces the
-               1961 Act from 1 Apr 2026), Mediation Act 2023,
-               Telecommunications Act 2023, Immigration & Foreigners
-               Act 2025, and the two biggest state rent acts
-               (Maharashtra 1999, Delhi 1958) under property/.
-
-NOTE: only files under bare_acts/ are picked up by the unified RAG
-index today. mappings/, rules/ and guides/ need their own ingestion
-(ideally the mapping tables as structured JSON) — they are downloaded
-here so that work has verified source material.
-
-Every download is validated before it is kept:
-  1. response must start with the %PDF magic bytes,
-  2. the PDF must parse and meet a per-document minimum page count,
-  3. the extracted text of the first pages must contain a per-document
-     required phrase (so a notification/slideshow can't masquerade as
-     an act — this exact failure happened with BSA 2023 and POCSO),
-  4. a mid-document page must have a real text layer (not scanned).
-
-Usage:  python download_supplementary_data.py
-"""
+"""Supplementary Indian Legal Data Downloader ========================================== Downloads and VERIFIES the corpus-expansion data beyond bare acts: mappings/ Old-to-new..."""
 
 from __future__ import annotations
 
@@ -63,7 +27,7 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-MAX_RETRIES_PER_URL = 3  # India Code intermittently 302s to an HTML session page
+MAX_RETRIES_PER_URL = 3
 
 
 def _thc_rule(name: str) -> str:
@@ -77,13 +41,13 @@ log = logging.getLogger(__name__)
 class DocumentSpec:
     """One document to download, with its validation contract."""
 
-    subdir: str            # destination directory under app/data/
+    subdir: str
     filename: str
-    min_pages: int         # reject anything shorter (catches notifications)
-    must_contain: str      # phrase required in first-pages text (lowercase)
-    urls: list[str] = field(default_factory=list)  # tried in order
-    # Accept documents whose later pages are scanned as long as the front
-    # matter has a text layer (e.g. rules whose annexure forms are scans).
+    min_pages: int
+    must_contain: str
+    urls: list[str] = field(default_factory=list)
+
+
     allow_partial: bool = False
 
     @property
@@ -92,12 +56,8 @@ class DocumentSpec:
 
 
 DOCUMENTS: list[DocumentSpec] = [
-    # ══════════════════════════════════════════════════════════════════
-    # 1. OLD↔NEW CRIMINAL CODE MAPPING TABLES
-    # ══════════════════════════════════════════════════════════════════
-    # WB Land Reforms officers' assoc. tables are the reliably reachable
-    # mirrors; the official BPRD / UP Police copies are kept as fallbacks
-    # (both hosts time out from some networks).
+
+
     DocumentSpec(
         "mappings", "IPC_to_BNS_Comparative_Table.pdf", 30, "bharatiya nyaya sanhita",
         [
@@ -121,23 +81,21 @@ DOCUMENTS: list[DocumentSpec] = [
         ],
     ),
     DocumentSpec(
-        # CDTI Hyderabad (BPRD/MHA training institute) compendium of the
-        # three amended criminal laws.
+
+
         "mappings", "Amended_Criminal_Laws_Compendium_CDTI.pdf", 50, "sanhita",
         ["https://cdtihyd.gov.in/static/download/LatestLaws/amended_criminal_laws.pdf"],
     ),
-    # ══════════════════════════════════════════════════════════════════
-    # 2. STATUTORY RULES (the procedure layer under the acts)
-    # ══════════════════════════════════════════════════════════════════
+
+
     DocumentSpec(
         "rules", "POCSO_Rules_2020.pdf", 6, "children from sexual",
         [
             "https://gsja.nic.in/gsjanew/files/20201005163659_POCSO_Rules_2020.pdf",
             "https://wcd.nic.in/sites/default/files/POCSO%20Rules%20merged_2.pdf",
         ],
-        # Only the title page of the gsja copy has a text layer — the body
-        # is scanned. A tesseract OCR of the full text is committed next to
-        # it as POCSO_Rules_2020.txt; use that for ingestion.
+
+
         allow_partial=True,
     ),
     DocumentSpec(
@@ -155,16 +113,12 @@ DOCUMENTS: list[DocumentSpec] = [
             "https://www.dpdpa.com/DPDP_Rules_2025_English_only.pdf",
         ],
     ),
-    # NOTE: Consumer Protection (E-Commerce) Rules 2020 and the Central
-    # Motor Vehicles Rules 1989 are deliberately absent: every official PDF
-    # found (thc.nic.in scans, morth chapter pages) has no text layer, and
-    # the reachable copies elsewhere are commentary, not the rules. Ingest
-    # them from an HTML source (e.g. India Code's rules viewer) or OCR the
-    # thc.nic.in scans if needed.
+
+
     DocumentSpec(
         "rules", "POSH_Act_and_Rules_2013.pdf", 5, "sexual harassment",
         [
-            # IIT Bhubaneswar compilation of the POSH Act + Rules 2013
+
             "https://www.iitbbs.ac.in/notice/sexual-harrassment-of-women-act-and-rules-2013.pdf",
             _thc_rule(
                 "Sexual Harassment of Women at Workplace (Prevention, Prohibition and Redressal) Rules, 2013.pdf"
@@ -179,12 +133,8 @@ DOCUMENTS: list[DocumentSpec] = [
             "https://upload.indiacode.nic.in/showfile?actid=AC_CEN_3_46_00007_195253_1517807328336&type=rule&filename=notaries-rules-1956.pdf",
         ],
     ),
-    # ══════════════════════════════════════════════════════════════════
-    # 3. CITIZEN GUIDES (plain-language, official)
-    # ══════════════════════════════════════════════════════════════════
-    # NOTE: NALSA's Compendium of Schemes and the individual scheme PDFs on
-    # nalsa.gov.in are image scans (no text layer) — skipped for the same
-    # reason as the rules above. Only the VC scheme below has real text.
+
+
     DocumentSpec(
         "guides", "NALSA_Victim_Compensation_Scheme_2018.pdf", 5, "compensation",
         [
@@ -193,9 +143,8 @@ DOCUMENTS: list[DocumentSpec] = [
             "https://wcd.nic.in/sites/default/files/Final%20VC%20Sheme_0.pdf",
         ],
     ),
-    # ══════════════════════════════════════════════════════════════════
-    # 4. NEW / UPDATED STATUTES  (indexed by the unified RAG)
-    # ══════════════════════════════════════════════════════════════════
+
+
     DocumentSpec(
         "bare_acts/labour", "Industrial_Relations_Code_2020.pdf", 25, "industrial relations",
         ["https://www.indiacode.nic.in/bitstream/123456789/22040/1/A2020-35.pdf"],
@@ -209,12 +158,12 @@ DOCUMENTS: list[DocumentSpec] = [
         ["https://www.indiacode.nic.in/bitstream/123456789/22041/1/a2020-37.pdf"],
     ),
     DocumentSpec(
-        # Replaces the Income-tax Act 1961 with effect from 1 April 2026.
-        # The 1961 PDF is kept for historical queries.
+
+
         "bare_acts/indirect_tax", "Income_Tax_Act_2025.pdf", 300, "income-tax",
         [
-            # Official gazette of Act 30 of 2025; incometaxindia.gov.in
-            # sits behind Akamai and 403s non-browser clients.
+
+
             "https://egazette.gov.in/WriteReadData/2025/265620.pdf",
             "https://resource.cdn.icai.org/87647dtc-aps2139-inceome-tax-act-2025.pdf",
             "https://www.incometaxindia.gov.in/Documents/Act/Income-tax-Act-2025.pdf",
@@ -241,13 +190,13 @@ DOCUMENTS: list[DocumentSpec] = [
             "https://prsindia.org/files/bills_acts/acts_parliament/2025/The_Immigration_and_Foreigners_Act,_2025.pdf",
         ],
     ),
-    # State rent acts live under property/ (an indexed domain); the doc
-    # validator's DOCUMENT_LAW_MAP cites "Rent Control Acts (state-specific)".
+
+
     DocumentSpec(
         "bare_acts/property", "Maharashtra_Rent_Control_Act_1999.pdf", 30, "rent",
         [
-            # consolidated as modified up to Feb 2016; the Housing Dept CDN
-            # copy is an image scan, so it is not listed here
+
+
             "https://indiacode.nic.in/bitstream/123456789/7848/1/maha._rent_control_act%2C_1999_%2818_of_2000%29_%28modi._8_feb._2016%29.pdf",
             "https://www.indiacode.nic.in/bitstream/123456789/15817/1/the_maharashtra_rent_control_act,_1999.pdf",
             "https://upload.indiacode.nic.in/showfile?actid=AC_MH_166_1465_00004_00004_1609153355090&filename=the_maharashtra_rent_control_act%2C_1999.pdf&type=actfile",
@@ -264,7 +213,6 @@ DOCUMENTS: list[DocumentSpec] = [
 ]
 
 
-# ── Validation ────────────────────────────────────────────────────────────────
 def validate_pdf(data: bytes, spec: DocumentSpec) -> tuple[bool, str]:
     """Full validation contract for a downloaded document (see module docstring)."""
     if not data.startswith(b"%PDF"):
@@ -287,7 +235,6 @@ def validate_pdf(data: bytes, spec: DocumentSpec) -> tuple[bool, str]:
     return True, f"{n} pages, text layer OK"
 
 
-# ── Download ──────────────────────────────────────────────────────────────────
 def fetch(client: httpx.Client, spec: DocumentSpec) -> tuple[bool, str]:
     """Try each candidate URL (with retries) until one passes validation."""
     if spec.dest.exists():
@@ -308,7 +255,7 @@ def fetch(client: httpx.Client, spec: DocumentSpec) -> tuple[bool, str]:
                 ok, why = validate_pdf(resp.content, spec)
                 if not ok:
                     log.info(f"  reject {why}  {url}")
-                    break  # same bytes on retry — move to next URL
+                    break
                 spec.dest.parent.mkdir(parents=True, exist_ok=True)
                 spec.dest.write_bytes(resp.content)
                 return True, f"{why}  <- {url}"
@@ -326,7 +273,7 @@ def main() -> int:
     log.info("=" * 70)
 
     results: list[tuple[DocumentSpec, bool, str]] = []
-    timeout = httpx.Timeout(120.0, connect=15.0)  # fail fast on dead gov hosts
+    timeout = httpx.Timeout(120.0, connect=15.0)
     with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=timeout) as client:
         for i, spec in enumerate(DOCUMENTS, 1):
             log.info(f"[{i}/{len(DOCUMENTS)}] {spec.subdir}/{spec.filename}")

@@ -1,14 +1,4 @@
-"""
-Geometry-based text extraction for Supreme Court judgment PDFs.
-
-`pdftotext -bbox-layout` gives every text line — and every word in it — with
-coordinates. The law-report template puts margin marker letters (A-H) in a column
-just outside the body text, running headers at the top of each page, and
-paragraph starts indented. All of that is unambiguous by position, where text-only
-heuristics leak stray letters ("under the D provisions") and header fragments into
-sentences. Markers can be separate lines or sit inside a body line's word list, so
-they are removed per word.
-"""
+"""Geometry-based text extraction for Supreme Court judgment PDFs."""
 
 from __future__ import annotations
 
@@ -33,13 +23,13 @@ _LINE = re.compile(
 _WORD = re.compile(r'<word xMin="([\d.]+)" yMin="[\d.]+" xMax="([\d.]+)" yMax="[\d.]+">(.*?)</word>', re.S)
 _REF_END = re.compile(r"\(\d+(?:-[A-H])+[)\]\[]?\s*$")
 
-HEADER_BAND = 0.105  # fraction of page height at the top that holds running headers
+HEADER_BAND = 0.105
 FOOTER_BAND = 0.945
-INDENT_PT = 8.0  # a paragraph-first line starts at least this far right of the body
-MARGIN_SLACK = 3.0  # short words this far outside the body edges are margin marks
+INDENT_PT = 8.0
+MARGIN_SLACK = 3.0
 MARGIN_WORD_MAX_LEN = 2
 
-Word = Tuple[float, float, str]  # x0, x1, text
+Word = Tuple[float, float, str]
 
 
 @dataclass
@@ -93,8 +83,7 @@ def _percentile(values: List[float], q: float) -> float:
 
 
 def _body_edges(page: Page) -> Optional[Tuple[float, float]]:
-    """Left/right edges of the body text column, from words long enough to be
-    real text (so margin letters don't pull the estimate outward)."""
+    """Left/right edges of the body text column, from words long enough to be real text (so margin letters don't pull the estimate outward)."""
     lefts: List[float] = []
     rights: List[float] = []
     for line in page.lines:
@@ -122,7 +111,7 @@ def _strip_margin_words(line: Line, edges: Optional[Tuple[float, float]], page: 
             return w[0] > 0.85 * page.width or w[1] < 0.1 * page.width
 
     words = [w for w in line.words if not (len(w[2]) <= MARGIN_WORD_MAX_LEN and outside(w))]
-    if edges:  # anything far outside the column that survived is a stray mark
+    if edges:
         words = [w for w in words if w[1] >= edges[0] - 25]
     if not words:
         return None
@@ -163,7 +152,7 @@ def pages_to_paragraphs(pages: List[Page]) -> List[str]:
         for line in lines:
             text = line.text
             if current and prev is not None and _ends_sentence(current[-1]):
-                # Across a page break line.y0 < prev.y1, so this is never a gap there.
+
                 gap = line.y0 - prev.y1 > 0.9 * (prev.y1 - prev.y0)
                 indented = line.x0 - left >= INDENT_PT
                 if indented or gap or _NUMBERED_PARA.match(text):

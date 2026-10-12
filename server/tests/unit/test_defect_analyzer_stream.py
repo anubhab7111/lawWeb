@@ -67,8 +67,8 @@ def test_streamed_report_equals_the_final_report():
     result, items = _stream(StreamingLLM())
     assert all(isinstance(i, str) for i in items)
     streamed = "".join(items)
-    assert "Fake v. Party" in streamed  # streamed as written...
-    assert "Fake v. Party" not in result["formatted_response"]  # ...removed from the final report
+    assert "Fake v. Party" in streamed
+    assert "Fake v. Party" not in result["formatted_response"]
     assert streamed.replace(" See Fake v. Party (2001).", "") == result["formatted_response"]
     assert "The rent clause is present." in streamed
     assert streamed.index("## ⚖️ Legal Analysis") < streamed.index("The rent") < streamed.index("Transfer of Property")
@@ -79,7 +79,7 @@ def test_failed_analysis_streams_no_give_up_note_and_returns_the_fallback():
     streamed = "".join(items)
     assert cb._INCOMPLETE_GENERATION_NOTE not in streamed
     assert "Based on statutory requirements" in result["llm_analysis"]
-    assert streamed != result["formatted_response"]  # the handler's replace event fixes this
+    assert streamed != result["formatted_response"]
 
 
 def test_non_streaming_report_is_unchanged_by_the_split():

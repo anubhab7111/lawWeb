@@ -1,13 +1,4 @@
-"""
-Indexes a Vault document after upload: extract text (reusing the existing
-DocumentExtractor — the same class chat's /upload and Similar Case Search
-use), chunk it, embed each chunk with the *shared* embedding singleton (no
-second model loaded, per the hardware budget), and write
-vault_document_embeddings rows for pgvector search.
-
-Run as a FastAPI BackgroundTasks callback from the upload endpoint
-(fire-and-forget) — not a scheduled job, since it's a per-upload event.
-"""
+"""Indexes a Vault document after upload: extract text (reusing the existing DocumentExtractor — the same class chat's /upload and Similar Case Search use), chunk it, embed each..."""
 
 import asyncio
 

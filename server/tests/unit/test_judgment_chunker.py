@@ -63,7 +63,7 @@ def test_chunk_sizes_respect_the_budget_and_long_paragraphs_are_split_with_overl
     assert all(c["n_words"] <= 400 for c in chunks)
     assert max(c["n_words"] for c in body) >= 100
     long_para_pieces = [c for c in body if "beta" in c["text"]]
-    assert len(long_para_pieces) >= 2  # the 600-word paragraph was split
+    assert len(long_para_pieces) >= 2
 
 
 def test_document_without_markers_is_all_body():

@@ -12,7 +12,7 @@ from .statutory_validator import StatutoryValidator, get_statutory_validator
 from .indian_law_rag import IndianLawRAGTool, get_indian_law_rag
 from .legal_defect_analyzer import LegalDefectAnalyzer, get_legal_defect_analyzer
 
-# Multi-domain RAG modules (replaces monolithic crime_rag.py)
+
 from .base_legal_rag import BaseLegalRAGSystem, LegalChunk, LegalContext
 from .criminal_rag import CriminalRAGSystem, get_criminal_rag_system
 from .civil_rag import CivilRAGSystem, get_civil_rag_system
@@ -36,7 +36,7 @@ __all__ = [
     "get_indian_law_rag",
     "LegalDefectAnalyzer",
     "get_legal_defect_analyzer",
-    # Multi-domain RAG
+
     "BaseLegalRAGSystem",
     "LegalChunk",
     "LegalContext",

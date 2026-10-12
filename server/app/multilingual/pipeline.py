@@ -1,18 +1,4 @@
-"""
-Multilingual pre/post-processing the chatbot calls.
-
-The chatbot only ever needs two functions:
-
-- :func:`preprocess_query` — detect the input language and, if it is a
-  supported non-English language, translate the query to English so the rest of
-  the (unchanged) English RAG/Qwen pipeline runs as-is.
-- :func:`postprocess_response` — translate the English answer back into the
-  user's language for display.
-
-Both are hard no-ops (instant, no model load) when ``multilingual_enabled`` is
-False or the language is English/unsupported, preserving full backward
-compatibility and adding zero latency to English requests (Requirement 7).
-"""
+"""Multilingual pre/post-processing the chatbot calls."""
 
 from __future__ import annotations
 
@@ -34,13 +20,7 @@ def _english_result() -> LanguageResult:
 
 
 async def preprocess_query(text: str) -> tuple[str, LanguageResult]:
-    """Detect language and translate the query to English when needed.
-
-    Returns ``(english_text, language_result)``. On English input, unsupported
-    languages, low confidence, or any failure, returns the original text and a
-    non-reliable English result — retrieval and reasoning then proceed exactly
-    as in the English-only pipeline.
-    """
+    """Detect language and translate the query to English when needed."""
     settings = get_settings()
     if not settings.multilingual_enabled:
         return text, _english_result()
@@ -52,8 +32,8 @@ async def preprocess_query(text: str) -> tuple[str, LanguageResult]:
     tgt_iso = lang.language
     src_tag = to_indictrans2_tag(tgt_iso)
     if src_tag is None:
-        # Detected but not a language we translate — carry on in-language;
-        # BGE-M3 can still embed it, and Qwen is multilingual enough to cope.
+
+
         logger.info("Unsupported language %s; skipping translation", tgt_iso)
         return text, LanguageResult(tgt_iso, lang.confidence, False)
 
@@ -63,12 +43,7 @@ async def preprocess_query(text: str) -> tuple[str, LanguageResult]:
 
 
 async def postprocess_response(english_text: str, lang: LanguageResult) -> str:
-    """Translate the English answer back into the user's language.
-
-    No-op (returns ``english_text``) when multilingual is disabled, the user's
-    language is English, detection was unreliable, or the language is
-    unsupported. Never raises.
-    """
+    """Translate the English answer back into the user's language."""
     if not english_text:
         return english_text
 

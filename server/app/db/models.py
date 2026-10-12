@@ -1,9 +1,4 @@
-"""
-SQLModel models mirroring the tables created by app/db/schema.sql.
-
-Column names are snake_case (as in the schema); API responses use the
-camelCase keys the client expects — see the to_dict() helpers.
-"""
+"""SQLModel models mirroring the tables created by app/db/schema.sql."""
 
 import enum
 import uuid
@@ -53,9 +48,8 @@ class Lawyer(SQLModel, table=True):
     education: str
     languages: List[str] = Field(sa_column=Column(ARRAY(Text)))
     availability: str
-    # Embedding of "{specialty}. {bio}" via BAAI/bge-large-en-v1.5 (1024-dim),
-    # used for semantic matching in recommend_lawyers(). Internal only — never
-    # serialized in to_dict().
+
+
     bio_embedding: Optional[List[float]] = Field(
         default=None, sa_column=Column(Vector(1024), nullable=True)
     )
@@ -112,11 +106,6 @@ class Booking(SQLModel, table=True):
         }
 
 
-# ============================================================================
-# Similar Case Search (Phase 1)
-# ============================================================================
-
-
 class SimilarCaseSearch(SQLModel, table=True):
     __tablename__ = "similar_case_searches"
 
@@ -139,11 +128,6 @@ class SimilarCaseSearch(SQLModel, table=True):
             "results": self.results,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
-
-
-# ============================================================================
-# My Cases (Phase 2)
-# ============================================================================
 
 
 class SavedCase(SQLModel, table=True):
@@ -185,7 +169,7 @@ class CaseEvent(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     saved_case_id: str = Field(foreign_key="saved_cases.id")
-    event_type: str  # "hearing" | "order" | "filing" | ...
+    event_type: str
     event_date: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True))
     )
@@ -255,11 +239,6 @@ class CaseAiSummary(SQLModel, table=True):
         }
 
 
-# ============================================================================
-# Notifications (Phase 2, generalized by Phase 4)
-# ============================================================================
-
-
 class NotificationPreference(SQLModel, table=True):
     __tablename__ = "notification_preferences"
 
@@ -268,9 +247,8 @@ class NotificationPreference(SQLModel, table=True):
     email_enabled: bool = Field(default=True)
     push_enabled: bool = Field(default=False)
     fcm_token: Optional[str] = None
-    # Per-notification-type overrides, e.g. {"new_order": {"email": false}} —
-    # avoids a second table while still allowing "email me for hearings but
-    # not for document uploads" once producers multiply in Phase 4.
+
+
     type_overrides: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB))
 
     def to_dict(self) -> dict:
@@ -293,12 +271,11 @@ class Notification(SQLModel, table=True):
     title: str
     body: str
     related_case_id: Optional[str] = Field(default=None, foreign_key="saved_cases.id")
-    # Per-event link, used to dedup reminders per hearing (not per case) so a
-    # case with multiple hearings gets a reminder for each — see
-    # app/jobs/_case_sync.py.
+
+
     related_case_event_id: Optional[str] = Field(default=None, foreign_key="case_events.id")
-    channel: str  # "email" | "push" | "in_app"
-    status: str = Field(default="pending")  # "pending" | "sent" | "failed"
+    channel: str
+    status: str = Field(default="pending")
     scheduled_for: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True))
     )
@@ -332,7 +309,7 @@ class CauseListCache(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     court: str
-    list_date: str  # ISO date (YYYY-MM-DD); stored as text like bookings' appointment_date
+    list_date: str
     fetched_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -349,24 +326,19 @@ class CauseListCache(SQLModel, table=True):
         }
 
 
-# ============================================================================
-# Legal Document Vault (Phase 3)
-# ============================================================================
-
-
 class VaultDocument(SQLModel, table=True):
     __tablename__ = "vault_documents"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id")
     title: str
-    document_type: str  # "fir" | "order" | "agreement" | "notice" | "evidence" | "judgment" | ...
-    object_key: str  # storage key (R2 or local-disk fallback — see app/services/object_storage.py)
+    document_type: str
+    object_key: str
     file_size_bytes: int
     mime_type: str
     related_case_id: Optional[str] = Field(default=None, foreign_key="saved_cases.id")
     extracted_text: Optional[str] = None
-    indexing_status: str = Field(default="pending")  # "pending" | "indexing" | "ready" | "failed"
+    indexing_status: str = Field(default="pending")
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -407,7 +379,7 @@ class VaultDocumentPermission(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     vault_document_id: str = Field(foreign_key="vault_documents.id")
     shared_with_user_id: str = Field(foreign_key="users.id")
-    permission: str = Field(default="view")  # "view" | "edit"
+    permission: str = Field(default="view")
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -423,11 +395,6 @@ class VaultDocumentPermission(SQLModel, table=True):
         }
 
 
-# ============================================================================
-# Chat History
-# ============================================================================
-
-
 class MessageRole(str, enum.Enum):
     user = "user"
     assistant = "assistant"
@@ -437,9 +404,7 @@ class MessageRole(str, enum.Enum):
 class ChatSession(SQLModel, table=True):
     __tablename__ = "chat_sessions"
 
-    # Caller-supplied session_id (the same id LegalChatbot's in-memory cache
-    # is keyed by, see app/chatbot.py) — not auto-generated here, so the
-    # LangGraph working-memory key and the durable row share one id.
+
     id: str = Field(primary_key=True)
     user_id: str = Field(foreign_key="users.id")
     title: Optional[str] = None
@@ -468,17 +433,13 @@ class ChatMessage(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     session_id: str = Field(foreign_key="chat_sessions.id")
     role: MessageRole = Field(sa_column=Column(SAEnum(MessageRole, name="MessageRole")))
-    # `content` is always canonical English (memory is language-independent).
-    # For a non-English turn, `content_display` holds the original-language
-    # text the user actually typed/saw and `language` its ISO-639-1 code, so
-    # history can be re-rendered without re-translating. English turns leave
-    # content_display NULL and language 'en'.
+
+
     content: str
     language: str = Field(default="en")
     content_display: Optional[str] = Field(default=None)
-    # Audit trail of how the assistant produced this reply (routing decision,
-    # retrieval grade and sections, grounding score, retries). Set on assistant
-    # rows only; NULL for user rows and for turns that predate the column.
+
+
     trace: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
     created_at: Optional[datetime] = Field(
         default=None,
@@ -491,17 +452,12 @@ class ChatMessage(SQLModel, table=True):
             "sessionId": self.session_id,
             "role": self.role.value if self.role else None,
             "trace": self.trace,
-            # Prefer the user's original-language text for display; fall back to
-            # the canonical English content for English turns / legacy rows.
+
+
             "content": self.content_display or self.content,
             "language": self.language,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
-
-
-# ============================================================================
-# Personal Legal Calendar (Phase 4)
-# ============================================================================
 
 
 class CalendarConnection(SQLModel, table=True):
@@ -509,7 +465,7 @@ class CalendarConnection(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id")
-    provider: str  # "google" | "outlook"
+    provider: str
     refresh_token_enc: str
     last_synced_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True))
@@ -526,7 +482,7 @@ class CalendarEvent(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id")
     title: str
-    event_type: str  # "hearing" | "deadline" | "lawyer_meeting" | "custom"
+    event_type: str
     start_at: datetime = Field(sa_column=Column(DateTime(timezone=True)))
     end_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     related_case_id: Optional[str] = Field(default=None, foreign_key="saved_cases.id")

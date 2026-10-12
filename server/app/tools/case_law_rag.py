@@ -1,19 +1,4 @@
-"""
-case_law_rag.py — curated landmark-judgment index, separate from the
-statute index (different data shape: a handful of long prose documents
-with authority metadata, not thousands of short numbered sections).
-
-Each case is indexed as ONE document — a compact FIRAC summary (facts,
-issues, holding, ratio decidendi, generated offline by
-generate_case_firac.py into the case JSON's `firac` field), not raw
-judgment prose. Retrieval is hybrid (BM25 + dense → RRF → cross-encoder
-rerank against that summary), then re-scored by a composite of semantic
-relevance, issue overlap, statute overlap and doctrine overlap, and
-finally tie-broken by authority (court tier first, recency second) — so a
-later Constitution Bench does not lose to a merely "semantically similar"
-High Court ruling, and a case actually deciding the caller's legal issues
-outranks one that only shares surface vocabulary.
-"""
+"""case_law_rag.py — curated landmark-judgment index, separate from the statute index (different data shape: a handful of long prose documents with authority metadata, not..."""
 
 from __future__ import annotations
 
@@ -45,14 +30,12 @@ def rerank_source(case: "CaseRecord") -> str:
 
 
 def rerank_header(case: "CaseRecord") -> str:
-    """Case name plus its curated doctrines: a summary that opens with the facts
-    ("The respondent was a Minister...") says little about what the case stands for."""
+    """Case name plus its curated doctrines: a summary that opens with the facts ("The respondent was a Minister...") says little about what the case stands for."""
     return f"{case.case_name} — {'; '.join(case.doctrines)}" if case.doctrines else case.case_name
 
 
 def rerank_pair_text(case: "CaseRecord") -> str:
-    """Exactly the unified rerank's first (header + segment) input for this case,
-    so its cross-encoder score is computed once per request (cached_predict)."""
+    """Exactly the unified rerank's first (header + segment) input for this case, so its cross-encoder score is computed once per request (cached_predict)."""
     segs = segments(rerank_source(case))
     return f"{rerank_header(case)}\n{segs[0] if segs else case.case_name}"
 
@@ -60,10 +43,7 @@ def rerank_pair_text(case: "CaseRecord") -> str:
 _MAX_CURATED_CANDIDATES = 4
 FAISS_DIR = Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "case_law"
 
-# Composite reranking weights — must sum to 1.0. Semantic similarity still
-# dominates (it's the only signal general-chatbot callers without a FIRAC
-# query have), but issue/statute/doctrine overlap now materially move the
-# ranking instead of only breaking ties.
+
 _W_SEMANTIC = 0.40
 _W_ISSUE = 0.30
 _W_STATUTE = 0.20
@@ -121,9 +101,7 @@ def _build_summary(firac: dict) -> str:
 
 
 def _issue_overlap_score(query_issues: List[str], case_issues: List[str]) -> float:
-    """Best-match token-Jaccard, averaged over query issues. Cheap (no model
-    calls) — both lists are short phrases, so this is a tiny nested loop over
-    at most a few dozen candidates x a handful of issues, not a bottleneck."""
+    """Best-match token-Jaccard, averaged over query issues."""
     if not query_issues or not case_issues:
         return 0.0
 
@@ -149,9 +127,7 @@ _ACT_NOISE = frozenset({"act", "code", "the", "of", "and"})
 
 
 def normalize_act(name: str) -> str:
-    """Canonical act key: drops years, trailing acronyms ("… Code IBC") and
-    generic words so "Bharatiya Nyaya Sanhita BNS" == "Bharatiya Nyaya Sanhita"
-    and "Indian Contract Act" == "Indian Contract"."""
+    """Canonical act key: drops years, trailing acronyms ("… Code IBC") and generic words so "Bharatiya Nyaya Sanhita BNS" == "Bharatiya Nyaya Sanhita" and "Indian Contract Act" ==..."""
     words = re.sub(r"[,()\d]", " ", name).split()
     plain = [w for w in words if not _ACRONYM_RE.fullmatch(w)]
     if any(w.lower() not in _ACT_NOISE for w in plain):
@@ -167,15 +143,11 @@ def _acts_match(a: str, b: str) -> bool:
 _CASE_NAME_YEAR_RE = re.compile(r"\(\d{4}\)\s*$")
 _CASE_NAME_VS_RE = re.compile(r"\s+(?:v\.?|vs\.?|versus)\s+", re.IGNORECASE)
 _CASE_NAME_WS_RE = re.compile(r"\s+")
-_CASE_NAME_MATCH_THRESHOLD = 0.7  # false negatives (real case, flagged unverified)
-                                   # are safe; false positives (wrong case validated
-                                   # as real) are not — bias conservative.
+_CASE_NAME_MATCH_THRESHOLD = 0.7
 
 
 def normalize_case_name(name: str) -> str:
-    """Canonical case-name key: drops a trailing "(year)", folds v./vs./versus
-    to a single separator, lowercases, collapses whitespace — so "Ghose v.
-    Mugneeram Bangur (1954)" == "ghose vs mugneeram bangur"."""
+    """Canonical case-name key: drops a trailing "(year)", folds v./vs./versus to a single separator, lowercases, collapses whitespace — so "Ghose v."""
     name = _CASE_NAME_YEAR_RE.sub("", name).strip()
     name = _CASE_NAME_VS_RE.sub(" v ", name)
     return _CASE_NAME_WS_RE.sub(" ", name).strip().lower()
@@ -186,11 +158,7 @@ def _case_name_tokens(name: str) -> Set[str]:
 
 
 def find_case_in_cases(cases: Dict[str, "CaseRecord"], name: str) -> Optional["CaseRecord"]:
-    """Look up an indexed case by name: exact match on the normalized name
-    first, then a bounded fuzzy (token-Jaccard) match above
-    _CASE_NAME_MATCH_THRESHOLD. Returns None (never raises) when nothing
-    clears the bar, including on an empty corpus — never call rag.initialize()
-    here, this must stay a pure lookup with no I/O."""
+    """Look up an indexed case by name: exact match on the normalized name first, then a bounded fuzzy (token-Jaccard) match above _CASE_NAME_MATCH_THRESHOLD."""
     target = normalize_case_name(name)
     if not target:
         return None
@@ -214,9 +182,7 @@ def find_case_in_cases(cases: Dict[str, "CaseRecord"], name: str) -> Optional["C
 def _statute_overlap_score(
     case_statutes: List[List[str]], boost_keys: Set[Tuple[str, str]]
 ) -> float:
-    """Recall against the caller's boost set, not Jaccard against the case's
-    full citation list — a case citing 10 statutes but hitting both boosted
-    ones should score as well as one citing only those 2."""
+    """Recall against the caller's boost set, not Jaccard against the case's full citation list — a case citing 10 statutes but hitting both boosted ones should score as well as one..."""
     if not case_statutes or not boost_keys:
         return 0.0
     case_keys = [(normalize_act(a), s.lower()) for a, s in case_statutes]
@@ -275,13 +241,7 @@ class CaseLawRAGSystem:
                 return False
 
     async def build_offline(self, device: str) -> bool:
-        """
-        Force-build (or confirm up-to-date) using a throwaway embeddings
-        instance independent of the shared query-time singleton. See
-        BaseLegalRAGSystem.build_offline for the full rationale — same
-        offline-indexing-then-free-GPU pattern, applied to the case-law
-        index.
-        """
+        """Force-build (or confirm up-to-date) using a throwaway embeddings instance independent of the shared query-time singleton."""
         if not await self._should_rebuild():
             print("[case_law] Index already up to date — skipping build.")
             return True
@@ -307,14 +267,7 @@ class CaseLawRAGSystem:
                 pass
 
     async def _should_rebuild(self) -> bool:
-        """True if the index is absent or the source case JSON changed.
-
-        Fingerprint-based (path -> size), not mtime-based: a fresh
-        checkout/worktree resets file mtimes to checkout time even when
-        content is unchanged, which would otherwise force a spurious
-        full re-embed. Adding/changing the `firac` block changes a case
-        file's byte size, so this also picks up FIRAC backfills for free.
-        """
+        """True if the index is absent or the source case JSON changed."""
         meta_path = FAISS_DIR / "meta.pkl"
         if not FAISS_DIR.exists() or not meta_path.exists():
             return True
@@ -325,9 +278,9 @@ class CaseLawRAGSystem:
             return True
         stored_fingerprint = meta.get("case_fingerprint")
         if stored_fingerprint is None:
-            return True  # meta.pkl predates fingerprinting — rebuild once
-        # Vectors are model-specific — a different embedding model forces a
-        # rebuild (see base_legal_rag._should_rebuild).
+            return True
+
+
         from app.config import get_settings
 
         if meta.get("embedding_model") != get_settings().embedding_model:
@@ -507,7 +460,6 @@ class CaseLawRAGSystem:
             )
         self._bm25 = BM25Okapi(corpus)
 
-    # ── Retrieval ────────────────────────────────────────────────
 
     async def retrieve(
         self,
@@ -518,18 +470,7 @@ class CaseLawRAGSystem:
         query_doctrines: Optional[List[str]] = None,
         min_score: float = 0.15,
     ) -> List[CaseRecord]:
-        """
-        Hybrid retrieval, RRF-fused, cross-encoder reranked against each
-        case's FIRAC summary, then re-scored by a weighted composite of
-        semantic relevance + issue overlap + statute overlap + doctrine
-        overlap, tie-broken by (court authority tier, recency).
-
-        query_issues/query_doctrines are optional — callers without a
-        structured FIRAC query (e.g. the general chatbot's statute->case
-        multi-hop) simply get 0.0 contribution from those terms for every
-        candidate, which degrades ranking to semantic+statute-weighted
-        rather than distorting it.
-        """
+        """Hybrid retrieval, RRF-fused, cross-encoder reranked against each case's FIRAC summary, then re-scored by a weighted composite of semantic relevance + issue overlap + statute..."""
         if not self.initialized:
             await self.initialize()
         if not self.initialized or not self.vector_store:
@@ -574,9 +515,7 @@ class CaseLawRAGSystem:
         query_issues = query_issues or []
         query_doctrines = query_doctrines or []
 
-        # The curated doctrine/statute links name the landmark for a question even
-        # when its summary text is far from the query (Bhajan Lal for "quashing of
-        # FIR"); similarity alone never put it in the pool for the boosts to act on.
+
         curated = sorted(
             (cid for cid, c in self._cases.items() if cid not in candidates),
             key=lambda cid: (
@@ -650,10 +589,7 @@ class CaseLawRAGSystem:
         return out
 
     def find_case(self, name: str) -> Optional[CaseRecord]:
-        """Look up an indexed case by name — see find_case_in_cases(). A pure
-        in-memory lookup, no I/O: callers must check .initialized themselves
-        (this returns None either way on an empty/uninitialized corpus, but
-        callers should not treat that as "verified nothing exists")."""
+        """Look up an indexed case by name — see find_case_in_cases()."""
         return find_case_in_cases(self._cases, name)
 
 

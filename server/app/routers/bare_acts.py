@@ -1,7 +1,4 @@
-"""
-Bare Act Explorer — public (no auth), read-only reference lookup over the
-existing unified statute + case-law RAG stack (app/tools/bare_act_explorer.py).
-"""
+"""Bare Act Explorer — public (no auth), read-only reference lookup over the existing unified statute + case-law RAG stack (app/tools/bare_act_explorer.py)."""
 
 from fastapi import APIRouter, Query
 

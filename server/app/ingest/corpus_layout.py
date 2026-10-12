@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""
-Canonical layout of the corpus drive, plus a verifier that enforces it.
-
-  README.md   MANIFEST.json   manifest/        provenance, counts, file hashes
-  statutes/   case_law/       judgments/       source documents (raw, immutable)
-  iltur/                                        benchmark export
-  builds/     quarantine/                      derived artefacts, rejected files
-  _legacy/    myenv/                           old scripts; a venv (left as-is)
-
-`--init` creates the folders and README, and tidies strays at the root: old
-top-level scripts move to _legacy/, and empty leftover `YYYY/` year folders are
-removed (a non-empty one is left alone and reported).
-`--verify` fails on anything outside the layout, empty directories, SC files
-that disagree with their manifest, and (with --deep) sha256 mismatches.
-
-Usage (from server/):
-    python -m app.ingest.corpus_layout --init
-    python -m app.ingest.corpus_layout --verify [--deep]
-"""
+"""Canonical layout of the corpus drive, plus a verifier that enforces it."""
 
 from __future__ import annotations
 
@@ -44,7 +26,7 @@ TOP_LEVEL_DIRS = (
     "_legacy",
 )
 TOP_LEVEL_FILES = ("README.md", "MANIFEST.json")
-LEFT_ALONE = ("myenv", "indiankanoon")  # a virtualenv breaks if moved; indiankanoon/ is a retired API cache
+LEFT_ALONE = ("myenv", "indiankanoon")
 STRAY_SCRIPTS = ("download.sh", "divide.sh")
 _YEAR_DIR = re.compile(r"^\d{4}$")
 

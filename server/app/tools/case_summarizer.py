@@ -1,8 +1,4 @@
-"""
-AI summaries for My Cases — reuses the existing Ollama models (no new model
-loaded), invoked on-demand from app/routers/cases.py and from the scheduled
-sync job (app/jobs/_case_sync.py) whenever a new order event appears.
-"""
+"""AI summaries for My Cases — reuses the existing Ollama models (no new model loaded), invoked on-demand from app/routers/cases.py and from the scheduled sync job..."""
 
 from app.chatbot import get_fast_llm_prose, invoke_llm_safely, strip_reasoning_tags
 

@@ -1,19 +1,4 @@
-"""
-unified_rerank.py — one cross-encoder pass over everything retrieved for a query.
-
-Statute sections, curated case-law summaries and judgment passages are retrieved by
-different indices whose own scores are not comparable. Here every candidate is
-scored against the query by the same cross-encoder, so the final ordering is on one
-scale across sources:
-
-  * long items are split into segments and keep their best segment's score, so a
-    relevant sentence late in a long passage is not lost to input truncation;
-  * scores are relative to the best item (cross-encoder probabilities are ordinal,
-    not calibrated), items below `min_relative` of the best are dropped;
-  * `per_source_cap` keeps one source (e.g. many passages of one judgment) from
-    crowding out the others; candidates sharing a `group` (passages of one judgment)
-    keep only their best member.
-"""
+"""unified_rerank.py — one cross-encoder pass over everything retrieved for a query."""
 
 from __future__ import annotations
 
@@ -21,18 +6,18 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-SEGMENT_CHARS = 1400  # ~350 tokens: leaves room for the query inside a 512-token input
+SEGMENT_CHARS = 1400
 MAX_SEGMENTS = 4
 
 
 @dataclass
 class Candidate:
-    source: str  # "statute" | "case_law" | "judgment" | ...
-    key: str  # unique within source
+    source: str
+    key: str
     text: str
-    header: str = ""  # e.g. "Indian Penal Code s.302 — Punishment for murder"
-    payload: Any = None  # the original object, returned untouched
-    group: str = ""  # e.g. the judgment's doc_id; one candidate per non-empty group
+    header: str = ""
+    payload: Any = None
+    group: str = ""
     score: float = 0.0
     segment_scores: List[float] = field(default_factory=list)
 
@@ -54,7 +39,7 @@ def segments(text: str, size: int = SEGMENT_CHARS, limit: int = MAX_SEGMENTS) ->
                 current = f"{current}\n{piece}" if current else piece
     if current:
         out.append(current)
-    if len(out) > limit:  # keep the start and spread the rest evenly
+    if len(out) > limit:
         step = (len(out) - 1) / (limit - 1)
         out = [out[round(i * step)] for i in range(limit)]
     return out
@@ -72,8 +57,7 @@ def rerank(
     min_relative: float = 0.2,
     per_source_cap: Optional[Dict[str, int]] = None,
 ) -> List[Candidate]:
-    """Score every candidate with `predict` (a cross-encoder's predict over
-    (query, text) pairs) and return the best top_k across all sources."""
+    """Score every candidate with `predict` (a cross-encoder's predict over (query, text) pairs) and return the best top_k across all sources."""
     pairs, owners = [], []
     for i, c in enumerate(candidates):
         for seg in segments(c.text) or [c.header]:

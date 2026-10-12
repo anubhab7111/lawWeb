@@ -38,7 +38,7 @@ def test_most_relevant_authority_wins_whichever_index_found_it():
     passages = [passage("sc-1#001", "A v. B", "land dispute"), passage("sc-2#004", "C v. D", "arrest was illegal arrest")]
     text = run(cases, passages, KeywordReranker())
     assert text.index("Arnesh Kumar") < text.index("C v. D")
-    assert "A v. B" not in text  # below the relative cut-off
+    assert "A v. B" not in text
 
 
 def test_judgment_passages_are_capped_and_cited():

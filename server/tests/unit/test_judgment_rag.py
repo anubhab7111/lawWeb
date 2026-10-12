@@ -42,7 +42,7 @@ def test_fts_query_is_safe_and_deduplicated():
 def test_lexical_and_dense_hybrid_retrieval(tmp_path):
     index = _build(tmp_path)
     assert index.available
-    vec = np.array([[0, 1, 0, 0]], dtype=np.float32)  # dense points at the rent chunk
+    vec = np.array([[0, 1, 0, 0]], dtype=np.float32)
     top = index.retrieve("landlord eviction rent", vec, k=2)
     assert top[0].chunk_id == "sc-x#001"
     assert set(top[0].sources) == {"dense", "lexical"}

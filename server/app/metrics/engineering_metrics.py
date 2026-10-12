@@ -1,17 +1,4 @@
-"""
-Engineering & Cost Metrics
-==========================
-Tracks the operational health and economic efficiency of the RAG pipeline.
-
-Metrics implemented
--------------------
-1. Latency Stats          — min / p50 / p95 / p99 / max / mean (seconds)
-2. Cost per 1 k Queries   — estimated LLM spend at several reference pricing tiers
-3. Token Usage Efficiency — ratio of useful output tokens to total tokens processed
-
-All functions are pure (no I/O, no LLM calls) so they can be used in unit tests
-without any external dependencies beyond the standard library.
-"""
+"""Engineering & Cost Metrics ========================== Tracks the operational health and economic efficiency of the RAG pipeline."""
 
 from __future__ import annotations
 
@@ -19,66 +6,32 @@ import math
 import re
 from typing import Dict, List, Optional, Sequence
 
-# ---------------------------------------------------------------------------
-# Token counting
-# ---------------------------------------------------------------------------
 
-# A rough but dependency-free token estimator.
-# Real tiktoken / sentencepiece counts will differ by ±15 %, which is
-# acceptable for cost *estimation* purposes.
 _WHITESPACE_RE = re.compile(r"\s+")
 _PUNCTUATION_RE = re.compile(r"[^\w\s]")
 
 
 def count_tokens_approx(text: str) -> int:
-    """
-    Approximate the number of LLM tokens in *text*.
-
-    Uses the widely-cited heuristic that 1 token ≈ 0.75 words for English
-    prose (GPT-3/4 and most open-weight models are within ~10 % of this).
-    Legal text skews slightly higher due to long Latin phrases and section
-    numbers, so we apply a 1.10 correction factor.
-
-    Args:
-        text: Any string — prompt, context, or answer.
-
-    Returns:
-        Estimated integer token count (minimum 1 for non-empty strings).
-    """
+    """Approximate the number of LLM tokens in *text*."""
     if not text or not text.strip():
         return 0
-    # Collapse whitespace, count words
+
     cleaned = _WHITESPACE_RE.sub(" ", text.strip())
     word_count = len(cleaned.split())
-    # 1 token ≈ 0.75 words  →  tokens ≈ words / 0.75 ≈ words * 1.333
-    # Legal text correction: multiply by 1.10
+
+
     token_count = math.ceil(word_count * 1.333 * 1.10)
     return max(1, token_count)
 
 
-# ---------------------------------------------------------------------------
-# Latency statistics
-# ---------------------------------------------------------------------------
-
-
 def _percentile(sorted_values: List[float], pct: float) -> float:
-    """
-    Compute a percentile value from a **sorted** list using linear
-    interpolation (same algorithm as numpy.percentile with interpolation='linear').
-
-    Args:
-        sorted_values: A list of floats, already sorted ascending.
-        pct:           Percentile in [0, 100].
-
-    Returns:
-        Interpolated percentile value.
-    """
+    """Compute a percentile value from a **sorted** list using linear interpolation (same algorithm as numpy.percentile with interpolation='linear')."""
     n = len(sorted_values)
     if n == 0:
         return 0.0
     if n == 1:
         return sorted_values[0]
-    # Linear interpolation index
+
     idx = (pct / 100.0) * (n - 1)
     lower = int(idx)
     upper = min(lower + 1, n - 1)
@@ -87,31 +40,7 @@ def _percentile(sorted_values: List[float], pct: float) -> float:
 
 
 def compute_latency_stats(latencies: Sequence[float]) -> Dict[str, float]:
-    """
-    Compute a full latency distribution from a list of per-request timings.
-
-    Args:
-        latencies: Sequence of response times in **seconds** — one per query.
-
-    Returns:
-        Dictionary with keys::
-
-            {
-                "count":  int,   # number of samples
-                "min":    float, # fastest request
-                "mean":   float, # arithmetic mean
-                "median": float, # p50
-                "p95":    float, # 95th percentile
-                "p99":    float, # 99th percentile
-                "max":    float, # slowest request
-                "stdev":  float, # sample standard deviation
-            }
-
-    Example:
-        >>> stats = compute_latency_stats([1.2, 3.4, 2.1, 5.0, 1.8])
-        >>> stats["p95"]  # doctest: +SKIP
-        4.72
-    """
+    """Compute a full latency distribution from a list of per-request timings."""
     if not latencies:
         return {
             "count": 0,
@@ -128,7 +57,7 @@ def compute_latency_stats(latencies: Sequence[float]) -> Dict[str, float]:
     n = len(values)
     mean = sum(values) / n
 
-    # Sample standard deviation
+
     if n > 1:
         variance = sum((v - mean) ** 2 for v in values) / (n - 1)
         stdev = math.sqrt(variance)
@@ -147,43 +76,36 @@ def compute_latency_stats(latencies: Sequence[float]) -> Dict[str, float]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Cost estimation
-# ---------------------------------------------------------------------------
-
-# Pricing reference table (USD per 1 000 tokens, as of mid-2025).
-# Prices are approximate and for illustration only.
-# Keys are model-tier names used in the report.
 PRICING_TABLE: Dict[str, Dict[str, float]] = {
-    # Self-hosted Ollama — only marginal electricity / hardware cost.
-    # Approximated at $0.30/hr for a consumer GPU running at ~30 tok/s.
+
+
     "ollama_local": {
-        "input_per_1k_tokens": 0.00010,  # ~$0.10 / 1M tokens
+        "input_per_1k_tokens": 0.00010,
         "output_per_1k_tokens": 0.00010,
         "description": "Self-hosted Ollama (Mistral-7B / LLaMA-3-8B)",
     },
-    # Cloud — small open-weight models via Together / Fireworks / Groq
+
     "cloud_small": {
-        "input_per_1k_tokens": 0.00020,  # $0.20 / 1M
+        "input_per_1k_tokens": 0.00020,
         "output_per_1k_tokens": 0.00020,
         "description": "Cloud small (Mistral-7B / LLaMA-3-8B via API)",
     },
-    # Cloud — medium open-weight models
+
     "cloud_medium": {
-        "input_per_1k_tokens": 0.00090,  # $0.90 / 1M
+        "input_per_1k_tokens": 0.00090,
         "output_per_1k_tokens": 0.00090,
         "description": "Cloud medium (Mixtral-8x7B / LLaMA-3-70B via API)",
     },
-    # GPT-4o (OpenAI, as of mid-2025)
+
     "gpt4o": {
-        "input_per_1k_tokens": 0.00500,  # $5.00 / 1M
-        "output_per_1k_tokens": 0.01500,  # $15.00 / 1M
+        "input_per_1k_tokens": 0.00500,
+        "output_per_1k_tokens": 0.01500,
         "description": "OpenAI GPT-4o",
     },
-    # Claude 3.5 Sonnet (Anthropic)
+
     "claude_sonnet": {
-        "input_per_1k_tokens": 0.00300,  # $3.00 / 1M
-        "output_per_1k_tokens": 0.01500,  # $15.00 / 1M
+        "input_per_1k_tokens": 0.00300,
+        "output_per_1k_tokens": 0.01500,
         "description": "Anthropic Claude-3.5-Sonnet",
     },
 }
@@ -193,36 +115,7 @@ def estimate_cost_per_1k(
     token_records: Sequence[Dict[str, int]],
     model_tier: str = "ollama_local",
 ) -> Dict[str, float]:
-    """
-    Estimate the dollar cost of running the pipeline at 1 000 queries.
-
-    Args:
-        token_records:
-            Sequence of per-query token dicts, each with keys:
-            - ``"input_tokens"``  : prompt + context tokens fed to the LLM
-            - ``"output_tokens"`` : tokens in the LLM response
-        model_tier:
-            One of the keys in :data:`PRICING_TABLE`.
-            Defaults to ``"ollama_local"``.
-
-    Returns:
-        Dictionary::
-
-            {
-                "model_tier":           str,
-                "description":          str,
-                "avg_input_tokens":     float,
-                "avg_output_tokens":    float,
-                "avg_total_tokens":     float,
-                "cost_per_query_usd":   float,
-                "cost_per_1k_usd":      float,
-                "cost_per_10k_usd":     float,
-                "cost_per_100k_usd":    float,
-            }
-
-    Raises:
-        ValueError: If *model_tier* is not in :data:`PRICING_TABLE`.
-    """
+    """Estimate the dollar cost of running the pipeline at 1 000 queries."""
     if model_tier not in PRICING_TABLE:
         raise ValueError(
             f"Unknown model_tier '{model_tier}'. "
@@ -253,7 +146,7 @@ def estimate_cost_per_1k(
     avg_output = total_output / n
     avg_total = avg_input + avg_output
 
-    # Cost for a single average query (USD)
+
     cost_per_query = (
         avg_input / 1000 * pricing["input_per_1k_tokens"]
         + avg_output / 1000 * pricing["output_per_1k_tokens"]
@@ -275,21 +168,11 @@ def estimate_cost_per_1k(
 def estimate_cost_all_tiers(
     token_records: Sequence[Dict[str, int]],
 ) -> Dict[str, Dict[str, float]]:
-    """
-    Run :func:`estimate_cost_per_1k` across all pricing tiers and return a
-    combined dictionary keyed by tier name.
-
-    Useful for generating the side-by-side cost comparison table in reports.
-    """
+    """Run :func:`estimate_cost_per_1k` across all pricing tiers and return a combined dictionary keyed by tier name."""
     return {
         tier: estimate_cost_per_1k(token_records, model_tier=tier)
         for tier in PRICING_TABLE
     }
-
-
-# ---------------------------------------------------------------------------
-# Token efficiency
-# ---------------------------------------------------------------------------
 
 
 def compute_token_efficiency(
@@ -297,45 +180,7 @@ def compute_token_efficiency(
     input_tokens: int,
     output_tokens: Optional[int] = None,
 ) -> Dict[str, float]:
-    """
-    Measure how efficiently the LLM converts input tokens into a useful answer.
-
-    Two complementary ratios are computed:
-
-    * **output_ratio** — ``output_tokens / input_tokens``
-      Should be well below 1.0; a ratio above ~0.5 may indicate a bloated
-      prompt or a model that is repeating the context.
-
-    * **efficiency_score** — a normalised score in [0, 1] that rewards answers
-      which are (a) non-trivially long relative to the question and (b) don't
-      merely echo back the retrieved context word-for-word.
-
-      The formula is:
-      ``efficiency_score = min(output_tokens, 512) / (input_tokens + output_tokens)``
-
-      Intuition: an ideal answer uses ~20–40 % of the total budget on new,
-      synthesised content.  Very short answers (< 50 tokens) score low;
-      answers that dominate the total budget also score low.
-
-    Args:
-        answer:        The LLM's final answer text.
-        input_tokens:  Tokens fed *into* the LLM (prompt + context).
-                       Pass ``count_tokens_approx(prompt)`` if exact count
-                       is unavailable.
-        output_tokens: Tokens in the LLM's response.  If ``None``, estimated
-                       from *answer* with :func:`count_tokens_approx`.
-
-    Returns:
-        Dictionary::
-
-            {
-                "input_tokens":     int,
-                "output_tokens":    int,
-                "total_tokens":     int,
-                "output_ratio":     float,   # output / input
-                "efficiency_score": float,   # 0 – 1
-            }
-    """
+    """Measure how efficiently the LLM converts input tokens into a useful answer."""
     if output_tokens is None:
         output_tokens = count_tokens_approx(answer)
 
@@ -345,7 +190,7 @@ def compute_token_efficiency(
 
     output_ratio = round(output_tokens / input_tokens, 4)
 
-    # efficiency_score: reward meaningful output without dominating the budget
+
     clamped_output = min(output_tokens, 512)
     efficiency_score = round(clamped_output / total, 4) if total > 0 else 0.0
 
@@ -361,15 +206,7 @@ def compute_token_efficiency(
 def aggregate_token_efficiency(
     records: Sequence[Dict[str, float]],
 ) -> Dict[str, float]:
-    """
-    Average per-query token efficiency stats across a full evaluation run.
-
-    Args:
-        records: List of dicts returned by :func:`compute_token_efficiency`.
-
-    Returns:
-        Dict with mean values for each numeric key, plus ``"sample_count"``.
-    """
+    """Average per-query token efficiency stats across a full evaluation run."""
     if not records:
         return {
             "sample_count": 0,
@@ -400,31 +237,12 @@ def aggregate_token_efficiency(
     }
 
 
-# ---------------------------------------------------------------------------
-# Convenience: build token record from raw text
-# ---------------------------------------------------------------------------
-
-
 def build_token_record(
     prompt: str,
     context: str,
     answer: str,
 ) -> Dict[str, int]:
-    """
-    Build a token-count dict from raw text components.
-
-    Combines prompt and retrieved context into ``input_tokens`` and counts
-    the answer as ``output_tokens``.  All counts are approximations via
-    :func:`count_tokens_approx`.
-
-    Args:
-        prompt:  The user query / system prompt passed to the LLM.
-        context: The retrieved context / RAG documents added to the prompt.
-        answer:  The LLM's generated response.
-
-    Returns:
-        ``{"input_tokens": int, "output_tokens": int}``
-    """
+    """Build a token-count dict from raw text components."""
     input_tokens = count_tokens_approx(prompt) + count_tokens_approx(context)
     output_tokens = count_tokens_approx(answer)
     return {
@@ -433,19 +251,15 @@ def build_token_record(
     }
 
 
-# ---------------------------------------------------------------------------
-# Quick self-test
-# ---------------------------------------------------------------------------
-
 if __name__ == "__main__":
-    # --- latency ---
+
     sample_latencies = [1.2, 3.4, 2.1, 5.0, 1.8, 4.2, 2.9, 3.1, 1.5, 22.0]
     stats = compute_latency_stats(sample_latencies)
     print("Latency stats:")
     for k, v in stats.items():
         print(f"  {k:<10} {v}")
 
-    # --- cost ---
+
     sample_tokens = [
         {"input_tokens": 1800, "output_tokens": 350},
         {"input_tokens": 2100, "output_tokens": 420},
@@ -457,7 +271,7 @@ if __name__ == "__main__":
             f"  {cost['description']:<50} ${cost['cost_per_1k_usd']:.4f} / 1k queries"
         )
 
-    # --- token efficiency ---
+
     answer_text = "The Supreme Court in Kesavananda Bharati held that Parliament cannot amend the basic structure of the Constitution."
     eff = compute_token_efficiency(answer=answer_text, input_tokens=1800)
     print("\nToken efficiency:")

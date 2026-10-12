@@ -1,15 +1,11 @@
-"""
-Document extraction and analysis module.
-Handles PDF, DOCX, text files, and images with built-in OCR support.
-Unified tool that combines text extraction and Tesseract OCR.
-"""
+"""Document extraction and analysis module."""
 
 import io
 import os
 from typing import Optional, Tuple
 import asyncio
 
-# OCR processing
+
 try:
     import pytesseract
     from PIL import Image
@@ -25,7 +21,7 @@ try:
 except ImportError:
     HAS_PDF2IMAGE = False
 
-# PDF processing
+
 try:
     import pdfplumber
 
@@ -40,7 +36,7 @@ try:
 except ImportError:
     HAS_PYPDF = False
 
-# DOCX processing
+
 try:
     from docx import Document as DocxDocument
 
@@ -50,12 +46,7 @@ except ImportError:
 
 
 def check_ocr_availability() -> Tuple[bool, str]:
-    """
-    Check if OCR is available on the system.
-
-    Returns:
-        Tuple of (is_available, message)
-    """
+    """Check if OCR is available on the system."""
     if not HAS_PYTESSERACT:
         return False, "pytesseract not installed"
 
@@ -67,10 +58,7 @@ def check_ocr_availability() -> Tuple[bool, str]:
 
 
 class DocumentExtractor:
-    """
-    Unified document text extraction with built-in OCR support.
-    Supports PDF, DOCX, plain text files, and images (via Tesseract OCR).
-    """
+    """Unified document text extraction with built-in OCR support."""
 
     SUPPORTED_EXTENSIONS = {
         ".pdf",
@@ -84,8 +72,8 @@ class DocumentExtractor:
         ".gif",
     }
     SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"}
-    MAX_PAGES = 100  # Limit for performance
-    MAX_IMAGE_SIZE = (3000, 3000)  # Resize large images for faster OCR
+    MAX_PAGES = 100
+    MAX_IMAGE_SIZE = (3000, 3000)
 
     def __init__(self, tesseract_cmd: Optional[str] = None):
         self._cache = {}
@@ -101,24 +89,12 @@ class DocumentExtractor:
             else:
                 print(f"OCR not available: {message}")
 
-    # ========================================================================
-    # Public API
-    # ========================================================================
 
     async def extract_text(self, file_bytes: bytes, filename: str) -> Tuple[str, str]:
-        """
-        Extract text from a document file or image.
-
-        Args:
-            file_bytes: The file content as bytes
-            filename: Original filename to determine type
-
-        Returns:
-            Tuple of (extracted_text, file_type)
-        """
+        """Extract text from a document file or image."""
         extension = self._get_extension(filename)
 
-        # Handle images with OCR
+
         if extension in self.SUPPORTED_IMAGE_EXTENSIONS:
             if self._ocr_available:
                 text = await self._extract_from_image(file_bytes, filename)
@@ -131,7 +107,7 @@ class DocumentExtractor:
         if extension == ".pdf":
             text = await self._extract_pdf_async(file_bytes)
 
-            # If PDF has very little text, try OCR as fallback (likely scanned)
+
             if len(text.strip()) < 100 and self._ocr_available:
                 try:
                     ocr_text = await self._extract_from_pdf_images(file_bytes)
@@ -157,21 +133,9 @@ class DocumentExtractor:
         else:
             raise ValueError(f"Unsupported file type: {extension}")
 
-    # ========================================================================
-    # OCR Extraction
-    # ========================================================================
 
     async def _extract_from_image(self, image_bytes: bytes, filename: str = "") -> str:
-        """
-        Extract text from an image file using OCR.
-
-        Args:
-            image_bytes: Image file bytes
-            filename: Original filename (for logging)
-
-        Returns:
-            Extracted text
-        """
+        """Extract text from an image file using OCR."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self._extract_from_image_sync, image_bytes, filename
@@ -182,11 +146,11 @@ class DocumentExtractor:
         try:
             image = Image.open(io.BytesIO(image_bytes))
 
-            # Convert to RGB if needed
+
             if image.mode not in ("RGB", "L"):
                 image = image.convert("RGB")
 
-            # Resize large images for faster processing
+
             if (
                 image.size[0] > self.MAX_IMAGE_SIZE[0]
                 or image.size[1] > self.MAX_IMAGE_SIZE[1]
@@ -202,16 +166,7 @@ class DocumentExtractor:
     async def _extract_from_pdf_images(
         self, pdf_bytes: bytes, max_pages: int = 20
     ) -> str:
-        """
-        Extract text from scanned PDF by converting pages to images and OCR.
-
-        Args:
-            pdf_bytes: PDF file bytes
-            max_pages: Maximum number of pages to process
-
-        Returns:
-            Extracted text from all pages
-        """
+        """Extract text from scanned PDF by converting pages to images and OCR."""
         if not HAS_PDF2IMAGE:
             raise ImportError(
                 "pdf2image not installed. Install with: pip install pdf2image"
@@ -260,9 +215,6 @@ class DocumentExtractor:
         except Exception as e:
             raise ValueError(f"Failed to extract text from PDF images: {str(e)}")
 
-    # ========================================================================
-    # PDF / DOCX Extraction
-    # ========================================================================
 
     async def _extract_pdf_async(self, file_bytes: bytes) -> str:
         """Extract text from PDF asynchronously."""
@@ -270,13 +222,10 @@ class DocumentExtractor:
         return await loop.run_in_executor(None, self._extract_pdf_sync, file_bytes)
 
     def _extract_pdf_sync(self, file_bytes: bytes) -> str:
-        """
-        Extract text from PDF synchronously.
-        Uses pdfplumber for better text extraction, falls back to pypdf.
-        """
+        """Extract text from PDF synchronously."""
         file_stream = io.BytesIO(file_bytes)
 
-        # Try pdfplumber first (better for tables and complex layouts)
+
         if HAS_PDFPLUMBER:
             try:
                 text_parts = []
@@ -292,9 +241,9 @@ class DocumentExtractor:
                             text_parts.append(page_text)
                 return "\n\n".join(text_parts)
             except Exception:
-                file_stream.seek(0)  # Reset stream for fallback
+                file_stream.seek(0)
 
-        # Fallback to pypdf
+
         if HAS_PYPDF:
             try:
                 reader = PdfReader(file_stream)
@@ -337,7 +286,7 @@ class DocumentExtractor:
             if para.text.strip():
                 paragraphs.append(para.text)
 
-        # Also extract from tables
+
         for table in doc.tables:
             for row in table.rows:
                 row_text = " | ".join(
@@ -348,16 +297,12 @@ class DocumentExtractor:
 
         return "\n\n".join(paragraphs)
 
-    # ========================================================================
-    # Helpers
-    # ========================================================================
 
     def _get_extension(self, filename: str) -> str:
         """Get lowercase file extension."""
         return os.path.splitext(filename.lower())[1]
 
 
-# Singleton instance
 _extractor: Optional[DocumentExtractor] = None
 
 

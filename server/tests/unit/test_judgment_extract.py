@@ -11,7 +11,7 @@ def page(*lines, w=430, h=640):
     return f'<page width="{w}" height="{h}"><flow><block>{"".join(lines)}</block></flow></page>'
 
 
-BODY = 68  # body left edge; paragraph starts sit ~23pt right of it
+BODY = 68
 
 
 def doc(*pages):
@@ -77,9 +77,9 @@ def test_margin_letters_inside_a_body_line_are_removed_per_word():
         line(BODY, 93, "the statute must be read in its entirety and in context", x1=376),
         line(BODY, 106, "so that no provision is rendered otiose or superfluous", x1=376),
         line(BODY, 119, "and the object of the enactment is fully served here", x1=376),
-        # marker inside the line's word list, left of the body edge
+
         line_words(132, [(20, 28, "D"), (68, 100, "provisions"), (104, 130, "of"), (134, 160, "the"), (164, 376, "2000 Act were held applicable.")]),
-        # marker at the right edge, same line
+
         line_words(145, [(68, 200, "Learned counsel argued that"), (204, 376, "the notification is void"), (384, 392, "E")]),
     ]
     text = "\n\n".join(pages_to_paragraphs(parse_bbox_xml(doc(page(*lines)))))

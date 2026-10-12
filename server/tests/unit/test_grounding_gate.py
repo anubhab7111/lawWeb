@@ -1,6 +1,4 @@
-"""The claim-level grounding gate. Fixtures are modelled on real answers where the
-previous gate flagged faithful statute text, resolved section numbers against the
-wrong Act, and rewrote correct sentences."""
+"""The claim-level grounding gate."""
 
 import asyncio
 import json
@@ -9,9 +7,7 @@ from types import SimpleNamespace
 
 from app.tools import grounding_verifier as gv
 
-# The format app.tool_dispatch._budget_context produces. The first provision
-# follows the block header with a SINGLE newline — a parser that splits on blank
-# lines alone silently drops it.
+
 CONTEXT = (
     "**Applicable Statutory Provisions** (each is tagged with its legal domain):\n"
     "• **Constitution of India Article 21** — Protection of life and personal liberty [constitutional]\n"
@@ -50,9 +46,7 @@ DECOY_COPYRIGHT_56 = [SimpleNamespace(
 
 
 class StubRag:
-    """find_section as the gate uses it: real text for a hinted lookup of a
-    section we hold, and the Copyright Act decoy for an act-less "56" — what the
-    old gate wrongly used as evidence for a Contract Act citation."""
+    """find_section as the gate uses it: real text for a hinted lookup of a section we hold, and the Copyright Act decoy for an act-less "56" — what the old gate wrongly used as..."""
 
     def find_section(self, act_hint, section, max_parts=1):
         if not act_hint:
@@ -73,15 +67,9 @@ def only_claim(answer):
     return claims[0]
 
 
-# --- parsing the context -------------------------------------------------------
-
-
 def test_the_first_provision_after_the_block_header_is_parsed():
     sections = [sec for sec, _ in gv._context_passages(CONTEXT)]
-    assert sections == ["21", "19", "10", "13B", "56", ""]  # incl. the first, and case law (no section)
-
-
-# --- faithful text must not be flagged ------------------------------------------
+    assert sections == ["21", "19", "10", "13B", "56", ""]
 
 
 def test_verbatim_statute_with_must_is_supported():
@@ -90,8 +78,8 @@ def test_verbatim_statute_with_must_is_supported():
 
 
 def test_faithful_restatement_of_an_exception_is_not_a_contradiction():
-    # "No person shall be deprived ... except according to procedure" restated with
-    # "cannot ... without": the old dropped-qualifier rule called this CONTRADICTED.
+
+
     claim = only_claim(
         "Under Article 21 no person can be deprived of life or personal liberty without "
         "procedure established by law."
@@ -100,8 +88,8 @@ def test_faithful_restatement_of_an_exception_is_not_a_contradiction():
 
 
 def test_qualifiers_elsewhere_in_the_context_do_not_condemn_an_uncited_claim():
-    # the context contains "unless"/"except" (other provisions); it must not
-    # count against an unrelated obligation claim
+
+
     claim = only_claim(
         "The court must grant a decree on the motion of both parties made after six months."
     )
@@ -115,14 +103,9 @@ def test_a_claim_resting_on_case_law_is_not_flagged_for_lacking_the_section_text
     assert claim.status != gv.UNGROUNDED
 
 
-# --- real errors are still caught ------------------------------------------------
-
-
 def test_a_qualifier_phrased_differently_from_the_source_is_not_invented():
-    # Regression (live, 18-query eval set): §10 Contract Act's real exception is
-    # "Nothing herein contained shall affect any law... requiring... in writing"
-    # — no literal "unless"/"except". A faithful claim using "unless" to describe
-    # that same exception was flagged as inventing a condition the source lacks.
+
+
     claim = only_claim(
         "Section 10 of the Contract Act makes agreements binding unless a specific "
         "law requires them to be in writing."
@@ -131,11 +114,8 @@ def test_a_qualifier_phrased_differently_from_the_source_is_not_invented():
 
 
 def test_a_claim_with_no_qualifier_language_anywhere_in_the_source_is_still_caught():
-    # The broadened check only forgives a DIFFERENTLY-WORDED qualifier — an
-    # invented one against a source with no qualifying language at all must
-    # still be caught.
-    # Article 19 (added to this fixture for the multi-citation test below)
-    # states no qualifier of any kind, so an invented one must still be caught.
+
+
     claim = only_claim(
         "Article 19 protects freedom of speech unless the President declares a "
         "national holiday."
@@ -144,10 +124,8 @@ def test_a_claim_with_no_qualifier_language_anywhere_in_the_source_is_still_caug
 
 
 def test_a_claim_spanning_two_cited_provisions_is_checked_against_both():
-    # Regression (live): a claim about Article 19 qualified by Article 21's
-    # "except ..." was evidenced against whichever provision scored higher
-    # generic word-overlap (Article 19, the longer one) and flagged
-    # CONTRADICTED for "inventing" a qualifier Article 21 actually states.
+
+
     claim = only_claim(
         "All citizens' freedom of speech, expression, and right to move freely, "
         "form associations, or carry on any trade, occupation, profession or "
@@ -157,10 +135,8 @@ def test_a_claim_spanning_two_cited_provisions_is_checked_against_both():
 
 
 def test_a_negated_absolute_marker_does_not_assert_an_exceptionless_rule():
-    # "No absolute right exists" AGREES with a qualified provision — the
-    # opposite of "This right is absolute". Regression (live, 18-query eval
-    # set): flagged CONTRADICTED against Article 21's real "except ..." clause
-    # because the claim was correctly agreeing with it.
+
+
     claim = only_claim(
         "No absolute right exists under Article 21, which is subject to "
         "procedure established by law."
@@ -206,9 +182,8 @@ def test_a_citation_to_a_section_that_was_not_retrieved_is_ungrounded():
 
 
 def test_a_miscited_section_cannot_ride_on_a_neighbouring_provisions_wording():
-    # Worded exactly like retrieved Contract Act s.56, but attributed to a section
-    # that was never retrieved. Letting a cited claim match ANY retrieved passage
-    # would pass this on shared vocabulary alone.
+
+
     claim = only_claim(
         "Section 999 of the Indian Contract Act says a contract to do an act becomes void "
         "when the act becomes impossible or unlawful."
@@ -218,14 +193,11 @@ def test_a_miscited_section_cannot_ride_on_a_neighbouring_provisions_wording():
 
 
 def test_an_actless_citation_resolves_to_the_retrieved_provision_not_another_act():
-    # rag.find_section("", "56") returns the Copyright Act; the retrieved provision is
-    # the Contract Act's, and the claim is about that.
+
+
     claim = only_claim("Section 56 makes a contract void when the act becomes impossible or unlawful.")
     assert claim.status == gv.SUPPORTED
     assert "impossible" in claim.evidence and "copyright" not in claim.evidence.lower()
-
-
-# --- what is (not) a claim -------------------------------------------------------
 
 
 def test_headings_table_cells_hedges_and_list_lead_ins_are_not_claims():
@@ -244,11 +216,8 @@ def test_the_splitter_does_not_break_on_enumerators_and_abbreviations():
 
     assert spans("Ghose v. Mugneeram Bangur applies here.") == ["Ghose v. Mugneeram Bangur applies here."]
     assert spans("B. General procedure applies.") == ["B. General procedure applies."]
-    # ...but a year ending a sentence is still a boundary
+
     assert spans("The Act, 1956. The court decides.") == ["The Act, 1956.", "The court decides."]
-
-
-# --- adjudication: when text may be rewritten -------------------------------------
 
 
 def _adjudicate(answer, reply_status, corrected="REWRITTEN."):
@@ -266,8 +235,8 @@ def test_a_sentence_the_deterministic_evidence_condemned_is_rewritten():
 
 
 def test_an_llm_only_objection_flags_but_never_rewrites():
-    # cited paraphrase, deterministically fine (overlap 0.25-0.6) -> sent for review;
-    # the small model objects, but nothing else does.
+
+
     answer = "Article 21 requires the State to follow a fair procedure before depriving anyone of liberty."
     text, report = _adjudicate(answer, gv.CONTRADICTED, "This is wrong.")
     assert text == answer
@@ -314,9 +283,6 @@ def test_a_supported_verdict_never_rewrites_whatever_wording_comes_back():
     assert text == answer and report.flagged == []
 
 
-# --- the user-facing footer --------------------------------------------------------
-
-
 def test_an_llm_only_objection_never_produces_a_footer():
     answer = "Article 21 requires the State to follow a fair procedure before depriving anyone of liberty."
     _, report = _adjudicate(answer, gv.CONTRADICTED)
@@ -327,6 +293,6 @@ def test_a_confirmed_problem_produces_a_footer_with_an_honest_summary():
     answer = "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
     report = assess(answer)
     report.llm_succeeded = True
-    report.sentences[0].status = gv.UNGROUNDED  # what adjudication would leave
+    report.sentences[0].status = gv.UNGROUNDED
     footer = gv.grounding_footer(report)
     assert "Grounding check" in footer and "ten years" in footer

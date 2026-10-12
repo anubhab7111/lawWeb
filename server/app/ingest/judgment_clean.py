@@ -1,13 +1,4 @@
-"""
-Text quality scoring and cleaning for Supreme Court judgment PDFs.
-
-The PDFs are law-report scans with an OCR text layer: margin marker letters
-(A, B, C ... down the side of each page), running headers, page numbers,
-hyphenated line breaks, and paragraphs that only show up as indentation in
-`pdftotext -layout` output. `clean_judgment_text` turns that into plain
-paragraphs separated by blank lines; `text_quality` scores the raw extraction
-so unusable documents are quarantined instead of indexed.
-"""
+"""Text quality scoring and cleaning for Supreme Court judgment PDFs."""
 
 from __future__ import annotations
 
@@ -55,12 +46,11 @@ def text_quality(text: str, pages: int) -> Dict:
 
 def _strip_margins(line: str) -> str:
     line = _MARGIN_TRAIL.sub("", line)
-    # Blank the marker in place: the indentation still tells paragraph starts apart.
+
     line = _MARGIN_LEAD.sub(lambda m: " " * len(m.group(0)), line)
     return line.rstrip()
 
 
-# Page-top/bottom case-name headers: "BALKRISHNA v. SWADESHI POLYTEX 855".
 _CASE_HEADER = re.compile(r"^\s*(?:\d{1,4}\s+)?[A-Z][A-Z .,&'()-]{2,45}\sv\.?\s[A-Z .,&'()-]{2,45}(?:\s+\S{1,4})?\s*$")
 
 
@@ -81,20 +71,13 @@ _NUMBERED_PARA = re.compile(r"^\d{1,3}(?:\.\d{1,3})*\.?\s+\S")
 
 
 def _page_base(lines: List[str]) -> int:
-    """Body indent of a page: a low percentile, since paragraph-first lines
-    (indented further) must not be mistaken for the body."""
+    """Body indent of a page: a low percentile, since paragraph-first lines (indented further) must not be mistaken for the body."""
     indents = sorted(_indent(l) for l in lines if l.strip() and _indent(l) < 40)
     return indents[len(indents) // 10] if indents else 0
 
 
 def _paragraph_lines(raw: str) -> List[List[str]]:
-    """Group layout lines into paragraphs.
-
-    A paragraph can only start after a line that ended a sentence, and then
-    on a blank line, a numbered-paragraph marker, or an indent jump measured
-    against that page's own body indent (layouts differ page to page, so no
-    absolute threshold works). Everything else is a wrapped line.
-    """
+    """Group layout lines into paragraphs."""
     paragraphs: List[List[str]] = []
     current: List[str] = []
     pending_blank = False

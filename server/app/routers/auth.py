@@ -1,8 +1,4 @@
-"""
-Authentication endpoints (register/login/me), ported from the old Express
-server/src/routes/auth.ts. Response and error shapes are preserved exactly:
-the client reads `message` from error bodies, not FastAPI's default `detail`.
-"""
+"""Authentication endpoints (register/login/me), ported from the old Express server/src/routes/auth.ts."""
 
 import re
 from datetime import datetime, timedelta, timezone
@@ -28,9 +24,6 @@ def _error(status_code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"message": message})
 
 
-# bcrypt hard-rejects (ValueError) any password whose UTF-8 encoding exceeds
-# 72 bytes — both hashpw and checkpw. Checked explicitly so an over-length
-# password is a normal 400, not an unhandled 500.
 _BCRYPT_MAX_BYTES = 72
 _MIN_PASSWORD_CHARS = 8
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -80,7 +73,7 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
     try:
         session.commit()
     except IntegrityError:
-        # Unique-constraint race between the existence check and the insert
+
         return _error(400, "User already exists")
     session.refresh(user)
 
@@ -98,8 +91,8 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
 
     password_bytes = (body.password or "").encode()
     if len(password_bytes) > _BCRYPT_MAX_BYTES:
-        # Can't possibly match a hash of a <=72-byte password; treat like
-        # any other wrong password rather than crashing checkpw on it.
+
+
         return _error(400, "Invalid credentials")
     if not bcrypt.checkpw(password_bytes, user.password.encode()):
         return _error(400, "Invalid credentials")
@@ -139,8 +132,7 @@ def me(
     if not user:
         return _error(404, "User not found")
 
-    # Sliding session: hand back a fresh token once the current one is close
-    # to expiry, so an active user isn't signed out mid-session.
+
     remaining = decoded.get("exp", 0) - datetime.now(timezone.utc).timestamp()
     if remaining < 15 * 60:
         response.headers["X-Refreshed-Token"] = _make_token(user.id)

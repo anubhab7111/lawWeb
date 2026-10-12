@@ -1,51 +1,4 @@
-"""
-LLM-as-a-Judge Module  (OpenRouter Edition)
-============================================
-Uses a free OpenRouter model to evaluate RAG pipeline quality across four
-dimensions:
-
-  • Faithfulness      — Are all claims in the answer supported by the retrieved
-                        context?  (anti-hallucination measure)
-  • Answer Relevance  — Does the answer actually address the user's question?
-  • Context Precision — Is the retrieved context useful / relevant to the query?
-  • Context Recall    — Does the answer cover the key facts from a reference
-                        answer / the retrieved documents?
-
-Design principles
------------------
-  1. Every judge call returns a normalised float in [0, 1] plus a short
-     natural-language reasoning string so that failures are debuggable.
-  2. Prompts are deliberately simple and deterministic (temperature=0).
-  3. JSON is parsed with a regex fallback so that even a slightly chatty model
-     still yields a usable score.
-  4. All calls are async to integrate cleanly with the LangGraph pipeline.
-  5. A lightweight retry with exponential back-off handles transient API
-     timeouts without blocking the test suite indefinitely.
-  6. Three quota-protection layers keep evaluation runs inside OpenRouter's
-     free-tier limits (20 req/min, 50 req/day — 1000/day once the account has
-     $10+ in lifetime credit purchases):
-       - an on-disk response cache keyed by (model, prompt), so re-running
-         the same test suite after an unrelated code change costs nothing;
-       - a process-wide rate limiter that spaces real API calls out to stay
-         under the per-minute cap;
-       - an on-disk daily call counter that refuses new calls (returning a
-         neutral JudgeScore.failure) once the configured daily budget is hit,
-         instead of hammering the API into a 429.
-
-Requirements
-------------
-    Uses `httpx` (already a project dependency) directly against
-    OpenRouter's OpenAI-compatible /chat/completions endpoint — no extra
-    SDK needed.
-
-Environment / config
---------------------
-    Set OPENROUTER_API_KEY in server/.env (get one free at openrouter.ai/keys).
-    OPENROUTER_MODEL        default: nvidia/nemotron-3-super-120b-a12b:free
-    OPENROUTER_DAILY_LIMIT  default: 50  (raise to 1000 after a $10+ topup)
-    See https://openrouter.ai/models?max_price=0 for the current free-model
-    catalog — it rotates, so the default above may need updating over time.
-"""
+"""LLM-as-a-Judge Module (OpenRouter Edition) ============================================ Uses a free OpenRouter model to evaluate RAG pipeline quality across four dimensions: •..."""
 
 from __future__ import annotations
 
@@ -66,33 +19,28 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Model constants
-# ---------------------------------------------------------------------------
+
 OPENROUTER_DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Quota-protection state files (git-ignored; see server/.gitignore)
+
 _STATE_DIR = Path(__file__).resolve().parent
 _CACHE_PATH = _STATE_DIR / ".judge_cache.json"
 _USAGE_PATH = _STATE_DIR / ".judge_usage.json"
 
-# OpenRouter free-tier hard cap is 20 req/min; stay comfortably under it.
+
 _MIN_SECONDS_BETWEEN_CALLS = 3.2
 
 
-# ---------------------------------------------------------------------------
-# Result container  (unchanged from original)
-# ---------------------------------------------------------------------------
 @dataclass
 class JudgeScore:
     """Structured output from a single LLM judge call."""
 
-    score: float  # [0.0 – 1.0]
-    reasoning: str  # brief natural-language explanation
-    metric: str  # which metric this score belongs to
-    raw_response: str = field(default="", repr=False)  # raw LLM output
-    latency_s: float = field(default=0.0)  # wall-clock time
+    score: float
+    reasoning: str
+    metric: str
+    raw_response: str = field(default="", repr=False)
+    latency_s: float = field(default=0.0)
 
     def __post_init__(self) -> None:
         self.score = max(0.0, min(1.0, float(self.score)))
@@ -116,9 +64,6 @@ class JudgeScore:
         return "Very Poor"
 
 
-# ---------------------------------------------------------------------------
-# Prompt templates  (unchanged from original)
-# ---------------------------------------------------------------------------
 _FAITHFULNESS_PROMPT = """\
 You are a strict legal evaluation judge. Your only job is to determine whether
 every factual claim in the ANSWER is explicitly supported by the RETRIEVED CONTEXT.
@@ -223,10 +168,7 @@ Respond with ONLY a valid JSON object on a single line, like this:
 {{"score": <float between 0 and 1>, "reasoning": "<one sentence>"}}
 """
 
-# Batched rubric: all four RAG-triad metrics in ONE call, so a full evaluation
-# run costs one API request per query (~18/run) instead of four — keeping it
-# inside OpenRouter's free-tier 50/day cap. Same rubrics as the single-metric
-# prompts above, just scored together.
+
 _RAG_TRIAD_PROMPT = """\
 You are a strict evaluation judge for a legal question-answering system.
 Score the MODEL ANSWER on four independent metrics, each a float in [0, 1].
@@ -270,33 +212,22 @@ Respond with ONLY a valid JSON object on a single line, exactly like this:
 """
 
 
-# ---------------------------------------------------------------------------
-# JSON extraction helpers  (unchanged from original)
-# ---------------------------------------------------------------------------
 def _extract_json(text: str) -> Optional[dict]:
-    """
-    Robustly extract the first JSON object from an LLM response.
-    Handles:
-      • Clean JSON: {"score": 0.8, "reasoning": "..."}
-      • JSON embedded in markdown code fences
-      • JSON with a brief preamble sentence before it
-      • Reasoning models (e.g. gpt-oss, nemotron) sometimes wrap chain-of-thought
-        in <think>...</think> tags before the JSON
-    """
-    # Strip reasoning/thinking blocks if present
+    """Robustly extract the first JSON object from an LLM response."""
+
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-    # Strip markdown fences
+
     text = re.sub(r"```(?:json)?", "", text).strip()
     text = text.replace("```", "").strip()
 
-    # 1. Try full parse
+
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # 2. Regex: first {...} containing "score"
+
     pattern = re.compile(r'\{[^{}]*"score"\s*:\s*[\d.]+[^{}]*\}', re.DOTALL)
     match = pattern.search(text)
     if match:
@@ -305,7 +236,7 @@ def _extract_json(text: str) -> Optional[dict]:
         except json.JSONDecodeError:
             pass
 
-    # 3. Looser: any {...}
+
     pattern2 = re.compile(r"\{.*?\}", re.DOTALL)
     for m in pattern2.finditer(text):
         try:
@@ -319,12 +250,7 @@ def _extract_json(text: str) -> Optional[dict]:
 
 
 def _extract_batched_json(text: str) -> Optional[dict]:
-    """
-    Parse the batched RAG-triad response (a JSON object whose values are
-    themselves ``{"score", "reasoning"}`` objects). Unlike ``_extract_json``,
-    this keeps the OUTER object rather than grabbing the first inner
-    ``{"score": ...}``.
-    """
+    """Parse the batched RAG-triad response (a JSON object whose values are themselves ``{"score", "reasoning"}`` objects)."""
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     text = re.sub(r"```(?:json)?", "", text).replace("```", "").strip()
     try:
@@ -332,7 +258,7 @@ def _extract_batched_json(text: str) -> Optional[dict]:
         return obj if isinstance(obj, dict) else None
     except json.JSONDecodeError:
         pass
-    # Greedy outermost {...}
+
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
@@ -344,8 +270,7 @@ def _extract_batched_json(text: str) -> Optional[dict]:
 
 
 def _score_from_metric_block(text: str, metric: str) -> Optional[tuple]:
-    """Regex fallback: pull one metric's (score, reasoning) out of a batched
-    response the JSON parser couldn't handle. Returns None if not found."""
+    """Regex fallback: pull one metric's (score, reasoning) out of a batched response the JSON parser couldn't handle."""
     m = re.search(
         rf'"{metric}"\s*:\s*\{{[^{{}}]*?"score"\s*:\s*([\d.]+)'
         r'(?:[^{}]*?"reasoning"\s*:\s*"([^"]*)")?',
@@ -373,7 +298,7 @@ def _parse_score(raw: str, metric: str) -> JudgeScore:
         except (TypeError, ValueError):
             pass
 
-    # Last resort: bare float in the text
+
     float_match = re.search(r"\b(0\.\d+|1\.0|1)\b", raw)
     if float_match:
         return JudgeScore(
@@ -389,9 +314,6 @@ def _parse_score(raw: str, metric: str) -> JudgeScore:
     return JudgeScore.failure(metric, f"Unparseable response: {raw[:120]}")
 
 
-# ---------------------------------------------------------------------------
-# Quota protection: on-disk response cache + daily budget + rate limiter
-# ---------------------------------------------------------------------------
 def _load_json(path: Path) -> dict:
     try:
         return json.loads(path.read_text())
@@ -426,8 +348,7 @@ def _key_id(api_key: str) -> str:
 
 
 def _usage_today(primary_id: str) -> Dict[str, int]:
-    """Today's call count per key id. A file in the old single-count format
-    belongs to the primary key."""
+    """Today's call count per key id."""
     usage = _load_json(_USAGE_PATH)
     if usage.get("date") != date.today().isoformat():
         return {}
@@ -443,8 +364,6 @@ def _usage_increment(key_id: str, primary_id: str) -> int:
     return counts[key_id]
 
 
-# Process-wide throttle so concurrent judge calls (evaluator.py runs several
-# queries in parallel) still serialize down to OpenRouter's 20 req/min cap.
 _rate_lock = asyncio.Lock()
 _last_call_monotonic = 0.0
 
@@ -458,39 +377,8 @@ async def _throttle() -> None:
         _last_call_monotonic = time.monotonic()
 
 
-# ---------------------------------------------------------------------------
-# Core judge class
-# ---------------------------------------------------------------------------
 class LLMJudge:
-    """
-    Async LLM-as-a-judge that scores RAG pipeline outputs using a free
-    OpenRouter-hosted model over its OpenAI-compatible chat/completions API.
-
-    Drop-in replacement for the original Ollama/Gemini-backed LLMJudge — the
-    public API (faithfulness / answer_relevance / context_precision /
-    context_recall) is unchanged, so callers don't need to change.
-
-    Usage::
-        judge = LLMJudge()
-        score = await judge.faithfulness(answer=..., context=...)
-        print(score.score, score.reasoning)
-
-    Configuration (in order of precedence)
-    ---------------------------------------
-    1. Constructor kwargs
-    2. app.config.get_settings()  fields:
-         - openrouter_api_key     (str) — from openrouter.ai/keys
-         - openrouter_model       (str) — default: nvidia/nemotron-3-super-120b-a12b:free
-         - openrouter_base_url    (str) — default: https://openrouter.ai/api/v1
-         - openrouter_daily_limit (int) — default: 50 (free-tier daily cap)
-    3. Defaults above.
-
-    Every real API call is cached on disk by (model, prompt) — rerunning the
-    same evaluation suite unchanged costs zero quota after the first pass.
-    Once ``openrouter_daily_limit`` calls have been made today, further calls
-    short-circuit to a neutral ``JudgeScore.failure`` instead of hitting the
-    API, so a long test run degrades gracefully rather than erroring out.
-    """
+    """Async LLM-as-a-judge that scores RAG pipeline outputs using a free OpenRouter-hosted model over its OpenAI-compatible chat/completions API."""
 
     def __init__(
         self,
@@ -507,7 +395,7 @@ class LLMJudge:
         self._api_key: str = api_key or getattr(settings, "openrouter_api_key", "")
         alt = "" if api_key else getattr(settings, "openrouter_api_key_alt", "")
         self._api_keys: List[str] = [k for k in (self._api_key, alt) if k]
-        self._exhausted: Set[str] = set()  # keys OpenRouter refused with HTTP 429 this run
+        self._exhausted: Set[str] = set()
         self._model_name: str = (
             model or getattr(settings, "openrouter_model", None) or OPENROUTER_DEFAULT_MODEL
         )
@@ -535,19 +423,11 @@ class LLMJudge:
             self._daily_limit,
         )
 
-    # ------------------------------------------------------------------
-    # Internal async invoke with cache, budget guard, throttle, and retry
-    # ------------------------------------------------------------------
+
     async def _post_chat(
         self, prompt: str, max_tokens: int = 512
     ) -> tuple[Optional[str], float, Optional[str]]:
-        """
-        One OpenRouter chat call with the daily-budget guard, rate throttle,
-        and retry/back-off. Returns ``(raw_content, latency_s, failure_reason)``
-        — ``raw_content`` is None (and ``failure_reason`` set) when the call
-        could not be completed. Does NOT touch the response cache; callers own
-        caching and parsing.
-        """
+        """One OpenRouter chat call with the daily-budget guard, rate throttle, and retry/back-off."""
         if not self._api_key:
             return None, 0.0, "OPENROUTER_API_KEY not configured."
 
@@ -588,13 +468,13 @@ class LLMJudge:
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.0,
                             "max_tokens": max_tokens,
-                            # Reasoning models otherwise spend the whole budget
-                            # thinking and return empty content; ignored by others.
+
+
                             "reasoning": {"effort": "low"},
                         },
                     )
                 elapsed = time.perf_counter() - t0
-                _usage_increment(_key_id(api_key), primary_id)  # counts whether it parsed or not
+                _usage_increment(_key_id(api_key), primary_id)
 
                 response.raise_for_status()
                 data = response.json()
@@ -655,19 +535,13 @@ class LLMJudge:
         )
         return score
 
-    # ------------------------------------------------------------------
-    # Public metric methods  (same signatures as original)
-    # ------------------------------------------------------------------
+
     async def faithfulness(
         self,
         answer: str,
         context: str,
     ) -> JudgeScore:
-        """
-        Faithfulness / Groundedness.
-        Measures what fraction of the claims in *answer* are explicitly
-        supported by *context*.  Score of 1.0 → zero hallucination.
-        """
+        """Faithfulness / Groundedness."""
         if not answer.strip():
             return JudgeScore(
                 score=0.0,
@@ -691,11 +565,7 @@ class LLMJudge:
         question: str,
         answer: str,
     ) -> JudgeScore:
-        """
-        Answer Relevance.
-        Measures how directly and completely the *answer* addresses the
-        *question*.
-        """
+        """Answer Relevance."""
         if not answer.strip():
             return JudgeScore(
                 score=0.0,
@@ -713,11 +583,7 @@ class LLMJudge:
         query: str,
         context: str,
     ) -> JudgeScore:
-        """
-        Context Precision.
-        Measures what fraction of the *retrieved context* is actually
-        relevant to the *query*.
-        """
+        """Context Precision."""
         if not context.strip():
             return JudgeScore(
                 score=0.0,
@@ -735,11 +601,7 @@ class LLMJudge:
         reference_answer: str,
         model_answer: str,
     ) -> JudgeScore:
-        """
-        Context Recall.
-        Measures what fraction of the key facts in the *reference_answer*
-        are also present in the *model_answer*.
-        """
+        """Context Recall."""
         if not reference_answer.strip():
             return JudgeScore(
                 score=1.0,
@@ -758,9 +620,7 @@ class LLMJudge:
         )
         return await self._invoke(prompt, "context_recall")
 
-    # ------------------------------------------------------------------
-    # Batched: all four RAG-triad metrics in a single API call
-    # ------------------------------------------------------------------
+
     _TRIAD_METRICS = (
         "faithfulness",
         "answer_relevance",
@@ -776,13 +636,7 @@ class LLMJudge:
         context: str,
         reference: str,
     ) -> Dict[str, JudgeScore]:
-        """
-        Score all four RAG-triad metrics in ONE OpenRouter call.
-
-        Returns a dict keyed by metric name. This keeps a full evaluation run
-        (one call per query) inside the free-tier daily cap, where calling the
-        four single-metric methods separately would cost 4x the quota.
-        """
+        """Score all four RAG-triad metrics in ONE OpenRouter call."""
         if not answer.strip():
             return {
                 m: JudgeScore(0.0, "Empty answer — nothing to evaluate.", m)
@@ -799,10 +653,9 @@ class LLMJudge:
         cached = _cache_get(self._model_name, prompt)
         raw = cached.get("raw") if cached else None
         elapsed = 0.0
-        if not raw:  # not cached, or a previous empty response we won't trust
-            # Some free judge models wrap output in hidden reasoning; the
-            # 4-metric prompt needs a generous token budget so that doesn't
-            # crowd out the JSON answer.
+        if not raw:
+
+
             raw, elapsed, reason = await self._post_chat(prompt, max_tokens=8192)
             if not raw:
                 return {
@@ -824,7 +677,7 @@ class LLMJudge:
                     )
                 except (TypeError, ValueError):
                     score_reason = None
-            if score_reason is None:  # per-metric regex fallback
+            if score_reason is None:
                 score_reason = _score_from_metric_block(raw, m)
             if score_reason is None:
                 results[m] = JudgeScore.failure(
@@ -841,9 +694,6 @@ class LLMJudge:
         return results
 
 
-# ---------------------------------------------------------------------------
-# Module-level singleton  (mirrors get_chatbot() pattern)
-# ---------------------------------------------------------------------------
 _judge: Optional[LLMJudge] = None
 
 

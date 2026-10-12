@@ -1,14 +1,4 @@
-"""
-Thermal guard for long GPU jobs on the dev laptop.
-
-The CPU and GPU share a heat pipe: sustained full-power GPU work drives the CPU
-package to its 100°C critical limit, and the machine hard-powers-off (twice so far,
-mid-job, leaving no shutdown log). Long jobs call `guard.step()` between batches:
-it enforces a duty cycle (idle time proportional to work time) and, whenever the
-CPU package reaches `pause_at`, waits until it cools to `resume_at`. The package
-sensor spikes by 20°C for a moment on any burst, so readings are a median of three
-samples, taken every `check_every` seconds.
-"""
+"""Thermal guard for long GPU jobs on the dev laptop."""
 
 from __future__ import annotations
 
@@ -66,8 +56,8 @@ class ThermalGuard:
     def step(self) -> None:
         now = time.time()
         worked = now - self._last
-        # Read the temperature straight after the work burst, not after idling:
-        # the package cools within seconds, so a post-idle reading hides the peak.
+
+
         if now - self._checked >= self.check_every:
             self._checked = now
             temp = smoothed_temp(gap=0.1)

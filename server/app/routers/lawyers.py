@@ -1,7 +1,4 @@
-"""
-Lawyer directory endpoints backed by the PostgreSQL lawyers table,
-ported from the old Express server/src/routes/lawyers.ts.
-"""
+"""Lawyer directory endpoints backed by the PostgreSQL lawyers table, ported from the old Express server/src/routes/lawyers.ts."""
 
 from typing import Optional
 
@@ -36,9 +33,7 @@ def list_lawyers(
     ids: Optional[str] = Query(default=None, description="Comma-separated lawyer ids"),
     session: Session = Depends(get_session),
 ):
-    """Without `page` (or `ids`) this returns the whole directory as a plain
-    array, as before. With `page`, it returns {items, total, page, pageSize};
-    with `ids`, just those lawyers."""
+    """Without `page` (or `ids`) this returns the whole directory as a plain array, as before."""
     stmt = select(Lawyer)
     if ids:
         stmt = stmt.where(Lawyer.id.in_([i for i in ids.split(",") if i][:100]))

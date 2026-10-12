@@ -67,8 +67,8 @@ def test_classifier_decides_when_exported(monkeypatch):
 
     monkeypatch.setattr(lr, "_get_classifier", lambda: FakeClassifier())
     pins = asyncio.run(lr.precedent_pins(NARRATIVE))
-    # 482 is pinned as the CrPC provision judgments mean by it, not IPC 482; the
-    # jurisdiction label (4) and a label below 0.5 (313) are not pinned in chat
+
+
     assert pins == [("Indian Penal Code", "304B"), ("Code of Criminal Procedure", "482")]
 
 

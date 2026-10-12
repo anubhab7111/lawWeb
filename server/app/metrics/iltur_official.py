@@ -1,20 +1,4 @@
-"""
-Official-protocol scoring for IL-TUR `lsi`, as the IL-TUR leaderboard computes it.
-
-The leaderboard's `evaluate_lsi` (spaces/Exploration-Lab/IL-TUR-Leaderboard,
-eval_utils.py) builds a cases x 100 binary matrix over the label vocabulary and
-calls `sklearn.metrics.f1_score(gold, pred, average="macro")`. Consequences
-mirrored here:
-  * labels are exact names: "Section 294(b)" and "Section 376(2)" are columns of
-    their own, distinct from 294 and 376;
-  * every one of the 100 columns counts, including labels never in the test set
-    (a column with no gold and no prediction scores 0 under sklearn's default);
-  * predictions are label *sets*, so a system's scores need a decision rule.
-
-Because macro-F1 is the mean of per-column F1s and each column's F1 depends only on
-that column's predictions, per-label thresholds can be tuned exactly, one label at a
-time (`fit_label_thresholds`) — on dev, then applied unchanged to test.
-"""
+"""Official-protocol scoring for IL-TUR `lsi`, as the IL-TUR leaderboard computes it."""
 
 from __future__ import annotations
 
@@ -37,8 +21,7 @@ def gold_matrix(golds: Sequence[Sequence[str]], vocab: Sequence[str]) -> np.ndar
 
 
 def score_matrix(scores: Sequence[Scores], vocab: Sequence[str], normalize: bool = True) -> np.ndarray:
-    """cases x labels score matrix; `normalize` divides each case by its top score,
-    so thresholds mean "at least this fraction of the best label's evidence"."""
+    """cases x labels score matrix; `normalize` divides each case by its top score, so thresholds mean "at least this fraction of the best label's evidence"."""
     index = {label: i for i, label in enumerate(vocab)}
     m = np.zeros((len(scores), len(vocab)), dtype=np.float64)
     for row, case in enumerate(scores):
@@ -71,8 +54,7 @@ def predict_topk(scores: np.ndarray, k: int) -> np.ndarray:
 
 
 def predict_threshold(scores: np.ndarray, thresholds, min_labels: int = 1) -> np.ndarray:
-    """Labels whose score clears their threshold; at least `min_labels` per case
-    (every IL-TUR case has at least one statute)."""
+    """Labels whose score clears their threshold; at least `min_labels` per case (every IL-TUR case has at least one statute)."""
     pred = (scores >= np.asarray(thresholds)[None, :]).astype(np.int8)
     pred[scores <= 0] = 0
     if min_labels:
@@ -94,12 +76,7 @@ def fit_label_thresholds(
     min_positives: int = 5,
     shrink: float = 0.0,
 ) -> np.ndarray:
-    """Per-label thresholds maximising each label's own dev F1.
-
-    Labels with fewer than `min_positives` dev positives keep `fallback`; `shrink`
-    pulls each fitted threshold toward `fallback` (0 = no shrinkage) to limit
-    overfitting on labels with few examples.
-    """
+    """Per-label thresholds maximising each label's own dev F1."""
     thresholds = np.full(scores.shape[1], fallback, dtype=np.float64)
     for j in range(scores.shape[1]):
         y = gold[:, j]

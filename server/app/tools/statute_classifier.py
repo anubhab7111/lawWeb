@@ -1,13 +1,4 @@
-"""
-statute_classifier.py — multi-label statute identification from case facts.
-
-A legal-domain BERT (InLegalBERT) reads the facts in 512-token chunks; the chunk
-[CLS] vectors are combined by learned attention pooling (so the passages that
-actually carry the offence dominate) and a linear layer scores the 100 IL-TUR
-statute labels independently (sigmoid). This is the model family the IL-TUR paper
-reports for `lsi` (InLegalBERT 26.23 macro-F1); the chunking is what lets it see
-more than the first 512 tokens of a ~2k-token narrative.
-"""
+"""statute_classifier.py — multi-label statute identification from case facts."""
 
 from __future__ import annotations
 
@@ -26,8 +17,7 @@ def clean_facts(sentences: Sequence[str]) -> str:
 
 
 def chunk_ids(tokenizer, text: str, max_chunks: int, chunk_len: int = 512, stride: int = 0) -> List[List[int]]:
-    """Token-id chunks of at most chunk_len (incl. [CLS]/[SEP]); when a document has
-    more chunks than max_chunks, chunks are sampled evenly across it."""
+    """Token-id chunks of at most chunk_len (incl."""
     body = tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
     width = chunk_len - 2
     step = width - stride
@@ -63,8 +53,7 @@ SERVING_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent / "da
 
 
 class StatuteClassifier:
-    """Serving wrapper: facts -> {label: probability}, plus per-label thresholds
-    fitted on IL-TUR dev (the decision rule behind the 38.35 test macro-F1)."""
+    """Serving wrapper: facts -> {label: probability}, plus per-label thresholds fitted on IL-TUR dev (the decision rule behind the 38.35 test macro-F1)."""
 
     def __init__(self, model_dir=SERVING_DIR, device: str = "cpu", max_chunks: int = 2):
         import json

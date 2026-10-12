@@ -1,10 +1,4 @@
-"""Intent routing: score classify_intent_embedding on tests/gold/routing.jsonl (gate: test accuracy >= 0.90).
-
-Gold rows carry text directly (synthetic, chat_messages) or by reference: ILSIC questions are read
-from the corpus drive (CC BY-NC-SA, not committed) and CLINC150 test queries from Hugging Face.
-
-    python eval_routing.py --split dev|test [--source ilsic,clinc150,...]
-"""
+"""Intent routing: score classify_intent_embedding on tests/gold/routing.jsonl (gate: test accuracy >= 0.90)."""
 
 import argparse
 import asyncio
@@ -56,9 +50,7 @@ async def classify(rows: list) -> list:
 
 
 def routed_intent(res, has_document: bool) -> str:
-    """The flow the chatbot actually runs (route_by_intent in app/chatbot.py), before any LLM
-    tiebreak: an ambiguous legal result falls back to general_query (document_analysis when a
-    document is attached)."""
+    """The flow the chatbot actually runs (route_by_intent in app/chatbot.py), before any LLM tiebreak: an ambiguous legal result falls back to general_query (document_analysis when a..."""
     if res.is_ambiguous and res.primary_intent != "non_legal":
         return "document_analysis" if has_document else "general_query"
     return res.primary_intent
@@ -95,9 +87,7 @@ async def embed(texts: list):
 
 
 def cross_validate() -> None:
-    """5-fold CV on dev: reference examples = current examples + the other folds' dev messages.
-    Scored with the classifier's own rule (top-K mean, document prior). Also an LR head on the
-    same folds for comparison."""
+    """5-fold CV on dev: reference examples = current examples + the other folds' dev messages."""
     import numpy as np
     from sklearn.linear_model import LogisticRegression
 
@@ -156,7 +146,7 @@ def cross_validate() -> None:
                   f"accuracy on the rest {np.mean(pred[sure] == dev_lab[sure]):.3f}")
 
 
-HEAD_C = 16.0  # dev CV under the chatbot routing rule (eval_routing.py --cv was argmax-only)
+HEAD_C = 16.0
 
 
 def train() -> None:

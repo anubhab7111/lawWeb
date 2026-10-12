@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""
-generate_case_firac.py — backfill the `firac` block on app/data/case_law/*.json.
-
-Each case JSON already carries ontology-seeded doctrines/statutes_cited but no
-per-case Facts/Issues/Rules/holding/ratio summary. This script calls the LLM
-once per case (case_firac_extractor.extract_case_firac) and writes the result
-into the same file under a new `firac` key, alongside every existing field.
-
-Idempotent/resumable: a case that already has a truthy `firac` key is skipped
-unless --force, so an interrupted or partially-failed run can just be
-re-invoked. This is an offline batch job (unlike the interactive get_llm()
-singleton) so it uses its own longer timeout/num_predict/keep_alive tuned for
-summarizing an ~8000-char judgment excerpt rather than a chat turn.
-
-Usage (conda env legal_chatbot_env, run from server/):
-    python generate_case_firac.py            # backfill all cases missing firac
-    python generate_case_firac.py --limit 3  # smoke test
-    python generate_case_firac.py --force    # regenerate everything
-"""
+"""generate_case_firac.py — backfill the `firac` block on app/data/case_law/*.json."""
 
 import argparse
 import asyncio
@@ -46,14 +28,14 @@ def _build_llm() -> ChatOllama:
         model=settings.llm_model,
         temperature=settings.llm_temperature,
         base_url=settings.ollama_base_url,
-        num_ctx=8192,  # head+tail judgment excerpt (~8000 chars) + prompt scaffolding
-        num_predict=1536,  # multi-issue Constitution Bench cases need headroom
-        timeout=180.0,  # offline batch job — latency doesn't matter, don't spuriously abort
+        num_ctx=8192,
+        num_predict=1536,
+        timeout=180.0,
         reasoning=False,
-        # JSON-constrained decoding: qwen3 otherwise "thinks" past num_predict
-        # before writing any JSON (every case failed with no </think>).
+
+
         format="json",
-        keep_alive="15m",  # stay loaded across the whole batch
+        keep_alive="15m",
     )
 
 

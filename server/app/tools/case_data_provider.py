@@ -1,15 +1,4 @@
-"""
-Case-data provider adapter (My Cases, Hearing Reminders, Cause List Search).
-
-Everything else in the codebase talks to CaseDataProvider — never a
-concrete vendor class — so swapping the licensed vendor later is a
-one-line settings change (case_data_provider) plus one new subclass here.
-
-The default provider ("mock") is an in-memory fixture so these three
-features are fully testable in dev without a live vendor contract/API key.
-Wire a real vendor (e.g. eCourtsIndia) by adding a subclass below and
-setting CASE_DATA_PROVIDER + CASE_DATA_API_KEY + CASE_DATA_API_BASE_URL.
-"""
+"""Case-data provider adapter (My Cases, Hearing Reminders, Cause List Search)."""
 
 from __future__ import annotations
 
@@ -36,13 +25,13 @@ class CaseRecord:
 
 @dataclass
 class CaseEventRecord:
-    event_type: str  # "hearing" | "order" | "filing"
+    event_type: str
     event_date: datetime
     title: str
     detail: str = ""
     source_url: str = ""
     raw: dict = field(default_factory=dict)
-    # Stable provider-side id; without it, sync falls back to (type, title, minute).
+
     source_id: str = ""
 
 
@@ -65,9 +54,7 @@ class CauseListEntry:
 
 
 class CaseDataProviderError(Exception):
-    """Raised on lookup failure (not-found, rate-limited, vendor error).
-    Callers should catch this rather than letting an unrelated exception
-    type leak into routers — see app/routers/cases.py."""
+    """Raised on lookup failure (not-found, rate-limited, vendor error)."""
 
 
 class CaseDataProvider(ABC):
@@ -89,12 +76,7 @@ class CaseDataProvider(ABC):
 
 
 class MockCaseDataProvider(CaseDataProvider):
-    """
-    In-memory fixture provider for local dev / testing without a licensed
-    vendor contract. Deterministic per-CNR (same CNR always returns the same
-    fixture data) so the rest of the stack (My Cases sync, reminders, cause
-    list caching) can be exercised end-to-end.
-    """
+    """In-memory fixture provider for local dev / testing without a licensed vendor contract."""
 
     async def fetch_case_by_cnr(self, cnr: str) -> CaseRecord:
         if not cnr or len(cnr) < 4:
@@ -173,11 +155,7 @@ def get_case_data_provider() -> CaseDataProvider:
     provider = settings.case_data_provider.lower()
     if provider == "mock":
         return MockCaseDataProvider()
-    # Add licensed vendors here as they're contracted, e.g.:
-    #   if provider == "ecourtsindia":
-    #       return ECourtsIndiaProvider(
-    #           api_key=settings.case_data_api_key,
-    #           base_url=settings.case_data_api_base_url,
-    #       )
+
+
     print(f"[CaseData] Unknown CASE_DATA_PROVIDER '{settings.case_data_provider}' — falling back to mock")
     return MockCaseDataProvider()

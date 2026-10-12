@@ -1,8 +1,4 @@
-"""Grounding NLI: collect real claim/evidence pairs, then gate an NLI model on them.
-
-    python eval_grounding.py collect          # runs the chatbot; resumable, one line per question
-    python eval_grounding.py premise          # how the slow LLM call splits into adjudication vs rewrite
-"""
+"""Grounding NLI: collect real claim/evidence pairs, then gate an NLI model on them."""
 
 import argparse
 import asyncio
@@ -181,9 +177,7 @@ async def similarities(rows: list) -> list:
 
 
 def similarity() -> None:
-    """Option 1: a claim the LLM would only review is cleared as SUPPORTED when its cosine
-    similarity to the evidence is >= T. T = the lowest threshold whose dev precision on
-    cleared claims is >= 0.95; gate: test precision of cleared claims >= 0.90."""
+    """Option 1: a claim the LLM would only review is cleared as SUPPORTED when its cosine similarity to the evidence is >= T."""
     rows = load_gold()
     sims = asyncio.run(similarities(rows))
     for r, s in zip(rows, sims):

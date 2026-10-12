@@ -92,11 +92,11 @@ def test_reranked_section_on_a_short_report_must_fit_its_crime_type():
     chunk = lambda act, sec, score: SimpleNamespace(act_name=act, section_number=sec, score=score)
     bns = "Bharatiya Nyaya Sanhita BNS"
     fits = CriminalRAGSystem._fits_report
-    assert not fits(chunk(bns, "318", 1.0), "theft")  # cheating on a burglary report
-    assert fits(chunk(bns, "305", 0.1), "theft")  # theft in a building
-    assert not fits(chunk(bns, "281", 0.14), "theft")  # untyped (rash driving), low score
-    assert fits(chunk(bns, "304", 1.0), "theft")  # snatching: untyped, confident
-    assert fits(chunk(bns, "325", 0.05), "property_damage")  # killing an animal
+    assert not fits(chunk(bns, "318", 1.0), "theft")
+    assert fits(chunk(bns, "305", 0.1), "theft")
+    assert not fits(chunk(bns, "281", 0.14), "theft")
+    assert fits(chunk(bns, "304", 1.0), "theft")
+    assert fits(chunk(bns, "325", 0.05), "property_damage")
 
 
 def test_related_crime_classifier_lead_needs_a_confident_classifier():

@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""
-import_case_law.py — add one landmark judgment to the curated case-law corpus
-from an official text copy (e.g. the Supreme Court Reports text on the corpus
-drive, from the AWS Open Data indian-supreme-court-judgments set).
-
-The case must be in app/data/case_law_manifest.py, which supplies its
-doctrines and statutes. Afterwards run generate_case_firac.py (and check its
-output against the judgment), then rebuild_rag_indices.py --domain case_law.
-
-Usage (conda env legal_chatbot_env, run from server/):
-    python import_case_law.py --case "Fateh Chand v. Balkishan Dass (1963)" \
-        --from-file .../1964_1_515_534.txt.gz \
-        --title "Fateh Chand vs Balkishan Das on 15 January, 1963" \
-        --citation "[1964] 1 S.C.R. 515" --date 1963-01-15 --bench-size 5
-"""
+"""import_case_law.py — add one landmark judgment to the curated case-law corpus from an official text copy (e.g."""
 
 import argparse
 import gzip
@@ -39,7 +25,7 @@ def _slug(case_name: str) -> str:
 
 
 def _court_rank(court: str, bench_size: int) -> int:
-    """Higher = more authoritative. Used to order case-law retrieval."""
+    """Higher = more authoritative."""
     court = court.lower()
     if "supreme court" in court:
         return 4 if bench_size >= _CONSTITUTION_BENCH_MIN else 3

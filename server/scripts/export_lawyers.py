@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""
-One-off: export the Indian lawyer directory from a dev database to
-app/data/lawyers.json (the fixture init_db loads), correcting each row's
-"City, State" location. The generated data paired cities with random states;
-the city -> state table below is the source of truth. Cities missing from it
-are exported with the city only rather than a wrong state.
-
-Usage (from server/):  python scripts/export_lawyers.py
-"""
+"""One-off: export the Indian lawyer directory from a dev database to app/data/lawyers.json (the fixture init_db loads), correcting each row's "City, State" location."""
 
 import json
 import os

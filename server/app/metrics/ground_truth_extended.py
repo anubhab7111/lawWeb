@@ -1,13 +1,6 @@
-"""
-Extended ground-truth entries covering the domains added by the unified
-all-domain RAG index (family, labour, corporate, tax, environment, consumer,
-cyber/IP, election, property, commercial, human rights).
-
-Each entry carries `relevant_sections` — act-agnostic section/article numbers
-used by the generalized Hit Rate@k / MRR scoring in evaluator.py.
-"""
+"""Extended ground-truth entries covering the domains added by the unified all-domain RAG index (family, labour, corporate, tax, environment, consumer, cyber/IP, election,..."""
 EXTENDED_GROUND_TRUTH = [
-    # ── family ──────────────────────────────────────────────────────────────
+
     {
         "query": "What are the grounds for divorce under the Hindu Marriage Act?",
         "relevant_ipc_sections": [],
@@ -64,7 +57,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "family_law",
     },
-    # ── labour ──────────────────────────────────────────────────────────────
+
     {
         "query": "How much maternity leave is a woman employee entitled to in India?",
         "relevant_ipc_sections": [],
@@ -116,7 +109,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "labour_law",
     },
-    # ── corporate ───────────────────────────────────────────────────────────
+
     {
         "query": "How can a financial creditor initiate corporate insolvency proceedings against a defaulting company?",
         "relevant_ipc_sections": [],
@@ -170,7 +163,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "corporate_law",
     },
-    # ── indirect_tax ────────────────────────────────────────────────────────
+
     {
         "query": "What are the conditions for claiming input tax credit under GST?",
         "relevant_ipc_sections": [],
@@ -224,7 +217,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "tax_law",
     },
-    # ── environment ─────────────────────────────────────────────────────────
+
     {
         "query": "What powers does the Central Government have under the Environment Protection Act to control pollution?",
         "relevant_ipc_sections": [],
@@ -252,7 +245,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "environment_law",
     },
-    # ── consumer ────────────────────────────────────────────────────────────
+
     {
         "query": "How do I file a consumer complaint for a defective product and what relief can I get?",
         "relevant_ipc_sections": [],
@@ -281,7 +274,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "consumer_law",
     },
-    # ── cyber / IP ──────────────────────────────────────────────────────────
+
     {
         "query": "What is the punishment for identity theft and cheating by personation online?",
         "relevant_ipc_sections": [],
@@ -335,7 +328,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "ip_law",
     },
-    # ── election ────────────────────────────────────────────────────────────
+
     {
         "query": "What constitutes a corrupt practice in Indian elections?",
         "relevant_ipc_sections": [],
@@ -364,7 +357,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "election_law",
     },
-    # ── property ────────────────────────────────────────────────────────────
+
     {
         "query": "Can a homebuyer get a refund with interest if the builder delays possession under RERA?",
         "relevant_ipc_sections": [],
@@ -392,7 +385,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "property_law",
     },
-    # ── commercial / arbitration ────────────────────────────────────────────
+
     {
         "query": "On what grounds can an arbitral award be set aside by a court?",
         "relevant_ipc_sections": [],
@@ -423,7 +416,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "commercial_law",
     },
-    # ── human rights ────────────────────────────────────────────────────────
+
     {
         "query": "What are the functions and powers of the National Human Rights Commission?",
         "relevant_ipc_sections": [],
@@ -452,7 +445,7 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "human_rights_law",
     },
-    # ── criminal (penal sections kept by the chargeable-penalty filter) ──────
+
     {
         "query": "What is the punishment for abetment of a crime in India?",
         "relevant_ipc_sections": [],

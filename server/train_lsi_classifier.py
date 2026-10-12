@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""
-train_lsi_classifier.py — fine-tune InLegalBERT for IL-TUR statute identification.
-
-Train on the `lsi` train split, select the epoch on dev (official macro-F1 with a
-dev-fitted threshold), then write per-case label probabilities for dev and test into
-the score cache (<corpus>/builds/scores/classifier/...) for report_iltur.py.
-
-Fits a 4GB GPU: fp16 autocast, gradient checkpointing, micro-batches bounded by a
-chunk budget, gradient accumulation. Checkpoints go to <corpus>/builds/classifier/
-and a killed run resumes from the last one.
-
-Usage (from server/, Ollama idle):
-    python train_lsi_classifier.py --bench --max-chunks 2        # measure throughput
-    python train_lsi_classifier.py --max-chunks 2 --epochs 3
-    python train_lsi_classifier.py --score-only                  # write dev/test scores from best.pt
-"""
+"""train_lsi_classifier.py — fine-tune InLegalBERT for IL-TUR statute identification."""
 
 import argparse
 import math

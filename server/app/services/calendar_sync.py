@@ -1,8 +1,4 @@
-"""
-Push a user's LawWeb calendar events to a connected Google / Outlook calendar.
-Events already carrying that provider's id are skipped (LawWeb events can't be
-edited after creation, so there is nothing to update).
-"""
+"""Push a user's LawWeb calendar events to a connected Google / Outlook calendar."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict

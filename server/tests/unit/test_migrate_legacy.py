@@ -27,7 +27,7 @@ def test_migrate_preserves_relative_paths_and_verifies(tmp_path):
     assert (dst / "case_law" / "curated" / "kesavananda.json").exists()
     rows = [json.loads(line) for line in (dst / "manifest" / "legacy_migration.jsonl").open()]
     assert all(r["verified"] and len(r["sha256"]) == 64 for r in rows)
-    assert (src / "bare_acts" / "criminal" / "IPC.pdf").exists()  # copy, not move
+    assert (src / "bare_acts" / "criminal" / "IPC.pdf").exists()
 
 
 def test_delete_source_removes_only_migrated_files(tmp_path):

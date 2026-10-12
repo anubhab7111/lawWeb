@@ -1,6 +1,4 @@
-"""HTTP-level checks for the chat endpoints: rate limiting, the busy (503)
-mapping and SSE relaying of the workflow's progress events. The chatbot itself
-is faked; guests never touch the database."""
+"""HTTP-level checks for the chat endpoints: rate limiting, the busy (503) mapping and SSE relaying of the workflow's progress events."""
 
 import json
 
@@ -45,7 +43,7 @@ def client_for(monkeypatch):
 
     def make(bot):
         monkeypatch.setattr(chat_router, "get_chatbot", lambda: bot)
-        return TestClient(app)  # not a context manager: no lifespan/warmup
+        return TestClient(app)
 
     yield make
     rate_limit.reset_rate_limits()
@@ -141,8 +139,7 @@ def test_validate_document_stream_rejects_an_empty_document(client_for):
 
 
 def test_app_lifespan_initialises_the_checkpointer_and_registers_the_cleanup_job(monkeypatch):
-    """Boot the real lifespan (warmup stubbed: it loads GPU models) against the
-    scratch database."""
+    """Boot the real lifespan (warmup stubbed: it loads GPU models) against the scratch database."""
     from app import checkpointing, main
     from app.scheduler import get_scheduler
 
@@ -158,5 +155,5 @@ def test_app_lifespan_initialises_the_checkpointer_and_registers_the_cleanup_job
         assert checkpointing.uses_postgres() is True
         assert get_scheduler().get_job("cleanup_stale_chat_threads") is not None
         assert client.get("/api/chat/health").status_code == 200
-    assert checkpointing.uses_postgres() is False  # pool closed on shutdown
+    assert checkpointing.uses_postgres() is False
     get_settings.cache_clear()
