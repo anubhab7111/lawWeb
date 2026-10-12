@@ -35,8 +35,3 @@ ENGLISH_TAG = "eng_Latn"
 def to_indictrans2_tag(iso_code: str) -> str | None:
     """Return the IndicTrans2 tag for an ISO-639-1 code, or None if the language is unsupported (caller should fall back to English)."""
     return ISO_TO_INDICTRANS2.get(iso_code.lower())
-
-
-def is_supported(iso_code: str) -> bool:
-    """Whether we can translate to/from this ISO-639-1 language."""
-    return iso_code.lower() in ISO_TO_INDICTRANS2

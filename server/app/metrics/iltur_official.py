@@ -42,10 +42,6 @@ def official_macro_f1(gold: np.ndarray, pred: np.ndarray) -> float:
     return 100.0 * f1_score(gold, pred, average="macro", zero_division=0)
 
 
-def per_label_f1(gold: np.ndarray, pred: np.ndarray) -> np.ndarray:
-    return f1_score(gold, pred, average=None, zero_division=0)
-
-
 def predict_topk(scores: np.ndarray, k: int) -> np.ndarray:
     pred = np.zeros_like(scores, dtype=np.int8)
     top = np.argsort(-scores, axis=1)[:, :k]

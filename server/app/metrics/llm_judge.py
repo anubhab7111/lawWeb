@@ -699,14 +699,3 @@ class LLMJudge:
                     latency_s=elapsed,
                 )
         return results
-
-
-_judge: Optional[LLMJudge] = None
-
-
-def get_judge() -> LLMJudge:
-    """Return the module-level LLMJudge singleton (lazy init)."""
-    global _judge
-    if _judge is None:
-        _judge = LLMJudge()
-    return _judge

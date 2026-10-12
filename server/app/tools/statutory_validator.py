@@ -6,18 +6,6 @@ from typing import Any, Dict, List, Optional
 
 
 @dataclass
-class ChecklistItem:
-    """A single statutory requirement."""
-
-    element: str
-    description: str
-    statute_reference: str
-    severity: str
-    present: bool = False
-    details: str = ""
-
-
-@dataclass
 class StatutoryValidationResult:
     """Result of statutory validation against hard checklist."""
 

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional
 
 from app.metrics.llm_judge import JudgeScore, LLMJudge
 
@@ -331,38 +331,6 @@ async def compute_all_generation_metrics(
         "answer_relevance": relevance,
         "context_recall": recall,
     }
-
-
-def aggregate_generation_scores(
-    records: Sequence[Dict[str, GenerationScore]],
-) -> Dict[str, Dict[str, float]]:
-    """Aggregate per-query generation scores into dataset-level statistics."""
-    metrics = ["faithfulness", "answer_relevance", "context_recall"]
-    result: Dict[str, Dict[str, float]] = {}
-
-    for metric in metrics:
-        scores = [r[metric].final_score for r in records if metric in r]
-        failures = sum(1 for r in records if metric in r and r[metric].judge_failed)
-
-        if not scores:
-            result[metric] = {
-                "mean": 0.0,
-                "min": 0.0,
-                "max": 0.0,
-                "count": 0,
-                "judge_failures": 0,
-            }
-            continue
-
-        result[metric] = {
-            "mean": round(sum(scores) / len(scores), 4),
-            "min": round(min(scores), 4),
-            "max": round(max(scores), 4),
-            "count": len(scores),
-            "judge_failures": failures,
-        }
-
-    return result
 
 
 if __name__ == "__main__":

@@ -57,10 +57,6 @@ def extract(pdf_path: Path) -> List[Tuple[str, str]]:
     return pairs
 
 
-def load_maps() -> Dict[str, Dict[str, Dict[str, List[str]]]]:
-    return json.loads(OUT.read_text())
-
-
 def main() -> None:
     maps = {}
     for name, pdf in TABLES.items():

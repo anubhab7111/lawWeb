@@ -1,6 +1,5 @@
 """Legal Defect Analyzer (Layer 3) — ReAct Pattern Uses Reasoning-then-Action (ReAct) prompting for document validation."""
 
-import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.prompts import (

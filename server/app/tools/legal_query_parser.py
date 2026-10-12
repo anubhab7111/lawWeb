@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 _ONTOLOGY_PATH = Path(__file__).resolve().parent.parent / "data" / "legal_ontology.json"
 
