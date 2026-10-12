@@ -1,11 +1,8 @@
 """Conversation memory via LangGraph checkpoints: multi-turn context, survival across a 'restart', account isolation, and — the design's key property — that only plain message..."""
 
-import asyncio
 import os
 import uuid
-from types import SimpleNamespace
 
-import pytest
 from app import chatbot as cb
 from app import checkpointing
 from app.config import get_settings

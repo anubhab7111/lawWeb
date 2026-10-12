@@ -191,11 +191,6 @@ async def global_exception_handler(request, exc):
     return response
 
 
-def create_app() -> FastAPI:
-    """Factory function to create the FastAPI app."""
-    return app
-
-
 if __name__ == "__main__":
     import uvicorn
 

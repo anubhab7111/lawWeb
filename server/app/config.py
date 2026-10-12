@@ -90,8 +90,6 @@ class Settings(BaseSettings):
     braintree_public_key: str = ""
     braintree_private_key: str = ""
 
-    lawyer_api_key: str = ""
-
     case_data_provider: str = "mock"
     case_data_api_key: str = ""
     case_data_api_base_url: str = ""
@@ -114,7 +112,6 @@ class Settings(BaseSettings):
     firebase_web_config_json: str = ""
     firebase_vapid_key: str = ""
 
-    r2_account_id: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket_name: str = "lawweb-vault"
@@ -135,7 +132,6 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 3600
 
     multilingual_enabled: bool = True
-    language_detector: str = "fasttext"
 
     lang_detect_model_path: str = "app/data/models/lid.176.bin"
 

@@ -5,7 +5,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from app.text_match import any_word
 from app.tools.base_legal_rag import compress_chunks_for_context
 
 logger = logging.getLogger(__name__)

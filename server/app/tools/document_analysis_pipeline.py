@@ -1,6 +1,5 @@
 """Document Analysis Pipeline Integrates OCR extraction and local RAG retrieval to provide comprehensive document analysis with legal context."""
 
-import asyncio
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional

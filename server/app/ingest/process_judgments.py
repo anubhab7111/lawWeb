@@ -273,7 +273,7 @@ def dedupe_across_years(years: List[int]) -> Dict:
 
 def qa_report(years: List[int], samples: int = 20) -> Dict:
     root = sc_root()
-    roles, words, per_doc_cites = Counter(), [], []
+    roles, words = Counter(), []
     docs, cited_chunks, total_chunks = set(), 0, 0
     reservoir: List[Dict] = []
     rng = random.Random(7)

@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import collections
-import glob
 import gzip
 import hashlib
 import json

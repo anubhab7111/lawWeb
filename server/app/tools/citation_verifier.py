@@ -54,10 +54,6 @@ class VerificationReport:
     def unverified(self) -> List[CitationCheck]:
         return [c for c in self.checks if c.status == "unverified"]
 
-    @property
-    def pass_rate(self) -> float:
-        return len(self.verified) / len(self.checks) if self.checks else 1.0
-
 
 _ABBREVIATIONS = {
     "sec",

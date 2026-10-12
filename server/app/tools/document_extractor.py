@@ -59,17 +59,6 @@ def check_ocr_availability() -> Tuple[bool, str]:
 class DocumentExtractor:
     """Unified document text extraction with built-in OCR support."""
 
-    SUPPORTED_EXTENSIONS = {
-        ".pdf",
-        ".docx",
-        ".txt",
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".bmp",
-        ".tiff",
-        ".gif",
-    }
     SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"}
     MAX_PAGES = 100
     MAX_IMAGE_SIZE = (3000, 3000)
