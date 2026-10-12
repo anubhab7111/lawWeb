@@ -78,6 +78,8 @@ def test_leak_detection():
     assert mb.leaked("Answer.\n\nWhy this answer follows your critical rules: ...")
     assert mb.leaked("reasoning</think>Answer")
     assert not mb.leaked("Theft is defined in Section 303. Please consult a lawyer.")
+    assert mb.leaked("I strictly adhere to the critical accuracy rules: no fabrication.")
+    assert not mb.leaked("> ⚠️ **Critical Warning**: without these corrections the FIR cannot be registered.")
 
 
 def test_format_score_crime_headers_and_truncation():

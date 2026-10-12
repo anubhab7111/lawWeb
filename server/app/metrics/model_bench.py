@@ -43,7 +43,7 @@ _ABSTAIN_RE = re.compile(
     re.IGNORECASE,
 )
 _LEAK_RE = re.compile(
-    r"</?think>|CRITICAL WARNING|CRITICAL ACCURACY RULES|you are HALLUCINATING|your critical rules|"
+    r"</?think>|critical warning: legal database|critical accuracy rules|you are HALLUCINATING|your critical rules|"
     r"follows your (critical )?rules|as (instructed|required) (by|in) (the|your) (prompt|rules|instructions)|"
     r"^\s*(okay|ok|alright|hmm)[,.]? (the user|let me|i need)|\bthe user (is asking|wants|asked)\b",
     re.IGNORECASE | re.MULTILINE,
