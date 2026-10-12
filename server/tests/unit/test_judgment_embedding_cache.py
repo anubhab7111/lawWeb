@@ -3,7 +3,6 @@ import json
 
 import numpy as np
 import pytest
-
 from app.config import get_settings
 from app.ingest import build_judgment_index as bji
 
@@ -22,7 +21,18 @@ def corpus(tmp_path, monkeypatch):
 def _write_selected(root, year, ids):
     with gzip.open(root / "selected" / f"year={year}.jsonl.gz", "wt") as f:
         for i in ids:
-            f.write(json.dumps({"chunk_id": i, "doc_id": "d", "year": year, "case_title": "t", "text": "x"}) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "chunk_id": i,
+                        "doc_id": "d",
+                        "year": year,
+                        "case_title": "t",
+                        "text": "x",
+                    }
+                )
+                + "\n"
+            )
 
 
 def test_vectors_round_trip_keyed_by_chunk_id(tmp_path):
@@ -37,7 +47,9 @@ def test_vectors_round_trip_keyed_by_chunk_id(tmp_path):
 
 def test_legacy_positional_vectors_migrate_to_id_keyed_cache(corpus):
     _write_selected(corpus, 1999, ["c0", "c1"])
-    np.save(corpus / "emb" / "year=1999.npy", np.array([[1, 0], [0, 1]], dtype=np.float16))
+    np.save(
+        corpus / "emb" / "year=1999.npy", np.array([[1, 0], [0, 1]], dtype=np.float16)
+    )
     bji.migrate_embeddings([1999])
     assert not (corpus / "emb" / "year=1999.npy").exists()
     cached = bji._load_vectors(corpus / "emb" / "year=1999.npz")

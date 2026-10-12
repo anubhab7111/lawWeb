@@ -123,9 +123,7 @@ def _find_act_hint(query_lower: str) -> str:
 def _alias_in(alias: str, query_lower: str) -> bool:
     """Word-boundary alias match ('itc' must not match inside 'switch')."""
     return bool(
-        re.search(
-            r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", query_lower
-        )
+        re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", query_lower)
     )
 
 
@@ -142,7 +140,6 @@ def parse_legal_query(query: str) -> ParsedLegalQuery:
     q = query.lower()
     parsed = ParsedLegalQuery()
 
-
     act_hint = _find_act_hint(q)
     cited: List[Tuple[str, str]] = []
     for m in _CITATION_RE.finditer(query):
@@ -151,7 +148,6 @@ def parse_legal_query(query: str) -> ParsedLegalQuery:
         else:
             cited.append((act_hint or "Constitution of India", m.group(2).upper()))
     parsed.pinned_sections.extend(cited)
-
 
     for d in _match_doctrines(q):
         parsed.doctrines.append(d["doctrine"])
@@ -162,7 +158,6 @@ def parse_legal_query(query: str) -> ParsedLegalQuery:
                 parsed.pinned_sections.append((act, sec))
         parsed.landmark_cases.extend(d.get("landmark_cases", []))
         parsed.expansion_terms.append(d["doctrine"])
-
 
     if _COMPARISON_RE.search(query) and (cited or parsed.doctrines):
         parsed.query_type = "comparison"
@@ -175,7 +170,6 @@ def parse_legal_query(query: str) -> ParsedLegalQuery:
         parsed.query_type = "section_lookup"
     elif parsed.doctrines:
         parsed.query_type = "doctrine"
-
 
     parsed.pinned_sections = parsed.pinned_sections[:8]
     return parsed
@@ -207,15 +201,20 @@ async def parse_legal_query_embedding(query: str) -> ParsedLegalQuery:
         return parsed
     try:
         import numpy as np
-
         from app.tools.base_legal_rag import _get_shared_embeddings
 
         emb = await _get_shared_embeddings()
         doctrines = _load_ontology()["doctrines"]
         if _doctrine_vectors is None:
-            D = np.asarray(emb.embed_documents(
-                [f"{d['doctrine']}: {', '.join(d.get('aliases', []))}" for d in doctrines]
-            ), dtype=np.float32)
+            D = np.asarray(
+                emb.embed_documents(
+                    [
+                        f"{d['doctrine']}: {', '.join(d.get('aliases', []))}"
+                        for d in doctrines
+                    ]
+                ),
+                dtype=np.float32,
+            )
             _doctrine_vectors = D / np.linalg.norm(D, axis=1, keepdims=True)
         v = np.asarray(emb.embed_query(query), dtype=np.float32)
         scores = _doctrine_vectors @ (v / np.linalg.norm(v))

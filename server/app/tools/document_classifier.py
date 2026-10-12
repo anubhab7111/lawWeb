@@ -1,10 +1,10 @@
 """Document Classifier (Layer 1) Deterministic classification of Indian legal documents into predefined types."""
 
 import re
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
-from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -318,7 +318,12 @@ DOCUMENT_PATTERNS: Dict[str, Dict[str, Any]] = {
 }
 
 
-REFERENCE_PATH = Path(__file__).resolve().parents[1] / "data" / "doc_type_classifier" / "references.npz"
+REFERENCE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "doc_type_classifier"
+    / "references.npz"
+)
 REFERENCE_CHARS = 2000
 TOP_K = 3
 
@@ -397,11 +402,9 @@ class DocumentClassifier:
             primary_matches = []
             secondary_matches = []
 
-
             for pattern in primary:
                 if re.search(pattern, text, re.IGNORECASE):
                     primary_matches.append(pattern)
-
 
             for pattern in secondary:
                 if re.search(pattern, text, re.IGNORECASE):
@@ -410,11 +413,9 @@ class DocumentClassifier:
             if not primary_matches and not secondary_matches:
                 continue
 
-
             total_possible = len(primary) * 3 + len(secondary)
             raw_score = len(primary_matches) * 3 + len(secondary_matches)
             normalized_score = (raw_score / total_possible) * type_weight
-
 
             if primary_matches:
                 normalized_score = min(1.0, normalized_score + 0.2)
@@ -431,13 +432,10 @@ class DocumentClassifier:
                 matched_indicators=["No known document patterns matched"],
             )
 
-
         best_type = max(scores, key=lambda k: scores[k][0])
         best_score, best_matches = scores[best_type]
 
-
         sub_type = self._detect_sub_type(best_type, text)
-
 
         jurisdiction_hints = self._detect_jurisdiction(text)
 
@@ -511,7 +509,6 @@ class DocumentClassifier:
         """Detect jurisdiction hints from the document."""
         hints = []
 
-
         states = [
             "delhi",
             "maharashtra",
@@ -541,7 +538,6 @@ class DocumentClassifier:
         for state in states:
             if re.search(rf"\b{state}\b", text, re.IGNORECASE):
                 hints.append(f"State: {state.title()}")
-
 
         court_patterns = [
             (r"supreme\s*court", "Supreme Court of India"),

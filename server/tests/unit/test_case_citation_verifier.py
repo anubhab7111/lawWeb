@@ -37,7 +37,6 @@ def test_extracts_name_and_year():
 
 def test_does_not_extract_without_a_year():
 
-
     assert iter_case_citations("Ghose v. Mugneeram Bangur applies here.") == []
 
 
@@ -58,8 +57,9 @@ def test_extracts_through_markdown_bold():
 
 def test_extracts_names_with_lowercase_connector_words():
 
-
-    citations = iter_case_citations("Attorney General for India v. Satish (2021) is the authority.")
+    citations = iter_case_citations(
+        "Attorney General for India v. Satish (2021) is the authority."
+    )
     assert citations[0][1] == "Attorney General for India v. Satish"
 
 

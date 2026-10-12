@@ -3,13 +3,12 @@
 from typing import Optional
 
 import jwt
-from fastapi import Depends, Header
-from sqlmodel import Session
-
 from app.db.engine import get_session
 from app.db.models import User
 from app.deps.errors import MessageHTTPException
 from app.security import jwt_secret
+from fastapi import Depends, Header
+from sqlmodel import Session
 
 
 def get_current_user(
@@ -17,9 +16,7 @@ def get_current_user(
     session: Session = Depends(get_session),
 ) -> User:
     token = (
-        authorization.split(" ")[1]
-        if authorization and " " in authorization
-        else None
+        authorization.split(" ")[1] if authorization and " " in authorization else None
     )
     if not token:
         raise MessageHTTPException(status_code=401, detail="No token provided")

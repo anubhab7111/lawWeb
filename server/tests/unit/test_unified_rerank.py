@@ -3,8 +3,10 @@ from app.tools.unified_rerank import Candidate, rerank, segments
 
 def keyword_predict(word):
     """Fake cross-encoder: relevance = count of `word` in the text (as a probability)."""
+
     def predict(pairs):
         return [min(1.0, 0.05 + 0.3 * text.lower().count(word)) for _q, text in pairs]
+
     return predict
 
 
@@ -28,8 +30,13 @@ def test_all_sources_are_ranked_on_one_scale():
 
 
 def test_relevant_text_late_in_a_long_passage_is_found():
-    long_text = ("background facts about land records. " * 60) + "\n\nthe accused committed murder."
-    cands = [Candidate("judgment", "long", long_text), Candidate("judgment", "other", "land records only")]
+    long_text = (
+        "background facts about land records. " * 60
+    ) + "\n\nthe accused committed murder."
+    cands = [
+        Candidate("judgment", "long", long_text),
+        Candidate("judgment", "other", "land records only"),
+    ]
     out = rerank("murder", cands, keyword_predict("murder"), min_relative=0.5)
     assert out[0].key == "long"
 
@@ -38,8 +45,14 @@ def test_weak_items_are_dropped_and_sources_capped():
     cands = [Candidate("judgment", f"j{i}", "murder murder murder") for i in range(5)]
     cands.append(Candidate("statute", "s", "murder murder"))
     cands.append(Candidate("statute", "noise", "unrelated"))
-    out = rerank("murder", cands, keyword_predict("murder"), top_k=10, min_relative=0.3,
-                 per_source_cap={"judgment": 2})
+    out = rerank(
+        "murder",
+        cands,
+        keyword_predict("murder"),
+        top_k=10,
+        min_relative=0.3,
+        per_source_cap={"judgment": 2},
+    )
     keys = [c.key for c in out]
     assert sum(k.startswith("j") for k in keys) == 2
     assert "s" in keys and "noise" not in keys

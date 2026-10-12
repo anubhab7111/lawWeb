@@ -6,12 +6,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.tools import legal_query_parser as lqp
 
-ONTOLOGY = {"doctrines": [
-    {"doctrine": "retrenchment", "aliases": ["layoff compensation"], "domain": "labour",
-     "sections": [["Industrial Disputes Act", "25F"]], "landmark_cases": []},
-    {"doctrine": "forgery", "aliases": ["forged document"], "domain": "criminal",
-     "sections": [["Indian Penal Code", "463"]], "landmark_cases": []},
-], "concordance": []}
+ONTOLOGY = {
+    "doctrines": [
+        {
+            "doctrine": "retrenchment",
+            "aliases": ["layoff compensation"],
+            "domain": "labour",
+            "sections": [["Industrial Disputes Act", "25F"]],
+            "landmark_cases": [],
+        },
+        {
+            "doctrine": "forgery",
+            "aliases": ["forged document"],
+            "domain": "criminal",
+            "sections": [["Indian Penal Code", "463"]],
+            "landmark_cases": [],
+        },
+    ],
+    "concordance": [],
+}
 
 
 class FakeEmbeddings:
@@ -42,7 +55,11 @@ def _parse(monkeypatch, query, query_vec):
 
 
 def test_close_doctrine_is_pinned(monkeypatch):
-    parsed, _ = _parse(monkeypatch, "What must an employer pay when letting workers go?", [0.9, 0.1, 0.0])
+    parsed, _ = _parse(
+        monkeypatch,
+        "What must an employer pay when letting workers go?",
+        [0.9, 0.1, 0.0],
+    )
     assert parsed.doctrines == ["retrenchment"]
     assert ("Industrial Disputes Act", "25F") in parsed.pinned_sections
     assert parsed.query_type == "doctrine"
@@ -55,6 +72,8 @@ def test_distant_doctrine_is_ignored(monkeypatch):
 
 
 def test_ontology_alias_hit_skips_the_embedding(monkeypatch):
-    parsed, emb = _parse(monkeypatch, "Is a layoff compensation mandatory?", [0.0, 1.0, 0.0])
+    parsed, emb = _parse(
+        monkeypatch, "Is a layoff compensation mandatory?", [0.0, 1.0, 0.0]
+    )
     assert emb.document_calls == 0
     assert parsed.doctrines == ["retrenchment"]

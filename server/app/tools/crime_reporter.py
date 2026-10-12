@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-
 from app.text_match import count_words
 
 CLASSIFIER_DIR = Path(__file__).resolve().parents[1] / "data" / "crime_type_classifier"
@@ -231,13 +230,55 @@ def _load_classifier() -> Optional[Tuple[np.ndarray, np.ndarray, List[str]]]:
 
 
 ANIMAL_WORDS = [
-    "dog", "dogs", "puppy", "cat", "cats", "kitten", "cow", "cows", "buffalo", "goat", "goats",
-    "horse", "ox", "bull", "cattle", "pet", "animal", "animals", "hen", "hens", "sheep",
+    "dog",
+    "dogs",
+    "puppy",
+    "cat",
+    "cats",
+    "kitten",
+    "cow",
+    "cows",
+    "buffalo",
+    "goat",
+    "goats",
+    "horse",
+    "ox",
+    "bull",
+    "cattle",
+    "pet",
+    "animal",
+    "animals",
+    "hen",
+    "hens",
+    "sheep",
 ]
 HUMAN_VICTIM_WORDS = [
-    "son", "daughter", "brother", "sister", "father", "mother", "husband", "wife", "child",
-    "baby", "uncle", "aunt", "cousin", "friend", "grandfather", "grandmother", "man", "woman",
-    "boy", "girl", "person", "people", "victim", "victims", "student", "body",
+    "son",
+    "daughter",
+    "brother",
+    "sister",
+    "father",
+    "mother",
+    "husband",
+    "wife",
+    "child",
+    "baby",
+    "uncle",
+    "aunt",
+    "cousin",
+    "friend",
+    "grandfather",
+    "grandmother",
+    "man",
+    "woman",
+    "boy",
+    "girl",
+    "person",
+    "people",
+    "victim",
+    "victims",
+    "student",
+    "body",
 ]
 
 
@@ -245,20 +286,25 @@ def resolve_family(family: str, description: str) -> str:
     text = description.lower()
     if family == "Murder":
 
-
         died = count_words(text, CRIME_KEYWORDS["murder"])
         if not died and count_words(text, CRIME_KEYWORDS["threat"]):
             return "threat"
 
-        if count_words(text, ANIMAL_WORDS) and not count_words(text, HUMAN_VICTIM_WORDS):
+        if count_words(text, ANIMAL_WORDS) and not count_words(
+            text, HUMAN_VICTIM_WORDS
+        ):
             return "property_damage"
         return "murder"
-    return max(FAMILY_TYPES[family], key=lambda t: count_words(text, CRIME_KEYWORDS.get(t, [])))
+    return max(
+        FAMILY_TYPES[family], key=lambda t: count_words(text, CRIME_KEYWORDS.get(t, []))
+    )
 
 
 def crime_type_from_vector(q: np.ndarray, description: str) -> str:
     W, b, labels = _load_classifier()  # type: ignore[misc]
-    return resolve_family(labels[int(np.argmax(W @ (q / np.linalg.norm(q)) + b))], description)
+    return resolve_family(
+        labels[int(np.argmax(W @ (q / np.linalg.norm(q)) + b))], description
+    )
 
 
 async def classify_crime_type(description: str) -> str:

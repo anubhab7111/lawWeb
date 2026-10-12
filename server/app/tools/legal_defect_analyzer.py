@@ -3,15 +3,14 @@
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.document_classifier import DocumentClassification
-from app.tools.statutory_validator import StatutoryValidationResult, format_score
-from app.tools.indian_law_rag import IndianLawContext
 from app.prompts import (
     REACT_ANALYZE_PROMPT,
     REACT_THINK_PROMPT,
     sanitize_untrusted_document,
 )
-
+from app.tools.document_classifier import DocumentClassification
+from app.tools.indian_law_rag import IndianLawContext
+from app.tools.statutory_validator import StatutoryValidationResult, format_score
 
 _THINK_CACHE: Dict[tuple, str] = {}
 
@@ -51,21 +50,26 @@ class LegalDefectAnalyzer:
         """Perform comprehensive legal defect analysis using the ReAct pipeline."""
         reasoning_trace: Dict[str, str] = {}
 
-
         print("[ReAct] Step 1/2: THINK — Reasoning about requirements...")
         if think_output is None:
             think_output = await self.think(classification)
         reasoning_trace["think"] = think_output
         print(f"[ReAct] THINK complete ({len(think_output)} chars)")
 
-
         print("[ReAct] Step 2/2: ANALYZE — Producing final report...")
         if stream:
             from app.chatbot import emit_text
 
-            await emit_text(self._format_prefix(classification, validation, reasoning_trace) + "\n")
+            await emit_text(
+                self._format_prefix(classification, validation, reasoning_trace) + "\n"
+            )
         analyze_output = await self._step_analyze(
-            classification, validation, law_context, think_output, document_text, stream=stream
+            classification,
+            validation,
+            law_context,
+            think_output,
+            document_text,
+            stream=stream,
         )
         analyze_output, removed = await self._strip_unverified_cases(analyze_output)
         if removed:
@@ -74,7 +78,6 @@ class LegalDefectAnalyzer:
             await emit_text("\n" + self._format_suffix(law_context))
         reasoning_trace["analyze"] = analyze_output
         print(f"[ReAct] ANALYZE complete ({len(analyze_output)} chars)")
-
 
         formatted_response = self._format_final_response(
             classification, validation, law_context, analyze_output, reasoning_trace
@@ -91,7 +94,6 @@ class LegalDefectAnalyzer:
             "defect_count": validation.failed,
             "document_type": classification.document_type,
         }
-
 
     async def think(self, classification: DocumentClassification) -> str:
         """THINK step, cached per document kind; fallbacks are not cached."""
@@ -138,7 +140,6 @@ class LegalDefectAnalyzer:
         else:
             present_str = "  (none detected)"
 
-
         missing_str = ""
         if validation.missing_elements:
             missing_items = []
@@ -150,7 +151,6 @@ class LegalDefectAnalyzer:
             missing_str = "\n".join(missing_items)
         else:
             missing_str = "  (none — all mandatory elements found by regex)"
-
 
         nc_str = ""
         if validation.non_compliance:
@@ -164,7 +164,11 @@ class LegalDefectAnalyzer:
         else:
             nc_str = "  (none identified)"
 
-        return {"present_elements": present_str, "missing_elements": missing_str, "non_compliance": nc_str}
+        return {
+            "present_elements": present_str,
+            "missing_elements": missing_str,
+            "non_compliance": nc_str,
+        }
 
     async def _step_analyze(
         self,
@@ -198,7 +202,6 @@ class LegalDefectAnalyzer:
             else "  None"
         )
 
-
         api_refs_str = ""
         if law_context.references:
             ref_items = []
@@ -218,7 +221,9 @@ class LegalDefectAnalyzer:
             total_checks=validation.total_checks,
             **self._regex_findings(validation),
             document_text=sanitize_untrusted_document(
-                document_text[:6000] if document_text else "(no document text available)"
+                document_text[:6000]
+                if document_text
+                else "(no document text available)"
             ),
             applicable_acts=acts_str,
             applicable_sections=sections_str,
@@ -234,7 +239,6 @@ class LegalDefectAnalyzer:
             print(f"[ReAct] ANALYZE step error: {e}")
             return self._fallback_analyze(classification, validation, law_context)
 
-
     @staticmethod
     async def _strip_unverified_cases(text: str) -> Tuple[str, List[str]]:
         """Only cases in the indexed landmark corpus may stay in the report; if the corpus is unavailable nothing can be verified, so every case goes."""
@@ -246,17 +250,20 @@ class LegalDefectAnalyzer:
             ready = rag.initialized or await rag.initialize()
         except Exception:
             ready = False
-        return strip_unverified_cases(text, rag.find_case if ready else (lambda name: None))
+        return strip_unverified_cases(
+            text, rag.find_case if ready else (lambda name: None)
+        )
 
     async def _invoke_llm(self, prompt: str, stream: bool = False) -> str:
         """Invoke the LLM with a prompt and return the response content."""
         from app.chatbot import _INCOMPLETE_GENERATION_NOTE, invoke_llm_safely
 
-        text = await invoke_llm_safely(self.llm, prompt, stream=stream, notify_incomplete=False)
+        text = await invoke_llm_safely(
+            self.llm, prompt, stream=stream, notify_incomplete=False
+        )
         if text == _INCOMPLETE_GENERATION_NOTE:
             raise RuntimeError("LLM did not finish this step")
         return text
-
 
     def _fallback_think(self, classification: DocumentClassification) -> str:
         """Generate a basic THINK output without LLM."""
@@ -313,7 +320,6 @@ class LegalDefectAnalyzer:
 
         return "\n".join(parts)
 
-
     def _format_final_response(
         self,
         classification: DocumentClassification,
@@ -335,10 +341,8 @@ class LegalDefectAnalyzer:
         """Everything before the ANALYZE text, ending with its heading."""
         parts = []
 
-
         parts.append(DISCLAIMER_HEADER)
         parts.append("")
-
 
         parts.append("## 📄 Document Classification")
         parts.append(f"**Type:** {classification.document_type}")
@@ -351,7 +355,6 @@ class LegalDefectAnalyzer:
             )
         parts.append("")
 
-
         score = validation.compliance_score
         emoji = (
             "➖"
@@ -360,8 +363,7 @@ class LegalDefectAnalyzer:
         )
         parts.append("## 📊 Statutory Compliance Overview")
         parts.append(
-            f"**Automated Compliance Score:** {emoji} "
-            f"{format_score(score)}"
+            f"**Automated Compliance Score:** {emoji} " f"{format_score(score)}"
         )
         parts.append(f"**Checks Performed:** {validation.total_checks}")
         parts.append(
@@ -372,7 +374,6 @@ class LegalDefectAnalyzer:
             "The ReAct analysis below may adjust this assessment.*"
         )
         parts.append("")
-
 
         if "think" in reasoning_trace:
             parts.append("<details>")
@@ -386,14 +387,12 @@ class LegalDefectAnalyzer:
             parts.append("</details>")
             parts.append("")
 
-
         parts.append("## ⚖️ Legal Analysis")
         return "\n".join(parts)
 
     def _format_suffix(self, law_context: IndianLawContext) -> str:
         """Everything after the ANALYZE text."""
         parts = [""]
-
 
         if law_context.applicable_acts:
             parts.append("## 📚 Applicable Indian Law")
@@ -407,20 +406,17 @@ class LegalDefectAnalyzer:
                 parts.append(f"- {sec}")
             parts.append("")
 
-
         if law_context.state_specific_notes:
             parts.append("## 🏛️ State-Specific Notes")
             for note in law_context.state_specific_notes:
                 parts.append(f"- {note}")
             parts.append("")
 
-
         if law_context.precedent_notes:
             parts.append("## 📎 Relevant Case Law")
             for p in law_context.precedent_notes:
                 parts.append(f"- {p}")
             parts.append("")
-
 
         parts.append(DISCLAIMER_FOOTER)
 

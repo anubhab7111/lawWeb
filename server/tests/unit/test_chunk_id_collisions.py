@@ -11,11 +11,12 @@ TEXT = (
 
 
 def _ids(rag, source_file, domain="criminal"):
-    return {c.section_number: c.chunk_id for c in rag._parse_pdf(TEXT, source_file, domain)}
+    return {
+        c.section_number: c.chunk_id for c in rag._parse_pdf(TEXT, source_file, domain)
+    }
 
 
 def test_acts_sharing_a_name_prefix_get_distinct_chunk_ids():
-
 
     rag = UnifiedLegalRAGSystem()
     ipc = _ids(rag, "Indian_Penal_Code_1860.pdf")

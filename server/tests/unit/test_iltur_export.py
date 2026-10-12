@@ -1,5 +1,4 @@
 import pytest
-
 from app.ingest.iltur_export import assert_disjoint
 
 

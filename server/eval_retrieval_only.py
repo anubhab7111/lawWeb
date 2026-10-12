@@ -11,11 +11,12 @@ _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
-from app.metrics.ground_truth import (
-    GROUND_TRUTH,
-    relevant_sections_for,
+from app.metrics.ground_truth import GROUND_TRUTH, relevant_sections_for
+from app.metrics.retrieval_metrics import (
+    act_aware_sections,
+    compute_hit_rate,
+    compute_mrr_single,
 )
-from app.metrics.retrieval_metrics import act_aware_sections, compute_hit_rate, compute_mrr_single
 from app.tools.legal_retrieval import retrieve_statutes
 from app.tools.unified_legal_rag import get_unified_rag_system
 
@@ -70,10 +71,7 @@ async def main() -> None:
     print(f"{'=' * 72}")
     for r in rows:
         flag = "HIT " if r["hr5"] else "MISS"
-        print(
-            f"  {flag} rr={r['rr']:.2f} [{r['domain']:<18}] "
-            f"{r['query'][:52]}..."
-        )
+        print(f"  {flag} rr={r['rr']:.2f} [{r['domain']:<18}] " f"{r['query'][:52]}...")
         print(f"        retrieved={r['retrieved']}  relevant={r['relevant']}")
     print(f"{'-' * 72}")
     print(f"  Hit Rate @ 1 : {sum(r['hr1'] for r in rows) / n:.3f}")

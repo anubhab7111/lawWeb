@@ -1,4 +1,5 @@
 """Crime-report statute retrieval on ILSIC lay questions that cite IPC sections."""
+
 import argparse
 import ast
 import asyncio
@@ -18,10 +19,16 @@ def rows(split: str, limit: int) -> list:
     for line in lzma.open(ILSIC / f"FT-Layman-{split}.jsonl.xz", "rt"):
         r = json.loads(line)
         a = r["answer"]
-        labels = a if isinstance(a, list) else (ast.literal_eval(a) if a.startswith("[") else [a])
+        labels = (
+            a
+            if isinstance(a, list)
+            else (ast.literal_eval(a) if a.startswith("[") else [a])
+        )
         cited = {m.group(1).upper() for l in labels for m in [CITE.search(l)] if m}
         if cited:
-            out.append({"text": " ".join(r["instruction"].split())[:2000], "cited": cited})
+            out.append(
+                {"text": " ".join(r["instruction"].split())[:2000], "cited": cited}
+            )
     random.Random(4).shuffle(out)
     return out[:limit]
 
@@ -35,7 +42,9 @@ async def main(split: str, limit: int) -> None:
     hits = offence = bns = total = 0
     for k, r in enumerate(data):
         crime = await classify_crime_type(r["text"])
-        res = await RAG_TOOL_REGISTRY["crime_sections"](r["text"], crime_type=crime, k=K)
+        res = await RAG_TOOL_REGISTRY["crime_sections"](
+            r["text"], crime_type=crime, k=K
+        )
         matches = res.raw.ipc_sections if res.raw is not None else []
         got = {n for m in matches for n in (numbers_for(m.act_name, m.section) or [])}
         hits += bool(got & r["cited"])
@@ -46,8 +55,10 @@ async def main(split: str, limit: int) -> None:
             bns += penal and m.act_name.startswith("Bharatiya Nyaya")
         if k % 25 == 24:
             print(f"  {k + 1}/{len(data)} hit@{K} {hits / (k + 1):.3f}", flush=True)
-    print(f"[{split}] n={len(data)} hit@{K} {hits / len(data):.3f}  offence share {offence / max(total, 1):.3f}  "
-          f"BNS share {bns / max(offence, 1):.3f}")
+    print(
+        f"[{split}] n={len(data)} hit@{K} {hits / len(data):.3f}  offence share {offence / max(total, 1):.3f}  "
+        f"BNS share {bns / max(offence, 1):.3f}"
+    )
 
 
 if __name__ == "__main__":

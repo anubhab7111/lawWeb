@@ -3,12 +3,10 @@
 import asyncio
 from typing import List, Optional, Tuple
 
-from sqlmodel import Session, select
-
 from app.config import get_settings
 from app.db.models import Lawyer
 from app.tools.base_legal_rag import _get_shared_embeddings
-
+from sqlmodel import Session, select
 
 SEMANTIC_WEIGHT = 0.5
 RATING_WEIGHT = 0.3
@@ -22,7 +20,9 @@ RESULT_LIMIT = 5
 def list_specializations(session: Session) -> List[str]:
     """Distinct practice areas actually present in the lawyer directory."""
     return list(
-        session.exec(select(Lawyer.specialty).distinct().order_by(Lawyer.specialty)).all()
+        session.exec(
+            select(Lawyer.specialty).distinct().order_by(Lawyer.specialty)
+        ).all()
     )
 
 
@@ -41,7 +41,9 @@ async def embed_lawyers_batch(
 ) -> List[List[float]]:
     """Embed (specialty, bio) pairs in one batch."""
     embeddings = await _get_shared_embeddings()
-    texts = [_build_embedding_text(specialty, bio) for specialty, bio in specialties_and_bios]
+    texts = [
+        _build_embedding_text(specialty, bio) for specialty, bio in specialties_and_bios
+    ]
     return await asyncio.to_thread(embeddings.embed_documents, texts)
 
 
@@ -76,7 +78,9 @@ async def recommend_lawyers(
 
     if semantic_available:
         query_vector = await embed_query_text(problem_description)
-        distance_col = Lawyer.bio_embedding.cosine_distance(query_vector).label("distance")
+        distance_col = Lawyer.bio_embedding.cosine_distance(query_vector).label(
+            "distance"
+        )
         stmt = select(Lawyer, distance_col).where(Lawyer.bio_embedding.is_not(None))
         for f in filters:
             stmt = stmt.where(f)
@@ -109,7 +113,6 @@ async def recommend_lawyers(
             SUCCESS_RATE_WEIGHT,
         )
     else:
-
 
         remaining = RATING_WEIGHT + SUCCESS_RATE_WEIGHT
         semantic_weight = 0.0
@@ -149,8 +152,7 @@ def format_lawyer_results(lawyers: List[Lawyer]) -> str:
     result_parts = [f"## Found {len(lawyers)} Lawyer(s)\n"]
 
     for i, lawyer in enumerate(lawyers, 1):
-        result_parts.append(
-            f"""
+        result_parts.append(f"""
 ### {i}. {lawyer.name}
 - **Specialty:** {lawyer.specialty}
 - **Location:** {lawyer.location}
@@ -160,8 +162,7 @@ def format_lawyer_results(lawyers: List[Lawyer]) -> str:
 - **Hourly Rate:** {_currency_symbol()}{lawyer.hourly_rate:,}/hr
 - **Availability:** {lawyer.availability}
 - **Bio:** {lawyer.bio}
-"""
-        )
+""")
 
     result_parts.append(
         "\n*Note: Always verify lawyer credentials before engaging their services.*"

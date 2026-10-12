@@ -16,12 +16,25 @@ def _fake_classifier(monkeypatch, labels):
 
 
 def test_merged_family_resolved_by_keywords():
-    assert crime_reporter.resolve_family("Theft or Robbery", "they robbed me at knifepoint") == "robbery"
-    assert crime_reporter.resolve_family("Theft or Robbery", "something went missing") == "theft"
+    assert (
+        crime_reporter.resolve_family(
+            "Theft or Robbery", "they robbed me at knifepoint"
+        )
+        == "robbery"
+    )
+    assert (
+        crime_reporter.resolve_family("Theft or Robbery", "something went missing")
+        == "theft"
+    )
 
 
 def test_sexual_offence_with_raped_resolves_to_rape():
-    assert crime_reporter.resolve_family("Sexual Offense", "I got raped in market, please help") == "rape"
+    assert (
+        crime_reporter.resolve_family(
+            "Sexual Offense", "I got raped in market, please help"
+        )
+        == "rape"
+    )
 
 
 def test_general_families_map_to_general():
@@ -36,7 +49,10 @@ def test_vector_picks_highest_scoring_family(monkeypatch):
 
 def test_falls_back_to_keywords_without_weights(monkeypatch):
     monkeypatch.setattr(crime_reporter, "_load_classifier", lambda: None)
-    assert asyncio.run(crime_reporter.classify_crime_type("my phone was stolen")) == "theft"
+    assert (
+        asyncio.run(crime_reporter.classify_crime_type("my phone was stolen"))
+        == "theft"
+    )
 
 
 def test_falls_back_to_keywords_when_embedding_fails(monkeypatch):
@@ -46,21 +62,41 @@ def test_falls_back_to_keywords_when_embedding_fails(monkeypatch):
         raise RuntimeError("no model")
 
     monkeypatch.setattr("app.tools.base_legal_rag._get_shared_embeddings", broken)
-    assert asyncio.run(crime_reporter.classify_crime_type("my phone was stolen")) == "theft"
+    assert (
+        asyncio.run(crime_reporter.classify_crime_type("my phone was stolen"))
+        == "theft"
+    )
 
 
 def test_threat_to_kill_scored_as_murder_resolves_to_threat():
     from app.tools.crime_reporter import resolve_family
 
-    assert resolve_family("Murder", "My neighbour keeps threatening to kill me") == "threat"
-    assert resolve_family("Murder", "He threatened us for weeks and my brother was shot dead") == "murder"
-    assert resolve_family("Murder", "The child was murdered after prior threats") == "murder"
+    assert (
+        resolve_family("Murder", "My neighbour keeps threatening to kill me")
+        == "threat"
+    )
+    assert (
+        resolve_family(
+            "Murder", "He threatened us for weeks and my brother was shot dead"
+        )
+        == "murder"
+    )
+    assert (
+        resolve_family("Murder", "The child was murdered after prior threats")
+        == "murder"
+    )
     assert resolve_family("Murder", "My brother was killed by a gang") == "murder"
 
 
 def test_killing_an_animal_scored_as_murder_resolves_to_property_damage():
     from app.tools.crime_reporter import resolve_family
 
-    assert resolve_family("Murder", "Someone killed my dog by poisoning it") == "property_damage"
-    assert resolve_family("Murder", "my neighbour beat my pet dog to death with a stick") == "property_damage"
+    assert (
+        resolve_family("Murder", "Someone killed my dog by poisoning it")
+        == "property_damage"
+    )
+    assert (
+        resolve_family("Murder", "my neighbour beat my pet dog to death with a stick")
+        == "property_damage"
+    )
     assert resolve_family("Murder", "They killed my brother and his dog") == "murder"

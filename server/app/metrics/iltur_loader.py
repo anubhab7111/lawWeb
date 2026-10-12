@@ -23,7 +23,9 @@ def _load_iltur_lsi():
     try:
         from datasets import load_dataset
     except ImportError as e:
-        raise RuntimeError("The `datasets` package is required: pip install datasets") from e
+        raise RuntimeError(
+            "The `datasets` package is required: pip install datasets"
+        ) from e
 
     token = get_settings().huggingface_token or None
     try:
@@ -89,7 +91,7 @@ def label_names() -> List[str]:
 
 
 def _section_number(label: Any) -> str:
-    """"Section 302" / "Section 120B" / "Section 294(b)" -> "302" / "120B" / "294"."""
+    """ "Section 302" / "Section 120B" / "Section 294(b)" -> "302" / "120B" / "294"."""
     match = re.search(r"\d+[A-Za-z]{0,2}", str(label))
     return match.group(0).upper() if match else str(label)
 

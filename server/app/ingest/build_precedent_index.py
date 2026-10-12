@@ -11,7 +11,6 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-
 from app.ingest.iltur_export import assert_disjoint, lsi_dir
 from app.ingest.paths import corpus_path
 from app.metrics.iltur_eval import fact_windows
@@ -23,7 +22,9 @@ SHARD_SIZE = 16384
 def load_cases() -> Tuple[List[str], List[List[str]], List[List[str]]]:
     """(case ids, fact sentences, labels) for train then dev — never test."""
     root = lsi_dir()
-    train, dev = pd.read_parquet(root / "train.parquet"), pd.read_parquet(root / "dev.parquet")
+    train, dev = pd.read_parquet(root / "train.parquet"), pd.read_parquet(
+        root / "dev.parquet"
+    )
     test_ids = pd.read_parquet(root / "test.parquet", columns=["id"])["id"].tolist()
     assert_disjoint(
         {"train": train["id"].tolist(), "dev": dev["id"].tolist(), "test": test_ids}
@@ -36,7 +37,9 @@ def load_cases() -> Tuple[List[str], List[List[str]], List[List[str]]]:
     )
 
 
-def make_windows(sentences: List[List[str]], per_case: int) -> Tuple[List[str], np.ndarray]:
+def make_windows(
+    sentences: List[List[str]], per_case: int
+) -> Tuple[List[str], np.ndarray]:
     texts: List[str] = []
     owner: List[int] = []
     for case_idx, sents in enumerate(sentences):
@@ -51,7 +54,9 @@ def embed_shards(texts: List[str], shard_dir: Path, device: str) -> None:
 
     shard_dir.mkdir(parents=True, exist_ok=True)
     n_shards = (len(texts) + SHARD_SIZE - 1) // SHARD_SIZE
-    todo = [i for i in range(n_shards) if not (shard_dir / f"shard_{i:04d}.npy").exists()]
+    todo = [
+        i for i in range(n_shards) if not (shard_dir / f"shard_{i:04d}.npy").exists()
+    ]
     if not todo:
         return
     embeddings = _make_bge_embeddings(device)
@@ -67,16 +72,23 @@ def embed_shards(texts: List[str], shard_dir: Path, device: str) -> None:
         np.save(tmp, vecs)
         tmp.rename(shard_dir / f"shard_{i:04d}.npy")
         elapsed = time.time() - started
-        print(f"[precedent] shard {i + 1}/{n_shards} ({done}/{len(todo)} this run, {elapsed:.0f}s)")
+        print(
+            f"[precedent] shard {i + 1}/{n_shards} ({done}/{len(todo)} this run, {elapsed:.0f}s)"
+        )
 
 
-def assemble(shard_dir: Path, owner: np.ndarray, case_ids, labels, out_dir: Path) -> None:
+def assemble(
+    shard_dir: Path, owner: np.ndarray, case_ids, labels, out_dir: Path
+) -> None:
     import faiss
-
     from app.config import get_settings
 
     vecs = np.concatenate(
-        [np.load(p) for p in sorted(shard_dir.glob("shard_*.npy")) if ".tmp" not in p.name]
+        [
+            np.load(p)
+            for p in sorted(shard_dir.glob("shard_*.npy"))
+            if ".tmp" not in p.name
+        ]
     )
     assert len(vecs) == len(owner), f"{len(vecs)} vectors for {len(owner)} windows"
     index = faiss.IndexScalarQuantizer(
@@ -99,26 +111,40 @@ def assemble(shard_dir: Path, owner: np.ndarray, case_ids, labels, out_dir: Path
             }
         )
     )
-    print(f"[precedent] index: {len(owner)} windows over {len(case_ids)} cases -> {out_dir}")
+    print(
+        f"[precedent] index: {len(owner)} windows over {len(case_ids)} cases -> {out_dir}"
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--windows-per-case", type=int, default=pr.INDEX_WINDOWS)
-    parser.add_argument("--limit-cases", type=int, help="smoke test on the first N cases")
+    parser.add_argument(
+        "--limit-cases", type=int, help="smoke test on the first N cases"
+    )
     args = parser.parse_args()
 
     case_ids, sentences, labels = load_cases()
     if args.limit_cases:
-        case_ids, sentences, labels = (x[: args.limit_cases] for x in (case_ids, sentences, labels))
+        case_ids, sentences, labels = (
+            x[: args.limit_cases] for x in (case_ids, sentences, labels)
+        )
     texts, owner = make_windows(sentences, args.windows_per_case)
     print(f"[precedent] {len(case_ids)} cases -> {len(texts)} windows")
 
-    tag = f"w{args.windows_per_case}" + (f"_n{args.limit_cases}" if args.limit_cases else "")
+    tag = f"w{args.windows_per_case}" + (
+        f"_n{args.limit_cases}" if args.limit_cases else ""
+    )
     shard_dir = corpus_path("builds", "precedent", tag)
     embed_shards(texts, shard_dir, args.device)
-    out_dir = pr.INDEX_DIR if not args.limit_cases else pr.INDEX_DIR.with_name("precedent_smoke")
+    out_dir = (
+        pr.INDEX_DIR
+        if not args.limit_cases
+        else pr.INDEX_DIR.with_name("precedent_smoke")
+    )
     assemble(shard_dir, owner, case_ids, labels, out_dir)
 
 

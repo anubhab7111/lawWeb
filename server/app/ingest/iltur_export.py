@@ -9,9 +9,13 @@ from pathlib import Path
 from typing import Dict, List
 
 import pandas as pd
-
 from app.ingest.paths import corpus_path
-from app.metrics.iltur_loader import DATASET_CONFIG, DATASET_ID, decode_labels, label_names
+from app.metrics.iltur_loader import (
+    DATASET_CONFIG,
+    DATASET_ID,
+    decode_labels,
+    label_names,
+)
 
 LICENSE = "CC BY-NC-SA 4.0 (non-commercial)"
 
@@ -32,11 +36,12 @@ def lsi_dir() -> Path:
 
 
 def export() -> Dict:
+    from app.config import get_settings
     from datasets import load_dataset
 
-    from app.config import get_settings
-
-    ds = load_dataset(DATASET_ID, DATASET_CONFIG, token=get_settings().huggingface_token or None)
+    ds = load_dataset(
+        DATASET_ID, DATASET_CONFIG, token=get_settings().huggingface_token or None
+    )
     names = label_names()
     out = lsi_dir()
     out.mkdir(parents=True, exist_ok=True)
@@ -62,13 +67,19 @@ def export() -> Dict:
         pd.DataFrame(rows).to_parquet(out / f"{split}.parquet", index=False)
         summary["splits"][split] = {
             "cases": len(rows),
-            "mean_sentences": sum(len(r["sentences"]) for r in rows) / max(len(rows), 1),
+            "mean_sentences": sum(len(r["sentences"]) for r in rows)
+            / max(len(rows), 1),
             "distinct_labels": len(counts),
         }
     assert_disjoint(ids_by_split)
 
     statutes = [
-        {"label": names[i], "text": " ".join(row["text"]) if isinstance(row["text"], list) else row["text"]}
+        {
+            "label": names[i],
+            "text": (
+                " ".join(row["text"]) if isinstance(row["text"], list) else row["text"]
+            ),
+        }
         for i, row in enumerate(ds["statutes"])
     ]
     pd.DataFrame(statutes).to_parquet(out / "statutes.parquet", index=False)

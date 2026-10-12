@@ -14,8 +14,15 @@ class CountingReranker:
 
 
 def chunk(text):
-    return LegalChunk(chunk_id="c1", domain="criminal", act_name="Code of Criminal Procedure", section_number="438",
-                      title="Direction for grant of bail", text=text, source_file="crpc.pdf")
+    return LegalChunk(
+        chunk_id="c1",
+        domain="criminal",
+        act_name="Code of Criminal Procedure",
+        section_number="438",
+        title="Direction for grant of bail",
+        text=text,
+        source_file="crpc.pdf",
+    )
 
 
 def test_long_section_scores_few_sentences_and_keeps_the_relevant_one(monkeypatch):
@@ -28,6 +35,13 @@ def test_long_section_scores_few_sentences_and_keeps_the_relevant_one(monkeypatc
         return reranker
 
     monkeypatch.setattr(b, "_get_shared_reranker", fake_reranker)
-    out = asyncio.run(compress_chunks_for_context("When can anticipatory bail be granted?", [chunk(" ".join(sentences))]))
+    out = asyncio.run(
+        compress_chunks_for_context(
+            "When can anticipatory bail be granted?", [chunk(" ".join(sentences))]
+        )
+    )
     assert len(reranker.pairs) <= 8
-    assert out[0].text.startswith("Section opening rule") and "anticipatory bail" in out[0].text
+    assert (
+        out[0].text.startswith("Section opening rule")
+        and "anticipatory bail" in out[0].text
+    )

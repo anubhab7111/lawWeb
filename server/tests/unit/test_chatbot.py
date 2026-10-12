@@ -6,7 +6,6 @@ import time
 from types import SimpleNamespace
 
 import pytest
-
 from app import chatbot as cb
 from app.config import get_settings
 from app.deps import rate_limit
@@ -74,8 +73,13 @@ def _classification(primary, secondary=(), ambiguous=False, confidence=0.8, marg
     )
 
 
-def _statute(text="• **IPC § 420** — Cheating\nPunishment text.", chunks=5, conf=0.7,
-             sections=("420",), ok=True):
+def _statute(
+    text="• **IPC § 420** — Cheating\nPunishment text.",
+    chunks=5,
+    conf=0.7,
+    sections=("420",),
+    ok=True,
+):
     return ToolInvocationResult(
         name="statute_context",
         succeeded=ok,
@@ -91,7 +95,9 @@ def _statute(text="• **IPC § 420** — Cheating\nPunishment text.", chunks=5,
 
 def _report(score, flagged=(), llm_succeeded=True):
     items = [
-        SimpleNamespace(text=t, reason="not in context", citations=["Section 999 of the IPC"])
+        SimpleNamespace(
+            text=t, reason="not in context", citations=["Section 999 of the IPC"]
+        )
         for t in flagged
     ]
     return SimpleNamespace(
@@ -109,7 +115,9 @@ def env(monkeypatch):
     rate_limit.reset_rate_limits()
 
     async def preprocess(message):
-        return message, SimpleNamespace(language="en", is_reliable=False, confidence=1.0)
+        return message, SimpleNamespace(
+            language="en", is_reliable=False, confidence=1.0
+        )
 
     async def postprocess(text, lang):
         return text
@@ -131,8 +139,17 @@ def env(monkeypatch):
 class Rig:
     """One chatbot wired to fakes; records what the workflow asked of them."""
 
-    def __init__(self, monkeypatch, llm, classification, statutes, reports=None, retry_llm=None,
-                 tiebreak_result=None, tiebreak_raises=None):
+    def __init__(
+        self,
+        monkeypatch,
+        llm,
+        classification,
+        statutes,
+        reports=None,
+        retry_llm=None,
+        tiebreak_result=None,
+        tiebreak_raises=None,
+    ):
         self.llm = llm
         self.retry_llm = retry_llm or llm
         self.statute_calls = []
@@ -147,28 +164,39 @@ class Rig:
 
         async def statute_tool(query, **kwargs):
             self.statute_calls.append((query, kwargs))
-            return self._statutes.pop(0) if len(self._statutes) > 1 else self._statutes[0]
+            return (
+                self._statutes.pop(0) if len(self._statutes) > 1 else self._statutes[0]
+            )
 
-        async def verify(text, retrieved_sections=None, retrieved_context_text="",
-                          llm_invoke=None, citation_only=False):
+        async def verify(
+            text,
+            retrieved_sections=None,
+            retrieved_context_text="",
+            llm_invoke=None,
+            citation_only=False,
+        ):
             self.verify_calls += 1
             self.citation_only_calls.append(citation_only)
             if not self._reports:
                 return text, None
-            report = self._reports.pop(0) if len(self._reports) > 1 else self._reports[0]
+            report = (
+                self._reports.pop(0) if len(self._reports) > 1 else self._reports[0]
+            )
             return text, report
 
         async def fast_text(prompt, timeout):
             return "rewritten statute query"
-
 
         async def tiebreak(contenders, user_input):
             self.tiebreak_calls.append((frozenset(contenders), user_input))
             if tiebreak_raises is not None:
                 raise tiebreak_raises
             return tiebreak_result, {
-                "tried": True, "seconds": 0.01, "candidates": sorted(contenders),
-                "raw": tiebreak_result, "resolved": tiebreak_result,
+                "tried": True,
+                "seconds": 0.01,
+                "candidates": sorted(contenders),
+                "raw": tiebreak_result,
+                "resolved": tiebreak_result,
             }
 
         monkeypatch.setattr(cb, "classify_intent_embedding", classify)
@@ -264,8 +292,13 @@ def test_concurrency_cap_rejects_when_busy(monkeypatch):
 
 
 def test_stream_runs_the_compiled_graph_and_streams_tokens(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Section 420 IPC punishes cheating."]),
-              _classification("general_query"), [_statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Section 420 IPC punishes cheating."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     events = run(rig.stream())
     types = [e["type"] for e in events]
     assert "token" in types and types[-1] == "done"
@@ -279,12 +312,24 @@ def test_stream_runs_the_compiled_graph_and_streams_tokens(monkeypatch):
 
 
 def test_chat_and_stream_agree(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Same answer."]),
-              _classification("general_query"), [_statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Same answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     streamed = run(rig.stream())[-1]["response"]
-    rig2 = Rig(monkeypatch, FakeLLM(["Same answer."]),
-               _classification("general_query"), [_statute()], [_report(1.0)])
-    plain = run(rig2.bot.chat("Can an FIR be quashed by the High Court?", "s"))["response"]
+    rig2 = Rig(
+        monkeypatch,
+        FakeLLM(["Same answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
+    plain = run(rig2.bot.chat("Can an FIR be quashed by the High Court?", "s"))[
+        "response"
+    ]
     assert streamed.strip() == plain.strip()
 
 
@@ -306,7 +351,9 @@ def test_upload_question_keeps_document_intent(monkeypatch):
 
 
 def test_ambiguous_action_intent_asks_one_question(monkeypatch):
-    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    ambiguous = _classification(
+        "general_query", ["find_lawyer"], ambiguous=True, margin=0.01
+    )
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     out = run(cb.classify_intent(_state("my landlord is cheating me")))
     assert out["intent"] == "clarify"
@@ -314,7 +361,9 @@ def test_ambiguous_action_intent_asks_one_question(monkeypatch):
 
 
 def test_ambiguous_report_vs_law_question(monkeypatch):
-    ambiguous = _classification("crime_report", ["general_query"], ambiguous=True, margin=0.01)
+    ambiguous = _classification(
+        "crime_report", ["general_query"], ambiguous=True, margin=0.01
+    )
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     out = run(cb.classify_intent(_state("someone threatened me")))
     assert out["response"] == CLARIFY_LAW_OR_REPORT
@@ -329,15 +378,21 @@ def test_tiebreak_never_runs_on_unambiguous_routing(monkeypatch):
 
 def test_tiebreak_never_runs_when_no_action_intent_contends(monkeypatch):
     """Ambiguous but no find_lawyer/crime_report among the contenders — the existing silent-default behaviour, not something worth an extra LLM call."""
-    ambiguous = _classification("general_query", ["document_analysis"], ambiguous=True, margin=0.01)
+    ambiguous = _classification(
+        "general_query", ["document_analysis"], ambiguous=True, margin=0.01
+    )
     rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     run(cb.classify_intent(_state("my landlord is cheating me")))
     assert rig.tiebreak_calls == []
 
 
 def test_tiebreak_resolution_skips_the_clarifying_question(monkeypatch):
-    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
-    rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()], tiebreak_result="find_lawyer")
+    ambiguous = _classification(
+        "general_query", ["find_lawyer"], ambiguous=True, margin=0.01
+    )
+    rig = Rig(
+        monkeypatch, FakeLLM(), ambiguous, [_statute()], tiebreak_result="find_lawyer"
+    )
     out = run(cb.classify_intent(_state("my landlord is cheating me")))
     assert out["intent"] == "find_lawyer"
     assert out.get("clarification") is None
@@ -350,7 +405,9 @@ def test_tiebreak_resolution_skips_the_clarifying_question(monkeypatch):
 
 
 def test_tiebreak_unsure_falls_back_to_the_clarifying_question(monkeypatch):
-    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    ambiguous = _classification(
+        "general_query", ["find_lawyer"], ambiguous=True, margin=0.01
+    )
     rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()], tiebreak_result=None)
     out = run(cb.classify_intent(_state("my landlord is cheating me")))
     assert out["intent"] == "clarify"
@@ -359,8 +416,16 @@ def test_tiebreak_unsure_falls_back_to_the_clarifying_question(monkeypatch):
 
 
 def test_tiebreak_exception_fails_open_to_the_clarifying_question(monkeypatch):
-    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
-    Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()], tiebreak_raises=RuntimeError("ollama down"))
+    ambiguous = _classification(
+        "general_query", ["find_lawyer"], ambiguous=True, margin=0.01
+    )
+    Rig(
+        monkeypatch,
+        FakeLLM(),
+        ambiguous,
+        [_statute()],
+        tiebreak_raises=RuntimeError("ollama down"),
+    )
     out = run(cb.classify_intent(_state("my landlord is cheating me")))
     assert out["intent"] == "clarify"
     assert out["trace"]["routing"]["tiebreak"]["error"] == "ollama down"
@@ -374,18 +439,24 @@ class FakeTiebreakLLM(FakeLLM):
         self.format = {"type": "object"}
 
 
-def _resolve(monkeypatch, fake_llm, candidates=("find_lawyer", "general_query"), message="hi"):
+def _resolve(
+    monkeypatch, fake_llm, candidates=("find_lawyer", "general_query"), message="hi"
+):
     monkeypatch.setattr(cb, "_get_tiebreak_llm", lambda key: fake_llm)
     return run(cb._resolve_ambiguity_with_llm(frozenset(candidates), message))
 
 
 def test_resolve_ambiguity_accepts_a_valid_candidate(monkeypatch):
-    resolved, trace = _resolve(monkeypatch, FakeTiebreakLLM('{"intent": "find_lawyer"}'))
+    resolved, trace = _resolve(
+        monkeypatch, FakeTiebreakLLM('{"intent": "find_lawyer"}')
+    )
     assert resolved == "find_lawyer"
     assert trace == {
-        "tried": True, "seconds": trace["seconds"],
+        "tried": True,
+        "seconds": trace["seconds"],
         "candidates": ["find_lawyer", "general_query"],
-        "raw": "find_lawyer", "resolved": "find_lawyer",
+        "raw": "find_lawyer",
+        "resolved": "find_lawyer",
     }
 
 
@@ -394,8 +465,9 @@ def test_resolve_ambiguity_returns_none_when_the_model_is_unsure(monkeypatch):
     assert resolved is None and trace["raw"] == "unsure"
 
 
-def test_resolve_ambiguity_rejects_an_answer_outside_the_offered_candidates(monkeypatch):
-
+def test_resolve_ambiguity_rejects_an_answer_outside_the_offered_candidates(
+    monkeypatch,
+):
 
     resolved, _ = _resolve(monkeypatch, FakeTiebreakLLM('{"intent": "crime_report"}'))
     assert resolved is None
@@ -422,11 +494,14 @@ def test_resolve_ambiguity_disabled_by_config_never_touches_the_llm(monkeypatch)
     get_settings.cache_clear()
     touched = []
     monkeypatch.setattr(
-        cb, "_get_tiebreak_llm",
+        cb,
+        "_get_tiebreak_llm",
         lambda key: touched.append(key) or FakeTiebreakLLM('{"intent": "find_lawyer"}'),
     )
     resolved, trace = run(
-        cb._resolve_ambiguity_with_llm(frozenset({"general_query", "find_lawyer"}), "hi")
+        cb._resolve_ambiguity_with_llm(
+            frozenset({"general_query", "find_lawyer"}), "hi"
+        )
     )
     assert resolved is None and trace == {"tried": False} and touched == []
 
@@ -437,14 +512,17 @@ def test_tiebreak_llm_is_cached_per_candidate_set():
     c = cb._get_tiebreak_llm(("crime_report", "general_query"))
     assert a is b and a is not c
     assert a.format["properties"]["intent"]["enum"] == [
-        "find_lawyer", "general_query", cb.ROUTE_TIEBREAK_UNSURE,
+        "find_lawyer",
+        "general_query",
+        cb.ROUTE_TIEBREAK_UNSURE,
     ]
 
 
 def test_explicit_written_questions_are_never_clarified(monkeypatch):
     """Regression: live against the project's own 18-query eval set (tests/test_chatbot.py TEST_PROMPTS), 6 of 18 canonical legal questions — all explicit written-out questions — were..."""
-    ambiguous = _classification("general_query", ["find_lawyer", "crime_report"],
-                                 ambiguous=True, margin=0.006)
+    ambiguous = _classification(
+        "general_query", ["find_lawyer", "crime_report"], ambiguous=True, margin=0.006
+    )
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     for q in (
         "Can an FIR be quashed by the High Court? On what grounds?",
@@ -455,7 +533,9 @@ def test_explicit_written_questions_are_never_clarified(monkeypatch):
 
 
 def test_never_asks_twice_in_a_row(monkeypatch):
-    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    ambiguous = _classification(
+        "general_query", ["find_lawyer"], ambiguous=True, margin=0.01
+    )
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     history = [{"role": "assistant", "content": CLARIFY_LAW_OR_LAWYER}]
     out = run(cb.classify_intent(_state("the law please", messages=history)))
@@ -463,7 +543,9 @@ def test_never_asks_twice_in_a_row(monkeypatch):
 
 
 def test_long_or_document_or_disabled_queries_are_not_clarified(monkeypatch):
-    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    ambiguous = _classification(
+        "general_query", ["find_lawyer"], ambiguous=True, margin=0.01
+    )
     Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     long_q = "my landlord " + "keeps cheating me about the deposit " * 6
     assert run(cb.classify_intent(_state(long_q)))["intent"] == "general_query"
@@ -474,7 +556,9 @@ def test_long_or_document_or_disabled_queries_are_not_clarified(monkeypatch):
 
 
 def test_clarification_routes_to_end_without_retrieval(monkeypatch):
-    ambiguous = _classification("general_query", ["find_lawyer"], ambiguous=True, margin=0.01)
+    ambiguous = _classification(
+        "general_query", ["find_lawyer"], ambiguous=True, margin=0.01
+    )
     rig = Rig(monkeypatch, FakeLLM(), ambiguous, [_statute()])
     result = run(rig.bot.chat("my landlord is cheating me", "s"))
     assert result["intent"] == "clarify"
@@ -484,8 +568,13 @@ def test_clarification_routes_to_end_without_retrieval(monkeypatch):
 
 def test_weak_retrieval_is_retried_once_widened(monkeypatch):
     weak = _statute(chunks=1, conf=0.05)
-    rig = Rig(monkeypatch, FakeLLM(["Grounded answer."]), _classification("general_query"),
-              [weak, _statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Grounded answer."]),
+        _classification("general_query"),
+        [weak, _statute()],
+        [_report(1.0)],
+    )
     result = run(rig.bot.chat("Can an FIR be quashed by the High Court?", "s"))
     assert len(rig.statute_calls) == 2
     retry_query, retry_kwargs = rig.statute_calls[1]
@@ -496,8 +585,13 @@ def test_weak_retrieval_is_retried_once_widened(monkeypatch):
 
 def test_weak_retrieval_retries_at_most_once(monkeypatch):
     weak = _statute(chunks=1, conf=0.05)
-    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
-              [weak], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Answer."]),
+        _classification("general_query"),
+        [weak],
+        [_report(1.0)],
+    )
     result = run(rig.bot.chat("Can an FIR be quashed by the High Court?", "s"))
     assert len(rig.statute_calls) == 2
     assert result["trace"]["retrieval"]["grade"] == "weak"
@@ -505,7 +599,12 @@ def test_weak_retrieval_retries_at_most_once(monkeypatch):
 
 def test_no_retrieval_runs_citation_only_verification_not_full_grounding(monkeypatch):
     empty = _statute(ok=False, chunks=0, conf=0.0)
-    rig = Rig(monkeypatch, FakeLLM(["General answer."]), _classification("general_query"), [empty])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["General answer."]),
+        _classification("general_query"),
+        [empty],
+    )
     events = run(rig.stream())
     tokens = [e["content"] for e in events if e["type"] == "token"]
     assert tokens[0] == GROUNDING_UNAVAILABLE_DISCLAIMER
@@ -516,8 +615,13 @@ def test_no_retrieval_runs_citation_only_verification_not_full_grounding(monkeyp
 
 
 def test_successful_retrieval_runs_full_verification_not_citation_only(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
-              [_statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     run(rig.stream())
     assert rig.citation_only_calls == [False]
 
@@ -527,7 +631,10 @@ def test_low_grounding_score_regenerates_once_with_targeted_retrieval(monkeypatc
         monkeypatch,
         FakeLLM(["First draft with bad claims.", "Second draft supported."]),
         _classification("general_query"),
-        [_statute(), _statute(text="• **IPC § 999** — Other\nText.", sections=("999",))],
+        [
+            _statute(),
+            _statute(text="• **IPC § 999** — Other\nText.", sections=("999",)),
+        ],
         [_report(0.2, flagged=["Bad claim."]), _report(0.9)],
     )
     events = run(rig.stream())
@@ -542,9 +649,13 @@ def test_low_grounding_score_regenerates_once_with_targeted_retrieval(monkeypatc
 
 def test_unadjudicated_low_score_does_not_regenerate(monkeypatch):
 
-
-    rig = Rig(monkeypatch, FakeLLM(["Draft."]), _classification("general_query"),
-              [_statute()], [_report(0.1, flagged=["x"], llm_succeeded=False)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Draft."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(0.1, flagged=["x"], llm_succeeded=False)],
+    )
     events = run(rig.stream())
     assert rig.llm.calls == 1 and rig.verify_calls == 1
     assert "reset" not in [e["type"] for e in events]
@@ -569,20 +680,34 @@ def _tokens(events):
 
 def test_giveup_with_failing_retry_shows_the_note_once_and_is_not_verified(monkeypatch):
     first, second = NeverClosesLLM(), NeverClosesLLM()
-    rig = Rig(monkeypatch, first, _classification("general_query"),
-              [_statute()], [_report(1.0)], retry_llm=second)
+    rig = Rig(
+        monkeypatch,
+        first,
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+        retry_llm=second,
+    )
     events = run(rig.stream())
     done = events[-1]
     assert first.calls == 1 and second.calls == 1
     assert done["response"].startswith("I wasn't able to finish")
     assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1
     assert rig.verify_calls == 0
-    assert done["trace"]["grounding"] == {"verified": False, "reason": "generation_failed"}
+    assert done["trace"]["grounding"] == {
+        "verified": False,
+        "reason": "generation_failed",
+    }
     assert done["trace"]["generation"] == {
-        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": True,
+        "variant": "concise",
+        "attempts": 2,
+        "giveup_retry": True,
+        "failed": True,
         "concise_gates": {
-            "good_retrieval": True, "single_part": True,
-            "short_query": True, "not_multi_offense": True,
+            "good_retrieval": True,
+            "single_part": True,
+            "short_query": True,
+            "not_multi_offense": True,
         },
     }
 
@@ -590,8 +715,14 @@ def test_giveup_with_failing_retry_shows_the_note_once_and_is_not_verified(monke
 def test_giveup_retry_recovers_without_the_user_ever_seeing_the_note(monkeypatch):
     first = NeverClosesLLM()
     retry = RecordingLLM(["Concise grounded answer."])
-    rig = Rig(monkeypatch, first, _classification("general_query"),
-              [_statute()], [_report(1.0)], retry_llm=retry)
+    rig = Rig(
+        monkeypatch,
+        first,
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+        retry_llm=retry,
+    )
     events = run(rig.stream())
     done = events[-1]
     assert done["response"].strip() == "Concise grounded answer."
@@ -599,10 +730,15 @@ def test_giveup_retry_recovers_without_the_user_ever_seeing_the_note(monkeypatch
     assert any(e["type"] == "status" and e["stage"] == "retrying" for e in events)
     assert rig.verify_calls == 1
     assert done["trace"]["generation"] == {
-        "variant": "concise", "attempts": 2, "giveup_retry": True, "failed": False,
+        "variant": "concise",
+        "attempts": 2,
+        "giveup_retry": True,
+        "failed": False,
         "concise_gates": {
-            "good_retrieval": True, "single_part": True,
-            "short_query": True, "not_multi_offense": True,
+            "good_retrieval": True,
+            "single_part": True,
+            "short_query": True,
+            "not_multi_offense": True,
         },
     }
 
@@ -611,8 +747,14 @@ def test_giveup_retry_can_be_disabled(monkeypatch):
     monkeypatch.setenv("LLM_GIVEUP_RETRY_ENABLED", "false")
     get_settings.cache_clear()
     first, second = NeverClosesLLM(), RecordingLLM(["never used"])
-    rig = Rig(monkeypatch, first, _classification("general_query"),
-              [_statute()], [_report(1.0)], retry_llm=second)
+    rig = Rig(
+        monkeypatch,
+        first,
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+        retry_llm=second,
+    )
     events = run(rig.stream())
     assert first.calls == 1 and second.prompts == []
     assert _tokens(events).count(cb._INCOMPLETE_GENERATION_NOTE) == 1
@@ -622,8 +764,14 @@ def test_giveup_retry_is_skipped_when_too_much_time_has_passed(monkeypatch):
     monkeypatch.setenv("LLM_GIVEUP_RETRY_MAX_ELAPSED_SECONDS", "0")
     get_settings.cache_clear()
     first, second = NeverClosesLLM(), RecordingLLM(["never used"])
-    rig = Rig(monkeypatch, first, _classification("general_query"),
-              [_statute()], [_report(1.0)], retry_llm=second)
+    rig = Rig(
+        monkeypatch,
+        first,
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+        retry_llm=second,
+    )
     events = run(rig.stream())
     assert second.prompts == []
 
@@ -632,7 +780,9 @@ def test_giveup_retry_is_skipped_when_too_much_time_has_passed(monkeypatch):
 
 
 def test_retry_prompt_genuinely_differs_from_the_first(monkeypatch):
-    long_statute = "\n\n".join(f"• **IPC § {i}** — Heading {i}\n" + "word " * 120 for i in range(1, 11))
+    long_statute = "\n\n".join(
+        f"• **IPC § {i}** — Heading {i}\n" + "word " * 120 for i in range(1, 11)
+    )
     state = {
         "current_input": "Is anticipatory bail available for economic offences?",
         "messages": [],
@@ -650,8 +800,13 @@ def test_retry_prompt_genuinely_differs_from_the_first(monkeypatch):
 
 
 def test_regeneration_is_capped_at_one(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Draft one.", "Draft two."]),
-              _classification("general_query"), [_statute()], [_report(0.1, flagged=["x"])])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Draft one.", "Draft two."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(0.1, flagged=["x"])],
+    )
     run(rig.stream())
     assert rig.llm.calls == 2 and rig.verify_calls == 2
 
@@ -659,22 +814,37 @@ def test_regeneration_is_capped_at_one(monkeypatch):
 def test_regeneration_skipped_once_budget_is_spent(monkeypatch):
     monkeypatch.setenv("REQUEST_BUDGET_SECONDS", "0")
     get_settings.cache_clear()
-    rig = Rig(monkeypatch, FakeLLM(["Draft."]), _classification("general_query"),
-              [_statute()], [_report(0.1, flagged=["x"])])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Draft."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(0.1, flagged=["x"])],
+    )
     run(rig.stream())
     assert rig.llm.calls == 1
 
 
 def test_generation_failure_is_not_verified(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(fail=RuntimeError("ollama down")),
-              _classification("general_query"), [_statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(fail=RuntimeError("ollama down")),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     result = run(rig.bot.chat("Can an FIR be quashed by the High Court?", "s"))
     assert "trouble processing your request" in result["response"]
     assert rig.verify_calls == 0
 
 
 def test_verification_corrections_reach_the_client_before_done(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Original."]), _classification("general_query"), [_statute()])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Original."]),
+        _classification("general_query"),
+        [_statute()],
+    )
 
     async def verify(text, *a, **k):
         return text + "\n\n*footer*", _report(0.9)
@@ -705,10 +875,12 @@ def test_citation_only_mode_checks_existence_without_llm_or_grounding(monkeypatc
     monkeypatch.setattr(
         "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _StubUnifiedRag()
     )
-    text, report = run(cb._verify_response_citations(
-        "Under Section 420 of the IPC this is cheating. Section 999 of the IPC also applies.",
-        citation_only=True,
-    ))
+    text, report = run(
+        cb._verify_response_citations(
+            "Under Section 420 of the IPC this is cheating. Section 999 of the IPC also applies.",
+            citation_only=True,
+        )
+    )
     assert report is None
     assert "Section 999" in text
     assert "could not be verified against the indexed corpus" in text
@@ -725,7 +897,8 @@ def test_citation_only_mode_is_silent_when_every_citation_verifies(monkeypatch):
 
 def test_citation_only_mode_no_ops_when_rag_uninitialized(monkeypatch):
     monkeypatch.setattr(
-        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _UninitializedRag()
+        "app.tools.unified_legal_rag.get_unified_rag_system",
+        lambda: _UninitializedRag(),
     )
     answer = "Section 420 of the IPC applies."
     text, report = run(cb._verify_response_citations(answer, citation_only=True))
@@ -739,6 +912,7 @@ class _StubCaseRag:
 
     def find_case(self, name):
         from app.tools.case_law_rag import normalize_case_name
+
         target = normalize_case_name(name)
         for known in self._known:
             if normalize_case_name(known) == target:
@@ -748,7 +922,8 @@ class _StubCaseRag:
 
 def test_citation_only_mode_also_flags_a_fabricated_case_name(monkeypatch):
     monkeypatch.setattr(
-        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _UninitializedRag()
+        "app.tools.unified_legal_rag.get_unified_rag_system",
+        lambda: _UninitializedRag(),
     )
     monkeypatch.setattr(
         "app.tools.case_law_rag.get_case_law_rag_system",
@@ -763,7 +938,8 @@ def test_citation_only_mode_also_flags_a_fabricated_case_name(monkeypatch):
 
 def test_citation_only_mode_no_ops_case_check_when_case_rag_uninitialized(monkeypatch):
     monkeypatch.setattr(
-        "app.tools.unified_legal_rag.get_unified_rag_system", lambda: _UninitializedRag()
+        "app.tools.unified_legal_rag.get_unified_rag_system",
+        lambda: _UninitializedRag(),
     )
     monkeypatch.setattr(
         "app.tools.case_law_rag.get_case_law_rag_system", lambda: _StubCaseRag(False)
@@ -831,15 +1007,27 @@ def test_persist_chat_result_stores_canonical_english(monkeypatch):
         captured["args"], captured["kwargs"] = args, kwargs
 
     monkeypatch.setattr(chat_router, "_persist_turn", fake_persist)
-    result = {"language": "hi", "query_en": "hello", "response_en": "Hi there",
-              "response": "नमस्ते"}
+    result = {
+        "language": "hi",
+        "query_en": "hello",
+        "response_en": "Hi there",
+        "response": "नमस्ते",
+    }
     run(chat_router._persist_chat_result(None, "user", "sid", "हैलो", result))
     kw = captured["kwargs"]
     assert kw["user_message"] == "hello" and kw["assistant_message"] == "Hi there"
-    assert kw["user_message_display"] == "हैलो" and kw["assistant_message_display"] == "नमस्ते"
+    assert (
+        kw["user_message_display"] == "हैलो"
+        and kw["assistant_message_display"] == "नमस्ते"
+    )
     assert kw["language"] == "hi"
 
-    english = {"language": "en", "query_en": "hello", "response_en": "Hi", "response": "Hi"}
+    english = {
+        "language": "en",
+        "query_en": "hello",
+        "response_en": "Hi",
+        "response": "Hi",
+    }
     run(chat_router._persist_chat_result(None, "user", "sid", "hello", english))
     assert captured["kwargs"]["user_message_display"] is None
     assert captured["kwargs"]["assistant_message_display"] is None
@@ -884,19 +1072,36 @@ def test_clear_session_cancels_in_flight_generation_and_forgets_history():
 
 
 def test_decompose_question():
-    two = ("Can Parliament restrict social media speech citing public order? "
-           "How would courts test its constitutionality under Article 19?")
+    two = (
+        "Can Parliament restrict social media speech citing public order? "
+        "How would courts test its constitutionality under Article 19?"
+    )
     assert len(cb.decompose_question(two)) == 2
 
-    assert cb.decompose_question("Can an FIR be quashed by the High Court? On what grounds?") == []
-    assert cb.decompose_question("Is anticipatory bail available for economic offences?") == []
-    enumerated = ("Explain (a) what cheating means under the penal law and "
-                  "(b) what punishment applies to cheating by personation.")
+    assert (
+        cb.decompose_question(
+            "Can an FIR be quashed by the High Court? On what grounds?"
+        )
+        == []
+    )
+    assert (
+        cb.decompose_question("Is anticipatory bail available for economic offences?")
+        == []
+    )
+    enumerated = (
+        "Explain (a) what cheating means under the penal law and "
+        "(b) what punishment applies to cheating by personation."
+    )
     assert len(cb.decompose_question(enumerated)) == 2
 
 
 def test_truncate_block_cuts_on_a_provision_boundary():
-    block = "**Header**\n• **A § 1** — one\n" + "x" * 50 + "\n\n• **A § 2** — two\n" + "y" * 200
+    block = (
+        "**Header**\n• **A § 1** — one\n"
+        + "x" * 50
+        + "\n\n• **A § 2** — two\n"
+        + "y" * 200
+    )
     cut = cb._truncate_block(block, 120)
     assert cut.endswith("x" * 50) and "§ 2" not in cut
     assert cb._truncate_block("short", 100) == "short"
@@ -904,7 +1109,9 @@ def test_truncate_block_cuts_on_a_provision_boundary():
 
 def test_select_tools_policy(monkeypatch):
     assert select_tools("general_query", "q") == ["statute_context"]
-    assert select_tools("find_lawyer", "divorce lawyer in Pune") == ["lawyer_recommender"]
+    assert select_tools("find_lawyer", "divorce lawyer in Pune") == [
+        "lawyer_recommender"
+    ]
     assert select_tools("non_legal", "q") == []
 
 
@@ -960,8 +1167,12 @@ def test_grounding_adjudication_parses_the_constrained_llm_reply():
     from app.tools import grounding_verifier as gv
 
     sentences = [
-        gv.SentenceGrounding(text="Bail may be granted.", start=0, end=20, evidence="s.438 ..."),
-        gv.SentenceGrounding(text="Ten years applies.", start=21, end=40, evidence="(none)"),
+        gv.SentenceGrounding(
+            text="Bail may be granted.", start=0, end=20, evidence="s.438 ..."
+        ),
+        gv.SentenceGrounding(
+            text="Ten years applies.", start=21, end=40, evidence="(none)"
+        ),
     ]
     llm = ConstrainedJSONLLM()
 
@@ -982,8 +1193,13 @@ def _first_prompt(rig, message="Can an FIR be quashed by the High Court?"):
 
 
 def test_simple_well_retrieved_question_gets_the_concise_prompt_first(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Short answer."]), _classification("general_query"),
-              [_statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Short answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     prompt, done = _first_prompt(rig)
     assert CONCISE_MARK in prompt
     assert rig.llm.calls == 1
@@ -991,26 +1207,45 @@ def test_simple_well_retrieved_question_gets_the_concise_prompt_first(monkeypatc
 
 
 def test_multi_part_question_keeps_the_full_prompt(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Long answer."]), _classification("general_query"),
-              [_statute()], [_report(1.0)])
-    two_parts = ("Can Parliament restrict social media speech citing public order? "
-                 "How would courts test its constitutionality under Article 19?")
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Long answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
+    two_parts = (
+        "Can Parliament restrict social media speech citing public order? "
+        "How would courts test its constitutionality under Article 19?"
+    )
     prompt, done = _first_prompt(rig, two_parts)
     assert CONCISE_MARK not in prompt
     assert done["trace"]["generation"]["variant"] == "full"
 
 
 def test_weakly_retrieved_question_keeps_the_full_prompt(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
-              [_statute(chunks=1, conf=0.05)], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Answer."]),
+        _classification("general_query"),
+        [_statute(chunks=1, conf=0.05)],
+        [_report(1.0)],
+    )
     prompt, done = _first_prompt(rig)
     assert CONCISE_MARK not in prompt and done["trace"]["retrieval"]["grade"] == "weak"
 
 
 def test_long_question_keeps_the_full_prompt(monkeypatch):
-    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
-              [_statute()], [_report(1.0)])
-    long_q = "Can an FIR be quashed by the High Court " + "given these facts " * 12 + "?"
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
+    long_q = (
+        "Can an FIR be quashed by the High Court " + "given these facts " * 12 + "?"
+    )
     prompt, _ = _first_prompt(rig, long_q)
     assert CONCISE_MARK not in prompt
 
@@ -1018,46 +1253,72 @@ def test_long_question_keeps_the_full_prompt(monkeypatch):
 def test_concise_first_can_be_disabled(monkeypatch):
     monkeypatch.setenv("CONCISE_FIRST_ENABLED", "false")
     get_settings.cache_clear()
-    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
-              [_statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     prompt, done = _first_prompt(rig)
-    assert CONCISE_MARK not in prompt and done["trace"]["generation"]["variant"] == "full"
+    assert (
+        CONCISE_MARK not in prompt and done["trace"]["generation"]["variant"] == "full"
+    )
 
 
 def test_multi_offense_scenario_keeps_the_full_prompt():
-    state = {"current_input": "He committed theft and forgery together",
-             "retrieval_grade": "good", "sub_questions": []}
+    state = {
+        "current_input": "He committed theft and forgery together",
+        "retrieval_grade": "good",
+        "sub_questions": [],
+    }
     assert cb._prefers_concise(state) is False
     state["current_input"] = "He committed theft"
     assert cb._prefers_concise(state) is True
 
 
 def test_concise_gates_reports_which_condition_blocked_the_fast_path():
-    state = {"current_input": "He committed theft and forgery together",
-             "retrieval_grade": "good", "sub_questions": []}
-    assert cb._concise_gates(state) == {
-        "good_retrieval": True, "single_part": True,
-        "short_query": True, "not_multi_offense": False,
+    state = {
+        "current_input": "He committed theft and forgery together",
+        "retrieval_grade": "good",
+        "sub_questions": [],
     }
-    state = {"current_input": "Can an FIR be quashed?",
-             "retrieval_grade": "weak", "sub_questions": ["a?", "b?"]}
     assert cb._concise_gates(state) == {
-        "good_retrieval": False, "single_part": False,
-        "short_query": True, "not_multi_offense": True,
+        "good_retrieval": True,
+        "single_part": True,
+        "short_query": True,
+        "not_multi_offense": False,
+    }
+    state = {
+        "current_input": "Can an FIR be quashed?",
+        "retrieval_grade": "weak",
+        "sub_questions": ["a?", "b?"],
+    }
+    assert cb._concise_gates(state) == {
+        "good_retrieval": False,
+        "single_part": False,
+        "short_query": True,
+        "not_multi_offense": True,
     }
 
 
 def test_concise_gates_are_reported_in_the_trace_even_when_disabled(monkeypatch):
     monkeypatch.setenv("CONCISE_FIRST_ENABLED", "false")
     get_settings.cache_clear()
-    rig = Rig(monkeypatch, FakeLLM(["Answer."]), _classification("general_query"),
-              [_statute()], [_report(1.0)])
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(["Answer."]),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     events = run(rig.stream())
 
-
     assert events[-1]["trace"]["generation"]["concise_gates"] == {
-        "good_retrieval": True, "single_part": True,
-        "short_query": True, "not_multi_offense": True,
+        "good_retrieval": True,
+        "single_part": True,
+        "short_query": True,
+        "not_multi_offense": True,
     }
     assert events[-1]["trace"]["generation"]["variant"] == "full"
 
@@ -1084,16 +1345,30 @@ def test_only_the_primary_statute_query_gets_the_doctrine_assist(monkeypatch):
     ]
 
     calls.clear()
-    run(cb.gq_retrieve({**state, "sub_questions": [], "regen_feedback": "some feedback",
-                        "extra_queries": ["section 482"]}))
+    run(
+        cb.gq_retrieve(
+            {
+                **state,
+                "sub_questions": [],
+                "regen_feedback": "some feedback",
+                "extra_queries": ["section 482"],
+            }
+        )
+    )
     assert calls == [("section 482", False)]
 
 
 def test_concise_first_that_gives_up_still_retries(monkeypatch):
     first = NeverClosesLLM()
     retry = FakeLLM(["Recovered."])
-    rig = Rig(monkeypatch, first, _classification("general_query"),
-              [_statute()], [_report(1.0)], retry_llm=retry)
+    rig = Rig(
+        monkeypatch,
+        first,
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+        retry_llm=retry,
+    )
     events = run(rig.stream())
     assert CONCISE_MARK in first.prompts[0]
     assert events[-1]["response"].strip() == "Recovered."

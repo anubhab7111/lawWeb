@@ -5,11 +5,6 @@ import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-
 from app.checkpointing import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.deps.errors import MessageHTTPException
@@ -28,6 +23,10 @@ from app.routers import (
     vault,
 )
 from app.scheduler import get_scheduler, register_jobs
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 configure_logging(get_settings().log_level)
 
@@ -63,12 +62,13 @@ def _ensure_chat_schema() -> None:
         ensure_chat_messages_trace_column(get_engine())
     except Exception:
         traceback.print_exc()
-        print("[Startup] could not ensure chat_messages.trace; run `python -m app.db.init_db`")
+        print(
+            "[Startup] could not ensure chat_messages.trace; run `python -m app.db.init_db`"
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
 
     _ensure_chat_schema()
 
@@ -139,7 +139,11 @@ async def public_config():
 
     settings = get_settings()
     firebase = None
-    if push_configured() and settings.firebase_web_config_json and settings.firebase_vapid_key:
+    if (
+        push_configured()
+        and settings.firebase_web_config_json
+        and settings.firebase_vapid_key
+    ):
         try:
             firebase = {
                 "config": json.loads(settings.firebase_web_config_json),

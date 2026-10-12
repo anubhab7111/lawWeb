@@ -13,7 +13,11 @@ from app.tools import followup
 
 @pytest.fixture(autouse=True)
 def places(monkeypatch):
-    monkeypatch.setattr(followup, "_places", lambda: ["navi mumbai", "mumbai", "delhi", "pune", "kerala"])
+    monkeypatch.setattr(
+        followup,
+        "_places",
+        lambda: ["navi mumbai", "mumbai", "delhi", "pune", "kerala"],
+    )
 
 
 def _state(text, messages=None, **extra):
@@ -21,13 +25,22 @@ def _state(text, messages=None, **extra):
 
 
 def test_lawyer_request_without_place_or_matter_needs_both():
-    assert followup.missing_lawyer_details("Is there any lawyer available for a free legal aid consultation?") == [
-        "location", "matter"]
+    assert followup.missing_lawyer_details(
+        "Is there any lawyer available for a free legal aid consultation?"
+    ) == ["location", "matter"]
 
 
 def test_complete_lawyer_request_needs_nothing():
-    assert followup.missing_lawyer_details("Need a criminal lawyer in Pune for my brother's bail") == []
-    assert followup.find_location("I need a divorce lawyer in Navi Mumbai") == "navi mumbai"
+    assert (
+        followup.missing_lawyer_details(
+            "Need a criminal lawyer in Pune for my brother's bail"
+        )
+        == []
+    )
+    assert (
+        followup.find_location("I need a divorce lawyer in Navi Mumbai")
+        == "navi mumbai"
+    )
 
 
 def test_lawyer_request_asks_before_searching():
@@ -63,7 +76,9 @@ def test_short_serious_report_is_answered_with_helplines_not_asked(monkeypatch):
 
     monkeypatch.setitem(cb.RAG_TOOL_REGISTRY, "crime_sections", no_sections)
     monkeypatch.setattr(cb, "invoke_llm_safely", answer)
-    out = asyncio.run(cb.handle_crime_report(_state("I got raped in market, please help")))
+    out = asyncio.run(
+        cb.handle_crime_report(_state("I got raped in market, please help"))
+    )
     assert not out["response"].startswith(CRIME_DETAILS_PREFIX)
     assert "112" in out["response"] and "181" in out["response"]
 
@@ -77,11 +92,19 @@ def test_reply_to_a_followup_resumes_the_same_flow_with_both_messages(monkeypatc
         {"role": "user", "content": "Can you recommend a good lawyer?"},
         {"role": "assistant", "content": LAWYER_DETAILS_PREFIX + "which city?"},
     ]
-    out = asyncio.run(cb.classify_intent(_state("Pune, it's a property dispute", history)))
+    out = asyncio.run(
+        cb.classify_intent(_state("Pune, it's a property dispute", history))
+    )
     assert out["intent"] == "find_lawyer" and out["followup_answered"]
-    assert out["lawyer_query"] == "Can you recommend a good lawyer? Pune, it's a property dispute"
+    assert (
+        out["lawyer_query"]
+        == "Can you recommend a good lawyer? Pune, it's a property dispute"
+    )
 
 
 def test_ordinary_turns_are_not_treated_as_followup_replies():
-    history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "Hello! How can I help?"}]
+    history = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "Hello! How can I help?"},
+    ]
     assert cb._resume_after_followup(history, "find me a lawyer") is None

@@ -11,7 +11,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.chatbot import get_chatbot
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -199,16 +198,12 @@ async def run_metrics_evaluation(
         max_concurrent_judge_calls=3,
     )
 
-
     eval_results = await evaluator.run(chatbot_results)
-
 
     evaluator.print_report(eval_results)
 
-
     metrics_csv_path = RESULTS_DIR / f"{prefix}metrics_{timestamp}.csv"
     evaluator.save_csv(eval_results, metrics_csv_path)
-
 
     metrics_json_path = RESULTS_DIR / f"{prefix}metrics_{timestamp}.json"
     evaluator.save_json(eval_results, metrics_json_path)
@@ -318,7 +313,6 @@ async def main() -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     prefix = "iltur_" if args.dataset == "iltur" else ""
 
-
     run_log_path = RESULTS_DIR / f"{prefix}run_{timestamp}.log"
     log_fh = open(run_log_path, "w", encoding="utf-8")
     sys.stdout = _Tee(sys.__stdout__, log_fh)
@@ -335,7 +329,6 @@ async def main() -> None:
 
 
 async def _run(args: argparse.Namespace, timestamp: str, prefix: str) -> None:
-
 
     if (args.extended or args.extended_only) and args.dataset != "builtin":
         print("[Dataset] --extended/--extended-only implies --dataset builtin.\n")
@@ -380,11 +373,9 @@ async def _run(args: argparse.Namespace, timestamp: str, prefix: str) -> None:
 
     chatbot_results = await run_evaluation(prompts)
 
-
     basic_csv_path = RESULTS_DIR / f"{prefix}eval_results_{timestamp}.csv"
     save_csv(chatbot_results, basic_csv_path)
     print_summary(chatbot_results)
-
 
     if run_metrics:
         await run_metrics_evaluation(

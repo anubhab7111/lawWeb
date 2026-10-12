@@ -13,14 +13,15 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-
 from app.tools.crime_reporter import CLASSIFIER_DIR, FAMILY_TYPES
 
 GOLD = Path("tests/gold/crime_type.jsonl")
 ILSIC_DIR = Path("/run/media/ushtro/anubhab_x9/lawweb/ilsic/Layman-new-dataset")
 
 ILSIC_WEIGHTS = (0.0, 0.25, 0.5, 1.0)
-TYPE_FAMILY = {t: f for f, types in FAMILY_TYPES.items() for t in types if t != "general"}
+TYPE_FAMILY = {
+    t: f for f, types in FAMILY_TYPES.items() for t in types if t != "general"
+}
 TYPE_MAP = Path("app/data/crime_type_map.json")
 GATE = 0.90
 C_GRID = (1, 2, 4, 8, 16)
@@ -46,8 +47,12 @@ def build_gold() -> None:
             continue
         seen.add(key)
         family = "Murder" if r["crime_type"] == "Attempt to Murder" else r["crime_type"]
-        sections = [s.strip().upper() for s in ast.literal_eval(r["ipc_sections"] or "[]")]
-        accept = set(FAMILY_TYPES[family]) | {mapping[f"IPC:{s}"] for s in sections if f"IPC:{s}" in mapping}
+        sections = [
+            s.strip().upper() for s in ast.literal_eval(r["ipc_sections"] or "[]")
+        ]
+        accept = set(FAMILY_TYPES[family]) | {
+            mapping[f"IPC:{s}"] for s in sections if f"IPC:{s}" in mapping
+        }
         rows.append(
             {
                 "id": str(r["case_id"]),
@@ -55,19 +60,31 @@ def build_gold() -> None:
                 "family": family,
                 "ipc_sections": sections,
                 "accept": sorted(accept),
-                "extra": [" ".join((r[f] or "").split()) for f in ("summary", "legal_issues") if r[f]],
-                "split": "test" if int(hashlib.sha1(str(r["case_id"]).encode()).hexdigest(), 16) % 2 else "dev",
+                "extra": [
+                    " ".join((r[f] or "").split())
+                    for f in ("summary", "legal_issues")
+                    if r[f]
+                ],
+                "split": (
+                    "test"
+                    if int(hashlib.sha1(str(r["case_id"]).encode()).hexdigest(), 16) % 2
+                    else "dev"
+                ),
             }
         )
     GOLD.parent.mkdir(parents=True, exist_ok=True)
     GOLD.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
     multi = sum(len(r["accept"]) > len(FAMILY_TYPES[r["family"]]) for r in rows)
-    print(f"wrote {len(rows)} rows ({len(data) - len(rows)} empty/duplicate dropped), {multi} multi-crime, to {GOLD}")
+    print(
+        f"wrote {len(rows)} rows ({len(data) - len(rows)} empty/duplicate dropped), {multi} multi-crime, to {GOLD}"
+    )
     print(collections.Counter((r["split"], r["family"]) for r in rows))
 
 
 def load_gold(split: str) -> list:
-    return [r for r in map(json.loads, GOLD.read_text().splitlines()) if r["split"] == split]
+    return [
+        r for r in map(json.loads, GOLD.read_text().splitlines()) if r["split"] == split
+    ]
 
 
 def ilsic_rows(split: str) -> list:
@@ -78,7 +95,11 @@ def ilsic_rows(split: str) -> list:
     for line in lzma.open(ILSIC_DIR / f"FT-Layman-{split}.jsonl.xz", "rt"):
         r = json.loads(line)
         a = r["answer"]
-        labels = a if isinstance(a, list) else (ast.literal_eval(a) if a.startswith("[") else [a])
+        labels = (
+            a
+            if isinstance(a, list)
+            else (ast.literal_eval(a) if a.startswith("[") else [a])
+        )
         types = set()
         for label in labels:
             m = pat.match(label.strip())
@@ -87,7 +108,11 @@ def ilsic_rows(split: str) -> list:
             sec, act = m.groups()
             if act.startswith("The Indian Penal Code") and f"IPC:{sec}" in mapping:
                 types.add(mapping[f"IPC:{sec}"])
-            types.update(v for k, v in mapping.items() if k.startswith("ACT:") and act.startswith(k[4:]))
+            types.update(
+                v
+                for k, v in mapping.items()
+                if k.startswith("ACT:") and act.startswith(k[4:])
+            )
         if len(types) == 1:
             rows.append({"text": r["instruction"], "accept": list(types)})
     return rows
@@ -109,7 +134,9 @@ async def embed(texts: list, checkpoint: Optional[Path] = None) -> np.ndarray:
         if part_path and part_path.exists():
             parts.append(np.load(part_path))
             continue
-        part = np.array(emb.embed_documents(texts[i : i + EMBED_BATCH]), dtype=np.float32)
+        part = np.array(
+            emb.embed_documents(texts[i : i + EMBED_BATCH]), dtype=np.float32
+        )
         if part_path:
             np.save(part_path.with_suffix(".tmp.npy"), part)
             part_path.with_suffix(".tmp.npy").rename(part_path)
@@ -145,15 +172,16 @@ def report(name: str, rows: list, preds: list) -> float:
         by[r.get("family") or r["accept"][0]].append((good, p))
     for label, items in sorted(by.items()):
         wrong = collections.Counter(p for good, p in items if not good).most_common(3)
-        print(f"  {label:20s} recall {sum(g for g, _ in items) / len(items):.3f}  n={len(items):3d}  misses {wrong}")
+        print(
+            f"  {label:20s} recall {sum(g for g, _ in items) / len(items):.3f}  n={len(items):3d}  misses {wrong}"
+        )
     return acc
 
 
 def train() -> None:
     """Logistic regression on bail dev facts + case summaries, plus ILSIC lay crime questions (train split) at a weight; C and that weight picked by 5-fold, case-grouped CV on bail..."""
-    from sklearn.linear_model import LogisticRegression
-
     from app.tools.crime_reporter import resolve_family
+    from sklearn.linear_model import LogisticRegression
 
     rows = load_gold("dev")
     texts, y, fold_of, owner, lay = [], [], [], [], []
@@ -172,7 +200,12 @@ def train() -> None:
             owner.append(-1)
             lay.append(True)
     X = cached_embed(texts)
-    y, fold_of, owner, lay = np.array(y), np.array(fold_of), np.array(owner), np.array(lay)
+    y, fold_of, owner, lay = (
+        np.array(y),
+        np.array(fold_of),
+        np.array(owner),
+        np.array(lay),
+    )
 
     def fit(c: float, w: float, mask: np.ndarray):
         keep = mask & (~lay | (w > 0))
@@ -211,14 +244,22 @@ def train() -> None:
         b=clf.intercept_.astype(np.float32),
         labels=np.array(clf.classes_),
     )
-    print(f"saved {CLASSIFIER_DIR / 'weights.npz'} ({len(clf.classes_)} families, {len(texts)} training texts)")
+    print(
+        f"saved {CLASSIFIER_DIR / 'weights.npz'} ({len(clf.classes_)} families, {len(texts)} training texts)"
+    )
 
 
 def score(system: str, split: str) -> int:
     rows = load_gold(split)
-    acc = report(f"{system} / bail {split}", rows, predict(system, [r["text"] for r in rows]))
+    acc = report(
+        f"{system} / bail {split}", rows, predict(system, [r["text"] for r in rows])
+    )
     check = ilsic_rows("test")
-    report(f"{system} / ILSIC lay check (not gated)", check, predict(system, [r["text"] for r in check]))
+    report(
+        f"{system} / ILSIC lay check (not gated)",
+        check,
+        predict(system, [r["text"] for r in check]),
+    )
     if split == "test":
         print(f"\nGATE {'PASS' if acc >= GATE else 'FAIL'}: {acc:.3f} vs {GATE}")
         return 0 if acc >= GATE else 1

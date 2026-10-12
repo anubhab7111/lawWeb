@@ -14,7 +14,6 @@ from app.tools.legal_query_parser import (
 )
 from app.tools.unified_legal_rag import get_unified_rag_system
 
-
 _SECTION_REF_RE = re.compile(r"\bsections?\s+(\d{1,4}[A-Z]{0,2})\b", re.IGNORECASE)
 
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\"'])")
@@ -24,7 +23,13 @@ PRECEDENT_PINS = 3
 
 
 CHAT_PIN_MIN_PROB = 0.5
-CHAT_UNPINNED_LABELS = {"Section 2", "Section 3", "Section 4", "Section 5", "Section 13"}
+CHAT_UNPINNED_LABELS = {
+    "Section 2",
+    "Section 3",
+    "Section 4",
+    "Section 5",
+    "Section 13",
+}
 PRECEDENT_PIN_SCORE = 0.9
 
 
@@ -47,7 +52,7 @@ _classifier_failed = False
 
 
 def label_to_pin(label: str) -> Tuple[str, str]:
-    """"Section 482" -> ("Code of Criminal Procedure", "482"): IL-TUR labels are bare numbers; the Act is the one Supreme Court judgments cite that number as..."""
+    """ "Section 482" -> ("Code of Criminal Procedure", "482"): IL-TUR labels are bare numbers; the Act is the one Supreme Court judgments cite that number as..."""
     global _label_acts
     if _label_acts is None:
         import json
@@ -77,7 +82,9 @@ def _get_classifier():
     return _classifier
 
 
-async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[str, str]]:
+async def precedent_pins(
+    query: str, top: int = PRECEDENT_PINS
+) -> List[Tuple[str, str]]:
     """Sections a long fact narrative most likely engages."""
     if not looks_like_fact_pattern(query):
         return []
@@ -87,7 +94,9 @@ async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[st
         if classifier is not None:
             import asyncio
 
-            probs = await asyncio.get_event_loop().run_in_executor(None, classifier.predict, sentences)
+            probs = await asyncio.get_event_loop().run_in_executor(
+                None, classifier.predict, sentences
+            )
             chosen = [
                 label
                 for label, p in classifier.decide(probs, max_labels=len(probs))
@@ -95,7 +104,10 @@ async def precedent_pins(query: str, top: int = PRECEDENT_PINS) -> List[Tuple[st
             ]
             return [label_to_pin(label) for label in chosen[:top]]
 
-        from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections
+        from app.tools.precedent_rag import (
+            get_precedent_index,
+            retrieve_precedent_sections,
+        )
 
         if not get_precedent_index().available:
             return []
@@ -224,7 +236,6 @@ async def retrieve_statutes(
     else:
         parsed = parse_legal_query(query)
 
-
     precedent = await precedent_pins(query)
     pin_specs = [(a, s, 1.0) for a, s in parsed.pinned_sections] + [
         (a, s, PRECEDENT_PIN_SCORE) for a, s in precedent
@@ -247,7 +258,6 @@ async def retrieve_statutes(
                 )
             )
     pinned = _dedupe_by_section(pinned)
-
 
     query_pinned = bool(parsed.pinned_sections) and bool(pinned)
     if parsed.query_type == "section_lookup" and query_pinned:
@@ -274,7 +284,6 @@ async def retrieve_statutes(
         hybrid_chunks = _drop_prose(context.chunks)
 
     merged = _dedupe_by_section(pinned + hybrid_chunks)
-
 
     if len(merged) < 3 and parsed.query_type != "section_lookup":
         search_query = query

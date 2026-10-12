@@ -2,11 +2,10 @@
 
 import asyncio
 
-from sqlmodel import Session
-
 from app.db.engine import get_engine
 from app.db.models import VaultDocument, VaultDocumentEmbedding
 from app.tools.base_legal_rag import _get_shared_embeddings
+from sqlmodel import Session
 
 _CHUNK_CHARS = 1500
 _CHUNK_OVERLAP = 200
@@ -45,7 +44,9 @@ async def index_vault_document(document_id: str, extracted_text: str) -> None:
 
             embeddings_model = await _get_shared_embeddings()
             loop = asyncio.get_event_loop()
-            vectors = await loop.run_in_executor(None, embeddings_model.embed_documents, chunks)
+            vectors = await loop.run_in_executor(
+                None, embeddings_model.embed_documents, chunks
+            )
 
             for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
                 session.add(

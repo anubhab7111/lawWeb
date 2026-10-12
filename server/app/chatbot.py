@@ -1,11 +1,11 @@
 """LangGraph-based legal chatbot implementation."""
 
 import asyncio
+import contextvars
 import json
 import logging
-import time
-import contextvars
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -25,25 +25,24 @@ from typing import (
     TypedDict,
 )
 
-from langchain_core.messages import HumanMessage
-from langchain_ollama import ChatOllama
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.graph import END, StateGraph
-
 from app.checkpointing import get_checkpointer
 from app.config import get_settings
+from app.intent_classifier import (
+    classify_document_subintent_embedding,
+    classify_domain_hint_embedding,
+    classify_intent_embedding,
+)
+from app.logging_config import request_id_var
+from app.multilingual import postprocess_response, preprocess_query
 from app.prompts import (
     CASE_LAW_CONTEXT_BLOCK,
     CLARIFY_GENERIC,
-    CONCISE_ANSWER_SUFFIX,
     CLARIFY_LAW_OR_LAWYER,
     CLARIFY_LAW_OR_REPORT,
     CLARIFY_PREFIX,
+    CONCISE_ANSWER_SUFFIX,
     CRIME_DETAILS_ASK,
     CRIME_DETAILS_PREFIX,
-    SERIOUS_CRIME_HELPLINES,
-    SERIOUS_CRIMES,
     CRIME_REPORT_FALLBACK,
     CRIME_REPORT_PROMPT,
     DOC_RAG_UNAVAILABLE_DISCLAIMER,
@@ -66,40 +65,32 @@ from app.prompts import (
     ROUTE_TIEBREAK_INTENT_DESCRIPTIONS,
     ROUTE_TIEBREAK_PROMPT,
     ROUTE_TIEBREAK_UNSURE,
+    SERIOUS_CRIME_HELPLINES,
+    SERIOUS_CRIMES,
     STATUTE_CONTEXT_BLOCK,
     sanitize_untrusted_document,
 )
 from app.routing_keywords import CRIME_TYPE_KEYWORDS
+from app.state import ChatState, DocumentValidationInfo, LawyerInfo, Message
 from app.text_match import contains_word, count_words
-from app.state import (
-    ChatState,
-    DocumentValidationInfo,
-    LawyerInfo,
-    Message,
-)
-from app.intent_classifier import (
-    classify_document_subintent_embedding,
-    classify_domain_hint_embedding,
-    classify_intent_embedding,
-)
-from app.multilingual import preprocess_query, postprocess_response
-from app.logging_config import request_id_var
-from app.tool_dispatch import (
-    RAG_TOOL_REGISTRY,
-    ToolInvocationResult,
-    select_tools,
-)
+from app.tool_dispatch import RAG_TOOL_REGISTRY, ToolInvocationResult, select_tools
 from app.tools.crime_reporter import classify_crime_type
-from app.tools.followup import crime_report_too_thin, find_location, missing_lawyer_details
 from app.tools.document_classifier import classify_document, get_document_classifier
-from app.tools.indian_law_rag import get_indian_law_rag
-from app.tools.lawyer_recommender import (
-    format_lawyer_results,
-    recommend_lawyers as recommend_lawyers_core,
+from app.tools.followup import (
+    crime_report_too_thin,
+    find_location,
+    missing_lawyer_details,
 )
+from app.tools.indian_law_rag import get_indian_law_rag
+from app.tools.lawyer_recommender import format_lawyer_results
+from app.tools.lawyer_recommender import recommend_lawyers as recommend_lawyers_core
 from app.tools.legal_defect_analyzer import get_legal_defect_analyzer
 from app.tools.statutory_validator import format_score, get_statutory_validator
-
+from langchain_core.messages import HumanMessage
+from langchain_ollama import ChatOllama
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +321,6 @@ async def invoke_llm_safely(
 
     if queue is not None:
 
-
         visible_response = ""
 
         async def _drain() -> str:
@@ -355,7 +345,6 @@ async def invoke_llm_safely(
                         await queue.put(after)
                 elif len(buffer) > _THINKING_BUFFER_SAFETY_CAP:
 
-
                     logger.warning(
                         "thinking exceeded %s chars without closing — giving up",
                         _THINKING_BUFFER_SAFETY_CAP,
@@ -365,7 +354,6 @@ async def invoke_llm_safely(
                         await queue.put(_INCOMPLETE_GENERATION_NOTE)
                     return visible_response
             if in_thinking and buffer:
-
 
                 logger.warning(
                     "generation ended mid-thinking (%s buffered chars, no closing tag)",
@@ -382,13 +370,13 @@ async def invoke_llm_safely(
             return result
         except asyncio.TimeoutError:
 
-
             _llm_breaker.record_failure()
             note = "\n\n*(Response generation took too long and was cut short.)*"
             visible_response += note
             await queue.put(note)
             logger.warning(
-                "generation exceeded %ss, returning partial output", _LLM_TIMEOUT_SECONDS
+                "generation exceeded %ss, returning partial output",
+                _LLM_TIMEOUT_SECONDS,
             )
             return visible_response
         except Exception:
@@ -396,7 +384,6 @@ async def invoke_llm_safely(
             logger.exception("LLM streaming error")
             raise
     else:
-
 
         try:
             response = await asyncio.wait_for(
@@ -406,13 +393,11 @@ async def invoke_llm_safely(
             _llm_breaker.record_success()
             raw = response.content
 
-
             if getattr(llm, "format", None):
                 return strip_reasoning_tags(raw)
             if "</think>" not in raw and not get_settings().llm_thinking:
                 return raw.strip()
             if "</think>" not in raw:
-
 
                 logger.warning(
                     "non-streaming generation ended without </think> (%s chars) — giving up",
@@ -440,7 +425,6 @@ def _extract_legal_entities(text: str) -> List[str]:
     entities = []
     text_lower = text.lower()
 
-
     section_patterns = [
         r"section\s+(\d+[a-z]?)",
         r"ipc\s+(\d+[a-z]?)",
@@ -450,7 +434,6 @@ def _extract_legal_entities(text: str) -> List[str]:
         matches = re.findall(pattern, text_lower)
         for match in matches:
             entities.append(f"Section {match}")
-
 
     act_keywords = [
         "indian penal code",
@@ -500,9 +483,14 @@ async def _rewrite_query_for_retrieval(
 
     try:
         rewritten = (
-            await _invoke_fast_text(prompt, timeout=25.0)
-        ).strip().strip('"').strip()
-        if rewritten == _INCOMPLETE_GENERATION_NOTE or not rewritten or len(rewritten) > 300 or "\n" in rewritten:
+            (await _invoke_fast_text(prompt, timeout=25.0)).strip().strip('"').strip()
+        )
+        if (
+            rewritten == _INCOMPLETE_GENERATION_NOTE
+            or not rewritten
+            or len(rewritten) > 300
+            or "\n" in rewritten
+        ):
             return current_input
         if rewritten.lower() != current_input.lower():
             logger.info(f"Retrieval query rewritten: {rewritten[:120]}")
@@ -570,10 +558,17 @@ def _clarification_gate(
 
 def _resume_after_followup(messages: List[Message], user_input: str) -> Optional[tuple]:
     """(intent, original request + this reply) when the last assistant turn was a missing-detail question; None otherwise."""
-    if len(messages) < 2 or messages[-1]["role"] != "assistant" or messages[-2]["role"] != "user":
+    if (
+        len(messages) < 2
+        or messages[-1]["role"] != "assistant"
+        or messages[-2]["role"] != "user"
+    ):
         return None
     asked = messages[-1]["content"]
-    for prefix, intent in ((LAWYER_DETAILS_PREFIX, "find_lawyer"), (CRIME_DETAILS_PREFIX, "crime_report")):
+    for prefix, intent in (
+        (LAWYER_DETAILS_PREFIX, "find_lawyer"),
+        (CRIME_DETAILS_PREFIX, "crime_report"),
+    ):
         if asked.startswith(prefix):
             return intent, f"{messages[-2]['content'].strip()} {user_input.strip()}"
     return None
@@ -600,7 +595,10 @@ def _get_tiebreak_llm(candidates: Tuple[str, ...]) -> ChatOllama:
     schema = {
         "type": "object",
         "properties": {
-            "intent": {"type": "string", "enum": list(candidates) + [ROUTE_TIEBREAK_UNSURE]}
+            "intent": {
+                "type": "string",
+                "enum": list(candidates) + [ROUTE_TIEBREAK_UNSURE],
+            }
         },
         "required": ["intent"],
     }
@@ -642,8 +640,11 @@ async def _resolve_ambiguity_with_llm(
     elapsed = round(time.monotonic() - t0, 2)
     resolved = picked if picked in key else None
     return resolved, {
-        "tried": True, "seconds": elapsed, "candidates": list(key),
-        "raw": picked, "resolved": resolved,
+        "tried": True,
+        "seconds": elapsed,
+        "candidates": list(key),
+        "raw": picked,
+        "resolved": resolved,
     }
 
 
@@ -669,17 +670,17 @@ async def classify_intent(state: ChatState) -> ChatState:
             "crime_details": merged if intent == "crime_report" else None,
             "selected_tools": select_tools(intent, merged),
             "domain_hint": await classify_domain_hint_embedding(merged),
-            "trace": _merge_trace(state, routing={"intent": intent, "followup_answered": True}),
+            "trace": _merge_trace(
+                state, routing={"intent": intent, "followup_answered": True}
+            ),
         }
 
     result = await classify_intent_embedding(user_input, has_document)
-
 
     intent = result.primary_intent
     if result.is_ambiguous and intent != "non_legal":
 
         intent = "document_analysis" if has_document else "general_query"
-
 
     if intent == "document_analysis" and not has_document:
         if not _asks_about_uploading(user_input):
@@ -719,9 +720,10 @@ async def classify_intent(state: ChatState) -> ChatState:
     contenders = _clarification_gate(result, has_document, messages, user_input)
     if contenders:
 
-
         try:
-            resolved, tiebreak_trace = await _resolve_ambiguity_with_llm(contenders, user_input)
+            resolved, tiebreak_trace = await _resolve_ambiguity_with_llm(
+                contenders, user_input
+            )
         except Exception as e:
             logger.exception("Route tie-break raised unexpectedly (%s)", e)
             resolved, tiebreak_trace = None, {"tried": True, "error": str(e)}
@@ -729,13 +731,18 @@ async def classify_intent(state: ChatState) -> ChatState:
         if resolved:
             logger.info(
                 "Router: tie-break resolved %s -> %s (%.1fs)",
-                sorted(contenders), resolved, tiebreak_trace.get("seconds", 0.0),
+                sorted(contenders),
+                resolved,
+                tiebreak_trace.get("seconds", 0.0),
             )
             intent = resolved
             routing_trace["intent"] = intent
 
         else:
-            logger.info("Router: ambiguous %s — asking a clarifying question", sorted(contenders))
+            logger.info(
+                "Router: ambiguous %s — asking a clarifying question",
+                sorted(contenders),
+            )
             await emit_event("routing", intent="clarify")
             return {
                 **base,
@@ -744,7 +751,9 @@ async def classify_intent(state: ChatState) -> ChatState:
                 "clarification": True,
                 "selected_tools": [],
                 "domain_hint": None,
-                "trace": _merge_trace(state, routing={**routing_trace, "intent": "clarify"}),
+                "trace": _merge_trace(
+                    state, routing={**routing_trace, "intent": "clarify"}
+                ),
             }
 
     domain_hint = await classify_domain_hint_embedding(user_input)
@@ -759,7 +768,6 @@ async def classify_intent(state: ChatState) -> ChatState:
         domain_hint,
         result.secondary_intents,
     )
-
 
     retrieval_query = await _rewrite_query_for_retrieval(messages, user_input)
     selected_tools = select_tools(intent, retrieval_query)
@@ -791,7 +799,6 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     document_type = state.get("document_type", "unknown")
     user_query = state.get("current_input", "")
 
-
     if not document_content:
         response = DOCUMENT_UPLOAD_HELP
         return {
@@ -800,7 +807,6 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             "messages": state["messages"]
             + [{"role": "assistant", "content": response}],
         }
-
 
     subintent = await classify_document_subintent_embedding(user_query)
     if subintent == "validation":
@@ -814,12 +820,10 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
     except Exception:
         crime_rag = None
 
-
     try:
         from app.tools.document_analysis_pipeline import get_document_analysis_pipeline
 
         llm = get_llm()
-
 
         pipeline = get_document_analysis_pipeline(llm, crime_rag=crime_rag)
         result = await pipeline.analyze_document(
@@ -827,7 +831,6 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
             document_type=document_type,
             user_query=user_query,
         )
-
 
         response_parts = [result.summary]
 
@@ -849,11 +852,9 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
 
         response = "\n".join(response_parts)
 
-
         rag_succeeded = bool(
             result.crime_context and result.crime_context.get("relevant_passages")
         )
-
 
         if not rag_succeeded:
             response = DOC_RAG_UNAVAILABLE_DISCLAIMER + response
@@ -879,7 +880,6 @@ async def handle_document_analysis(state: ChatState) -> ChatState:
 
         error_msg = f"Enhanced analysis unavailable: {str(e)}"
         logger.warning(error_msg)
-
 
         llm = get_llm()
         max_chars = 15000
@@ -934,9 +934,12 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     )
     identified_crime = await classify_crime_type(crime_details)
     serious = identified_crime in SERIOUS_CRIMES
-    if not serious and not state.get("followup_answered") and crime_report_too_thin(crime_details):
+    if (
+        not serious
+        and not state.get("followup_answered")
+        and crime_report_too_thin(crime_details)
+    ):
         return _ask_followup(state, CRIME_DETAILS_ASK, "crime_report")
-
 
     ik_result = await RAG_TOOL_REGISTRY["crime_sections"](
         crime_details, crime_type=identified_crime, k=2
@@ -944,14 +947,12 @@ async def handle_crime_report(state: ChatState) -> ChatState:
     rag_sections_text = ik_result.context_text
     rag_succeeded = ik_result.succeeded
 
-
     llm = get_llm()
 
     rag_section = ""
     if rag_sections_text:
         rag_section = f"""\n\nAPPLICABLE PROVISIONS (cite the Act named with each section):
 {rag_sections_text}"""
-
 
     disclaimer_prefix, no_rag_warning = _apply_compulsory_rag_policy(rag_succeeded)
 
@@ -973,7 +974,6 @@ async def handle_crime_report(state: ChatState) -> ChatState:
             crime_name=identified_crime.replace("_", " ").title()
         )
 
-
     if disclaimer_prefix:
         final_response = disclaimer_prefix + final_response
     if serious:
@@ -992,7 +992,10 @@ async def handle_crime_report(state: ChatState) -> ChatState:
         + [{"role": "assistant", "content": final_response}],
         "trace": _merge_trace(
             state,
-            crime_report={"crime_type": identified_crime, "rag_succeeded": rag_succeeded},
+            crime_report={
+                "crime_type": identified_crime,
+                "rag_succeeded": rag_succeeded,
+            },
         ),
     }
 
@@ -1005,21 +1008,30 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
     if not state.get("followup_answered"):
         missing = missing_lawyer_details(state.get("retrieval_query") or lawyer_query)
         if missing:
-            return _ask_followup(state, LAWYER_DETAILS_PREFIX + LAWYER_DETAILS_ASK[tuple(missing)], "find_lawyer")
+            return _ask_followup(
+                state,
+                LAWYER_DETAILS_PREFIX + LAWYER_DETAILS_ASK[tuple(missing)],
+                "find_lawyer",
+            )
     location = find_location(state.get("retrieval_query") or lawyer_query)
-
 
     from app.db.engine import get_engine
     from sqlmodel import Session as DBSession
 
     location_note = ""
     with DBSession(get_engine()) as session:
-        lawyers = await recommend_lawyers_core(
-            session, problem_description=lawyer_query, location=location, limit=5
-        ) if location else []
+        lawyers = (
+            await recommend_lawyers_core(
+                session, problem_description=lawyer_query, location=location, limit=5
+            )
+            if location
+            else []
+        )
         if not lawyers:
             if location:
-                location_note = LAWYER_NONE_NEARBY_NOTE.format(location=location.title())
+                location_note = LAWYER_NONE_NEARBY_NOTE.format(
+                    location=location.title()
+                )
             lawyers = await recommend_lawyers_core(
                 session, problem_description=lawyer_query, limit=5
             )
@@ -1039,7 +1051,6 @@ async def handle_find_lawyer(state: ChatState) -> ChatState:
             }
             for l in lawyers
         ]
-
 
     try:
         llm = get_llm()
@@ -1078,14 +1089,14 @@ async def _verify_response_citations(
 ) -> tuple:
     """Post-generation grounding gate."""
     try:
-        from app.tools.grounding_verifier import ground_and_correct, grounding_footer
-        from app.tools.citation_verifier import verify_citations, verification_footer
         from app.tools.case_citation_verifier import (
             case_verification_footer,
             verify_case_citations,
         )
-        from app.tools.unified_legal_rag import get_unified_rag_system
         from app.tools.case_law_rag import get_case_law_rag_system
+        from app.tools.citation_verifier import verification_footer, verify_citations
+        from app.tools.grounding_verifier import ground_and_correct, grounding_footer
+        from app.tools.unified_legal_rag import get_unified_rag_system
 
         rag = get_unified_rag_system()
         case_rag = get_case_law_rag_system()
@@ -1093,7 +1104,9 @@ async def _verify_response_citations(
         if citation_only:
             text = response_text
             if rag.initialized:
-                citation_report = verify_citations(response_text, rag, retrieved_sections)
+                citation_report = verify_citations(
+                    response_text, rag, retrieved_sections
+                )
                 if citation_report.checks:
                     logger.info(
                         "CitationVerify (no-retrieval path): %s/%s citations verified",
@@ -1102,7 +1115,9 @@ async def _verify_response_citations(
                     )
                 text += verification_footer(citation_report)
             if case_rag.initialized:
-                text += case_verification_footer(verify_case_citations(response_text, case_rag))
+                text += case_verification_footer(
+                    verify_case_citations(response_text, case_rag)
+                )
             return text, None
 
         if not rag.initialized:
@@ -1138,7 +1153,9 @@ async def _verify_response_citations(
             + grounding_footer(report)
         )
         if case_rag.initialized:
-            text += case_verification_footer(verify_case_citations(corrected_text, case_rag))
+            text += case_verification_footer(
+                verify_case_citations(corrected_text, case_rag)
+            )
         return (
             text,
             report,
@@ -1215,8 +1232,6 @@ def _merge_statute_results(results: list) -> ToolInvocationResult:
             ),
             "retrieved_sections": sections,
             "confidence": max((r.raw or {}).get("confidence", 0.0) for r in ok),
-
-
             "chunk_count": max(
                 len(_ENTRY_SPLIT_RE.split(text)) if text else 0,
                 *((r.raw or {}).get("chunk_count", 0) for r in ok),
@@ -1283,15 +1298,10 @@ async def gq_retrieve(state: ChatState) -> ChatState:
             jobs[f"statute_context:{i}"] = RAG_TOOL_REGISTRY["statute_context"](
                 query,
                 k=primary_k if is_primary else 4,
-
-
                 domain_hint=(
                     ["criminal"] if domain_hint == "criminal" and not widen else None
                 ),
-
                 doctrine_assist=is_primary and not widen,
-
-
                 with_case_law=i == 0,
             )
     names = list(jobs)
@@ -1356,12 +1366,16 @@ async def gq_grade(state: ChatState) -> ChatState:
         chunk_count,
         state.get("retrieval_attempts") or 0,
     )
-    sections = sorted((statute.raw or {}).get("retrieved_sections") or ()) if statute else []
+    sections = (
+        sorted((statute.raw or {}).get("retrieved_sections") or ()) if statute else []
+    )
     return {
         **state,
         "retrieval_grade": grade,
         "retrieval_confidence": confidence,
-        "retrieved_sections": (statute.raw or {}).get("retrieved_sections") if statute else None,
+        "retrieved_sections": (
+            (statute.raw or {}).get("retrieved_sections") if statute else None
+        ),
         "trace": _merge_trace(
             state,
             retrieval={
@@ -1378,10 +1392,9 @@ async def gq_grade(state: ChatState) -> ChatState:
 
 def _route_after_grade(state: ChatState) -> Literal["gq_rewrite", "gq_generate"]:
     settings = get_settings()
-    can_retry = (
-        (state.get("retrieval_attempts") or 0) < 1
-        and _time_elapsed(state) < settings.request_budget_seconds / 3
-    )
+    can_retry = (state.get("retrieval_attempts") or 0) < 1 and _time_elapsed(
+        state
+    ) < settings.request_budget_seconds / 3
     if state.get("retrieval_grade") in ("weak", "none") and can_retry:
         return "gq_rewrite"
     return "gq_generate"
@@ -1389,9 +1402,7 @@ def _route_after_grade(state: ChatState) -> Literal["gq_rewrite", "gq_generate"]
 
 async def gq_rewrite(state: ChatState) -> ChatState:
     """Second chance for weak/empty retrieval: gq_retrieve re-runs the same query widened (no domain filter, larger k)."""
-    await emit_event(
-        "status", stage="retrieval", label="Broadening the search…"
-    )
+    await emit_event("status", stage="retrieval", label="Broadening the search…")
     return {
         **state,
         "retrieval_attempts": 1,
@@ -1431,7 +1442,6 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
     user_input_for_prompt = user_input[:_MAX_QUERY_CHARS]
     feedback = state.get("regen_feedback") if regenerating else None
 
-
     reserved = (
         count_tokens_approx(user_input_for_prompt)
         + count_tokens_approx(conversation_context or "")
@@ -1457,7 +1467,6 @@ def _build_answer_prompt(state: ChatState, *, concise: bool = False) -> tuple:
             prompt += REGENERATION_FEEDBACK_BLOCK.format(feedback=feedback)
     else:
 
-
         prompt = (
             GENERAL_QUERY_PROMPT.format(query=user_input_for_prompt) + prompt_warning
         )
@@ -1479,8 +1488,10 @@ def _concise_gates(state: ChatState) -> Dict[str, bool]:
     return {
         "good_retrieval": state.get("retrieval_grade") == "good",
         "single_part": not bool(state.get("sub_questions")),
-        "short_query": len(user_input.split()) <= settings.concise_first_max_query_words,
-        "not_multi_offense": _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS) < 2,
+        "short_query": len(user_input.split())
+        <= settings.concise_first_max_query_words,
+        "not_multi_offense": _count_keyword_matches(user_input, CRIME_TYPE_KEYWORDS)
+        < 2,
     }
 
 
@@ -1503,7 +1514,9 @@ def _can_retry_giveup(state: ChatState) -> bool:
 async def gq_generate(state: ChatState) -> ChatState:
     """Build the grounded prompt from what retrieval returned and generate, streaming to the client."""
     regenerating = bool(state.get("regen_pending"))
-    disclaimer_prefix, _ = _apply_compulsory_rag_policy(bool(state.get("rag_succeeded")))
+    disclaimer_prefix, _ = _apply_compulsory_rag_policy(
+        bool(state.get("rag_succeeded"))
+    )
 
     if regenerating:
         await emit_event("reset")
@@ -1531,7 +1544,9 @@ async def gq_generate(state: ChatState) -> ChatState:
         )
         if answer == _INCOMPLETE_GENERATION_NOTE and retry_possible:
             if _can_retry_giveup(state):
-                logger.warning("Generation gave up — retrying once with a concise prompt")
+                logger.warning(
+                    "Generation gave up — retrying once with a concise prompt"
+                )
                 await emit_event(
                     "status",
                     stage="retrying",
@@ -1542,7 +1557,6 @@ async def gq_generate(state: ChatState) -> ChatState:
                 attempts, retried = 2, True
             else:
                 await emit_text(answer)
-
 
         if answer == _INCOMPLETE_GENERATION_NOTE:
             failed = True
@@ -1575,7 +1589,7 @@ def _regeneration_plan(report) -> tuple:
     """(feedback text, targeted retrieval queries) for the flagged claims."""
     flagged = report.confirmed_flagged[:3]
     feedback = "\n".join(
-        f"- \"{s.text.strip()[:240]}\"" + (f" — {s.reason}" if s.reason else "")
+        f'- "{s.text.strip()[:240]}"' + (f" — {s.reason}" if s.reason else "")
         for s in flagged
     )
     queries: List[str] = []
@@ -1595,11 +1609,12 @@ async def gq_verify(state: ChatState) -> ChatState:
         "messages": state["messages"] + [{"role": "assistant", "content": response}],
     }
 
-
     if state.get("error") == "generation_failed":
         return {
             **finished,
-            "trace": _merge_trace(state, grounding={"verified": False, "reason": "generation_failed"}),
+            "trace": _merge_trace(
+                state, grounding={"verified": False, "reason": "generation_failed"}
+            ),
         }
 
     citation_only = not state.get("rag_succeeded")
@@ -1616,7 +1631,9 @@ async def gq_verify(state: ChatState) -> ChatState:
         adjudication["prompt_chars"] += len(prompt)
         try:
             out = strip_reasoning_tags(
-                await invoke_llm_safely(get_grounding_correction_llm(), prompt, stream=False)
+                await invoke_llm_safely(
+                    get_grounding_correction_llm(), prompt, stream=False
+                )
             )
             adjudication["output_chars"] += len(out)
             return out
@@ -1634,7 +1651,6 @@ async def gq_verify(state: ChatState) -> ChatState:
     verify_seconds = time.monotonic() - verify_started
 
     score = report.overall_score if report is not None else None
-
 
     can_regenerate = (
         not citation_only
@@ -1677,11 +1693,12 @@ async def gq_verify(state: ChatState) -> ChatState:
             "extra_queries": queries,
             "retrieval_attempts": 1,
             "grounding_score": score,
-            "trace": _merge_trace(state, grounding={**grounding_trace, "regenerating": True}),
+            "trace": _merge_trace(
+                state, grounding={**grounding_trace, "regenerating": True}
+            ),
         }
 
     if final_text != response:
-
 
         await emit_event("replace", content=final_text)
     return {
@@ -1701,7 +1718,6 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
     """Internal handler for document validation using the 3-layer pipeline."""
     document_content = state.get("document_content", "")
 
-
     if not document_content:
         response = DOCUMENT_VALIDATION_UPLOAD_PROMPT
         return {
@@ -1713,7 +1729,6 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
     try:
 
-
         await emit_event("status", stage="classify", label="Reading the document…")
         classification = await classify_document(document_content)
 
@@ -1721,7 +1736,6 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             f"[Layer 1] Document classified as: {classification.document_type} "
             f"(confidence: {classification.confidence:.2f})"
         )
-
 
         validator = get_statutory_validator()
         validation = validator.validate(document_content, classification.document_type)
@@ -1733,7 +1747,6 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             f"[Layer 2] Statutory validation: {validation.passed}/{validation.total_checks} passed, "
             f"compliance score: {format_score(validation.compliance_score)}"
         )
-
 
         crime_rag = None
 
@@ -1757,12 +1770,10 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             except Exception:
                 return None
 
-
         analyzer = get_legal_defect_analyzer(get_llm())
         think_task = asyncio.create_task(analyzer.think(classification))
 
         crime_rag, civil_rag = await asyncio.gather(init_rag(), init_civil())
-
 
         law_rag = get_indian_law_rag(crime_rag=crime_rag, civil_rag=civil_rag)
         law_context = await law_rag.retrieve_context(
@@ -1778,7 +1789,6 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
             f"{len(law_context.applicable_acts)} applicable acts"
         )
 
-
         await emit_event("status", stage="generation", label="Writing the analysis…")
         result = await analyzer.analyze_defects(
             classification=classification,
@@ -1791,14 +1801,12 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
         response = result["formatted_response"]
 
-
         await emit_event("replace", content=response)
 
         logger.info(
             f"[Layer 3] Analysis complete. Defects: {result['defect_count']}, "
             f"Compliance: {format_score(result['compliance_score'])}"
         )
-
 
         validation_info: DocumentValidationInfo = {
             "classified_type": classification.document_type,
@@ -1830,7 +1838,6 @@ async def _handle_document_validation(state: ChatState) -> ChatState:
 
     except Exception as e:
         logger.exception("Document validation error: %s", e)
-
 
         try:
             classifier = get_document_classifier()
@@ -1996,7 +2003,9 @@ def build_legal_chatbot_graph() -> StateGraph:
 _MAX_SESSION_MESSAGES = 20
 
 
-def _append_capped(left: Optional[List[Message]], right: Optional[List[Message]]) -> List[Message]:
+def _append_capped(
+    left: Optional[List[Message]], right: Optional[List[Message]]
+) -> List[Message]:
     return ((left or []) + (right or []))[-_MAX_SESSION_MESSAGES:]
 
 
@@ -2026,7 +2035,9 @@ class LegalChatbot:
     """Main chatbot class that wraps the LangGraph workflow."""
 
     def __init__(self, checkpointer: Optional[BaseCheckpointSaver] = None):
-        self._checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
+        self._checkpointer = (
+            checkpointer if checkpointer is not None else InMemorySaver()
+        )
         self._turn_graph = build_legal_chatbot_graph().compile(checkpointer=False)
 
         session = StateGraph(SessionState)
@@ -2038,20 +2049,18 @@ class LegalChatbot:
         self._active_stream_tasks: Dict[str, asyncio.Task] = {}
         self._in_flight = 0
 
-
         self._last_seen: Dict[str, float] = {}
-
 
     def _acquire_slot(self) -> None:
 
-
         if self._in_flight >= get_settings().chat_max_concurrent:
-            raise ChatBusyError("The assistant is busy right now. Please try again shortly.")
+            raise ChatBusyError(
+                "The assistant is busy right now. Please try again shortly."
+            )
         self._in_flight += 1
 
     def _release_slot(self) -> None:
         self._in_flight = max(0, self._in_flight - 1)
-
 
     def _config(self, session_id: str, touch: bool = True) -> Dict[str, Any]:
         """thread_id is the memory key, which already carries the account scope (`user:<id>:<session>` / `guest:<session>`), so one account cannot read another's conversation by guessing..."""
@@ -2059,7 +2068,6 @@ class LegalChatbot:
             self._touch(session_id)
         return {
             "configurable": {"thread_id": session_id},
-
             "metadata": {"last_active": datetime.now(timezone.utc).isoformat()},
         }
 
@@ -2070,7 +2078,8 @@ class LegalChatbot:
         now = time.monotonic()
         self._last_seen[session_id] = now
         stale = [
-            sid for sid, seen in self._last_seen.items()
+            sid
+            for sid, seen in self._last_seen.items()
             if now - seen > settings.session_ttl_seconds
         ]
         overflow = len(self._last_seen) - settings.max_sessions
@@ -2111,7 +2120,6 @@ class LegalChatbot:
         self._last_seen.pop(session_id, None)
         await self._checkpointer.adelete_thread(session_id)
 
-
     async def _run_turn(self, state: SessionState) -> Dict[str, Any]:
         """The outer graph's only node: run the workflow for this turn."""
         ctx = _turn_var.get()
@@ -2140,7 +2148,11 @@ class LegalChatbot:
         result = await self._turn_graph.ainvoke(turn_state)
         ctx.result = result
         response = result.get("response")
-        return {"messages": [{"role": "assistant", "content": response}]} if response else {}
+        return (
+            {"messages": [{"role": "assistant", "content": response}]}
+            if response
+            else {}
+        )
 
     async def stream_chat(
         self,
@@ -2157,7 +2169,6 @@ class LegalChatbot:
                 yield event
         finally:
 
-
             await inner.aclose()
             self._release_slot()
 
@@ -2170,7 +2181,6 @@ class LegalChatbot:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream chat response token by token."""
         request_id_var.set(uuid.uuid4().hex[:8])
-
 
         english_message, lang = await preprocess_query(message)
         translate_out = (
@@ -2206,7 +2216,6 @@ class LegalChatbot:
 
         task = asyncio.create_task(run_graph())
 
-
         previous = self._active_stream_tasks.get(session_id)
         if previous is not None and not previous.done():
             previous.cancel()
@@ -2217,7 +2226,6 @@ class LegalChatbot:
         stopped = False
         superseded = False
         try:
-
 
             while True:
                 item = await queue.get()
@@ -2241,11 +2249,9 @@ class LegalChatbot:
                 if not translate_out:
                     yield {"type": "token", "content": item}
 
-
             try:
                 result = await task
             except asyncio.CancelledError:
-
 
                 stopped = True
                 result = {"intent": intent_seen, "response": accumulated}
@@ -2253,22 +2259,17 @@ class LegalChatbot:
             if self._active_stream_tasks.get(session_id) is task:
                 self._active_stream_tasks.pop(session_id, None)
 
-
                 if not task.done():
                     task.cancel()
             else:
 
-
                 superseded = True
-
 
         english_text = result.get("response", "") or accumulated
         intent = result.get("intent") or intent_seen
 
-
         if stopped and english_text and not superseded:
             await self._append_assistant(session_id, english_text)
-
 
         if translate_out:
             response_text = await postprocess_response(english_text, lang)
@@ -2280,7 +2281,6 @@ class LegalChatbot:
                 yield {"type": "token", "content": response_text}
 
         if superseded:
-
 
             yield {"type": "superseded", "session_id": session_id}
             return
@@ -2296,7 +2296,6 @@ class LegalChatbot:
                 "language": lang.language,
             }
             return
-
 
         yield {
             "type": "done",
@@ -2331,7 +2330,9 @@ class LegalChatbot:
         """Process a chat turn (see _chat) while holding a concurrency slot."""
         self._acquire_slot()
         try:
-            return await self._chat(message, session_id, document_content, document_type)
+            return await self._chat(
+                message, session_id, document_content, document_type
+            )
         finally:
             self._release_slot()
 
@@ -2344,7 +2345,6 @@ class LegalChatbot:
     ) -> Dict[str, Any]:
         """Process a chat message and return the response."""
         request_id_var.set(uuid.uuid4().hex[:8])
-
 
         english_message, lang = await preprocess_query(message)
 
@@ -2361,15 +2361,12 @@ class LegalChatbot:
         )
         result = ctx.result or {}
 
-
         english_response = result.get("response")
-
 
         display_response = (
             await postprocess_response(english_response or "", lang)
             or "I'm sorry, I couldn't process your request."
         )
-
 
         return {
             "response": display_response,

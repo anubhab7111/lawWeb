@@ -2,7 +2,9 @@ from app.ingest.citations import extract_citations
 
 
 def test_single_section_full_act_name():
-    assert extract_citations("convicted under Section 302 of the Indian Penal Code") == ["IPC:302"]
+    assert extract_citations(
+        "convicted under Section 302 of the Indian Penal Code"
+    ) == ["IPC:302"]
 
 
 def test_number_lists_with_slash_and_abbreviations():
@@ -21,11 +23,16 @@ def test_crpc_variants_and_subclauses_stripped():
 
 def test_letter_suffix_and_evidence_act():
     assert extract_citations("section 65B of the Evidence Act") == ["IEA:65B"]
-    assert extract_citations("Section 304-B IPC and Section 498A, IPC") == ["IPC:304B", "IPC:498A"]
+    assert extract_citations("Section 304-B IPC and Section 498A, IPC") == [
+        "IPC:304B",
+        "IPC:498A",
+    ]
 
 
 def test_other_acts_keep_their_name_and_year():
-    assert extract_citations("section 10 of the Contract Act, 1872") == ["contract act 1872:10"]
+    assert extract_citations("section 10 of the Contract Act, 1872") == [
+        "contract act 1872:10"
+    ]
 
 
 def test_constitution_articles():
@@ -33,8 +40,13 @@ def test_constitution_articles():
 
 
 def test_unresolved_act_is_skipped_and_dedup_preserves_order():
-    assert extract_citations("section 5 of the Act and section 302 IPC; s. 302 IPC again") == ["IPC:302"]
+    assert extract_citations(
+        "section 5 of the Act and section 302 IPC; s. 302 IPC again"
+    ) == ["IPC:302"]
 
 
 def test_bns_and_bnss_are_not_confused():
-    assert extract_citations("Section 103 of the BNS and Section 482 BNSS") == ["BNS:103", "BNSS:482"]
+    assert extract_citations("Section 103 of the BNS and Section 482 BNSS") == [
+        "BNS:103",
+        "BNSS:482",
+    ]

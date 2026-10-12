@@ -1,17 +1,20 @@
 """Hourly push of new LawWeb events to every connected external calendar."""
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlmodel import Session, select
-
 from app.db.engine import get_engine
 from app.db.models import CalendarConnection
 from app.services import calendar_oauth
 from app.services.calendar_sync import sync_connection
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlmodel import Session, select
 
 
 def register(scheduler: AsyncIOScheduler) -> None:
     scheduler.add_job(
-        run_calendar_sync, "interval", hours=1, id="calendar_sync", replace_existing=True
+        run_calendar_sync,
+        "interval",
+        hours=1,
+        id="calendar_sync",
+        replace_existing=True,
     )
 
 
@@ -24,7 +27,9 @@ def _sync_all() -> None:
                 sync_connection(session, connection)
             except Exception as e:
                 session.rollback()
-                print(f"[CalendarSync] sync failed for {connection.user_id}/{connection.provider}: {e}")
+                print(
+                    f"[CalendarSync] sync failed for {connection.user_id}/{connection.provider}: {e}"
+                )
 
 
 async def run_calendar_sync() -> None:

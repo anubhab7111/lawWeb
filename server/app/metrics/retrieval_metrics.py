@@ -25,21 +25,16 @@ class RetrievalSample:
 class RetrievalMetricsResult:
     """Aggregated retrieval metrics for a full evaluation run."""
 
-
     samples: List[RetrievalSample]
-
 
     hit_rate_at_1: float
     hit_rate_at_3: float
     hit_rate_at_5: float
 
-
     mrr: float
-
 
     context_precision_mean: float
     context_precision_per_query: List[float]
-
 
     queries_with_relevant_sections: int
     queries_with_context: int
@@ -161,7 +156,6 @@ def compute_context_precision(
             loop = asyncio.get_event_loop()
             if loop.is_running():
 
-
                 logger.debug(
                     "compute_context_precision called synchronously from async "
                     "context; falling back to keyword scoring."
@@ -175,7 +169,6 @@ def compute_context_precision(
             logger.warning(
                 "LLM judge failed for context_precision: %s — falling back.", exc
             )
-
 
     return _keyword_precision_score(context, keywords or [])
 
@@ -210,14 +203,11 @@ async def compute_all_retrieval_metrics(
     """Compute Hit Rate @ 1/3/5, MRR, and Context Precision for a full batch."""
     samples = list(samples)
 
-
     hr1 = compute_hit_rate_at_k(samples, k=1)
     hr3 = compute_hit_rate_at_k(samples, k=3)
     hr5 = compute_hit_rate_at_k(samples, k=5)
 
-
     mrr = compute_mrr(samples)
-
 
     precision_tasks = [
         compute_context_precision_async(
@@ -237,7 +227,6 @@ async def compute_all_retrieval_metrics(
         if context_precision_per_query
         else 0.0
     )
-
 
     queries_with_gt = sum(1 for s in samples if s.relevant_sections)
     queries_with_ctx = sum(1 for s in samples if s.retrieved_context.strip())
@@ -273,7 +262,6 @@ def print_retrieval_report(result: RetrievalMetricsResult) -> None:
     print(sep)
     print(f"  Context Precision (mean)     : {result.context_precision_mean:.4f}")
     print(sep)
-
 
     if result.samples:
         print("\n  Per-query precision breakdown:")

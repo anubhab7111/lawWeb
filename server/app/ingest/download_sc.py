@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
-
 from app.ingest.paths import corpus_path
 
 BUCKET = "https://indian-supreme-court-judgments.s3.amazonaws.com"
@@ -34,7 +33,9 @@ def sc_root() -> Path:
 
 
 def list_years(client: httpx.Client) -> List[int]:
-    resp = client.get(f"{BUCKET}/", params={"list-type": "2", "prefix": "data/tar/", "delimiter": "/"})
+    resp = client.get(
+        f"{BUCKET}/", params={"list-type": "2", "prefix": "data/tar/", "delimiter": "/"}
+    )
     resp.raise_for_status()
     return sorted(int(y) for y in re.findall(r"data/tar/year=(\d{4})/", resp.text))
 
@@ -47,7 +48,9 @@ def _retry(fn, what: str):
             if attempt == RETRIES:
                 raise
             wait = 2**attempt
-            print(f"  {what}: {type(e).__name__} ({e}); retry {attempt}/{RETRIES} in {wait}s")
+            print(
+                f"  {what}: {type(e).__name__} ({e}); retry {attempt}/{RETRIES} in {wait}s"
+            )
             time.sleep(wait)
     raise AssertionError("unreachable")
 
@@ -84,7 +87,9 @@ def validate_pdf_head(data: bytes) -> Optional[str]:
     return None
 
 
-def extract_verified(tar_path: Path, index: Dict, pdf_dir: Path, quarantine_dir: Path) -> List[Dict]:
+def extract_verified(
+    tar_path: Path, index: Dict, pdf_dir: Path, quarantine_dir: Path
+) -> List[Dict]:
     """Extract PDFs from the tar with per-file checks; returns manifest rows."""
     rows: List[Dict] = []
     pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -98,10 +103,18 @@ def extract_verified(tar_path: Path, index: Dict, pdf_dir: Path, quarantine_dir:
             if problem:
                 quarantine_dir.mkdir(parents=True, exist_ok=True)
                 (quarantine_dir / name).write_bytes(data)
-                (quarantine_dir / f"{name}.reason.json").write_text(json.dumps({"reason": problem}))
+                (quarantine_dir / f"{name}.reason.json").write_text(
+                    json.dumps({"reason": problem})
+                )
                 continue
             (pdf_dir / name).write_bytes(data)
-            rows.append({"name": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+            rows.append(
+                {
+                    "name": name,
+                    "size": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
     if len(members) != index.get("file_count"):
         raise VerificationError(
             f"tar has {len(members)} files; index says {index.get('file_count')}"
@@ -129,7 +142,9 @@ def process_year(year: int, keep_tar: bool = False) -> Dict:
     if year_complete(root, year):
         return {"year": year, "status": "skipped"}
 
-    with httpx.Client(timeout=httpx.Timeout(60, read=120), follow_redirects=True) as client:
+    with httpx.Client(
+        timeout=httpx.Timeout(60, read=120), follow_redirects=True
+    ) as client:
         base = f"{BUCKET}/data/tar/year={year}/english"
         index = _retry(lambda: client.get(f"{base}/english.index.json"), "index")
         if index.status_code == 404:
@@ -156,7 +171,10 @@ def process_year(year: int, keep_tar: bool = False) -> Dict:
         rows = extract_verified(tar_path, index, pdf_dir, quarantine)
 
         meta = _retry(
-            lambda: client.get(f"{BUCKET}/metadata/parquet/year={year}/metadata.parquet"), "metadata"
+            lambda: client.get(
+                f"{BUCKET}/metadata/parquet/year={year}/metadata.parquet"
+            ),
+            "metadata",
         )
         if meta.status_code == 200:
             (root / "metadata").mkdir(parents=True, exist_ok=True)
@@ -182,9 +200,15 @@ def process_year(year: int, keep_tar: bool = False) -> Dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("--years", type=int, nargs="*", help="default: every year the bucket has")
-    parser.add_argument("--workers", type=int, default=3, help="years downloaded in parallel")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "--years", type=int, nargs="*", help="default: every year the bucket has"
+    )
+    parser.add_argument(
+        "--workers", type=int, default=3, help="years downloaded in parallel"
+    )
     parser.add_argument("--keep-tar", action="store_true")
     args = parser.parse_args()
 
@@ -201,7 +225,10 @@ def main() -> None:
             failures.append((year, f"{type(e).__name__}: {e}"))
             print(f"[sc] {year} FAILED — {e}")
             return
-        print(f"[sc] {year} {result['status']}" + (f" ({result.get('files')} files)" if "files" in result else ""))
+        print(
+            f"[sc] {year} {result['status']}"
+            + (f" ({result.get('files')} files)" if "files" in result else "")
+        )
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         list(pool.map(run, years))

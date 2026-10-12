@@ -5,14 +5,15 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
-from fastapi.responses import Response
-from pydantic import BaseModel
-from sqlmodel import Session, delete, or_, select
-
 from app.config import get_settings
 from app.db.engine import get_session
-from app.db.models import SavedCase, User, VaultDocument, VaultDocumentEmbedding, VaultDocumentPermission
+from app.db.models import (
+    SavedCase,
+    User,
+    VaultDocument,
+    VaultDocumentEmbedding,
+    VaultDocumentPermission,
+)
 from app.deps.auth import get_current_user
 from app.deps.errors import MessageHTTPException
 from app.deps.uploads import read_upload_within_limit
@@ -21,6 +22,10 @@ from app.services.object_storage import LocalDiskObjectStorage, get_object_stora
 from app.services.vault_indexer import index_vault_document
 from app.tools.base_legal_rag import _get_shared_embeddings
 from app.tools.document_extractor import get_document_extractor
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
+from fastapi.responses import Response
+from pydantic import BaseModel
+from sqlmodel import Session, delete, or_, select
 
 router = APIRouter(prefix="/api/vault", tags=["vault"])
 
@@ -74,7 +79,9 @@ def _accessible_ids_subquery(session: Session, user_id: str):
     return list(shared_doc_ids)
 
 
-def _get_accessible_document(session: Session, document_id: str, user: User) -> VaultDocument:
+def _get_accessible_document(
+    session: Session, document_id: str, user: User
+) -> VaultDocument:
     document = session.get(VaultDocument, document_id)
     if document is None:
         raise MessageHTTPException(status_code=404, detail="Document not found")
@@ -105,12 +112,13 @@ async def upload_document(
     max_size = get_settings().max_document_size_mb * 1024 * 1024
     file_bytes = await read_upload_within_limit(file, max_size)
 
-
     safe_filename = Path(file.filename or "document").name or "document"
     object_key = f"{current_user.id}/{uuid.uuid4()}-{safe_filename}"
 
     storage = get_object_storage()
-    storage.upload_object(object_key, file_bytes, file.content_type or "application/octet-stream")
+    storage.upload_object(
+        object_key, file_bytes, file.content_type or "application/octet-stream"
+    )
 
     document = VaultDocument(
         user_id=current_user.id,
@@ -136,7 +144,9 @@ async def upload_document(
 
     extractor = get_document_extractor()
     try:
-        extracted_text, _doc_type = await extractor.extract_text(file_bytes, file.filename or "document.txt")
+        extracted_text, _doc_type = await extractor.extract_text(
+            file_bytes, file.filename or "document.txt"
+        )
     except Exception as e:
         print(f"[Vault] text extraction failed for {document.id}: {e}")
         extracted_text = ""
@@ -228,9 +238,13 @@ async def search_documents(
 
     embeddings_model = await _get_shared_embeddings()
     loop = asyncio.get_event_loop()
-    query_vector = await loop.run_in_executor(None, embeddings_model.embed_query, body.query)
+    query_vector = await loop.run_in_executor(
+        None, embeddings_model.embed_query, body.query
+    )
 
-    distance_col = VaultDocumentEmbedding.embedding.cosine_distance(query_vector).label("distance")
+    distance_col = VaultDocumentEmbedding.embedding.cosine_distance(query_vector).label(
+        "distance"
+    )
     stmt = (
         select(VaultDocumentEmbedding, distance_col)
         .where(VaultDocumentEmbedding.vault_document_id.in_(all_ids))
@@ -270,17 +284,25 @@ def share_document(
         raise MessageHTTPException(status_code=404, detail="Document not found")
 
     if body.permission not in ("view", "edit"):
-        raise MessageHTTPException(status_code=400, detail="Permission must be 'view' or 'edit'")
+        raise MessageHTTPException(
+            status_code=400, detail="Permission must be 'view' or 'edit'"
+        )
     if body.email:
-        target_user = session.exec(select(User).where(User.email == body.email.strip())).first()
+        target_user = session.exec(
+            select(User).where(User.email == body.email.strip())
+        ).first()
     elif body.sharedWithUserId:
         target_user = session.get(User, body.sharedWithUserId)
     else:
-        raise MessageHTTPException(status_code=400, detail="Provide the recipient's email")
+        raise MessageHTTPException(
+            status_code=400, detail="Provide the recipient's email"
+        )
     if target_user is None:
         raise MessageHTTPException(status_code=404, detail="User not found")
     if target_user.id == current_user.id:
-        raise MessageHTTPException(status_code=400, detail="You already own this document")
+        raise MessageHTTPException(
+            status_code=400, detail="You already own this document"
+        )
 
     permission = session.exec(
         select(VaultDocumentPermission).where(
@@ -299,7 +321,6 @@ def share_document(
     session.add(permission)
     session.commit()
     session.refresh(permission)
-
 
     try:
         send_notification(
@@ -346,7 +367,9 @@ def update_document(
 ):
     document = _get_accessible_document(session, document_id, current_user)
     if not _can_edit(session, document, current_user):
-        raise MessageHTTPException(status_code=403, detail="You only have view access to this document")
+        raise MessageHTTPException(
+            status_code=403, detail="You only have view access to this document"
+        )
     if body.title is not None and body.title.strip():
         document.title = body.title.strip()
     if body.documentType is not None and body.documentType.strip():
@@ -373,14 +396,22 @@ async def reindex_document(
     if not text.strip():
         try:
             data = get_object_storage().read_object(document.object_key)
-            text, _ = await get_document_extractor().extract_text(data, Path(document.object_key).name)
+            text, _ = await get_document_extractor().extract_text(
+                data, Path(document.object_key).name
+            )
         except Exception as e:
             print(f"[Vault] re-extraction failed for {document.id}: {e}")
             text = ""
     if not text.strip():
-        raise MessageHTTPException(status_code=422, detail="Could not extract any text from this document")
+        raise MessageHTTPException(
+            status_code=422, detail="Could not extract any text from this document"
+        )
 
-    session.exec(delete(VaultDocumentEmbedding).where(VaultDocumentEmbedding.vault_document_id == document.id))
+    session.exec(
+        delete(VaultDocumentEmbedding).where(
+            VaultDocumentEmbedding.vault_document_id == document.id
+        )
+    )
     document.indexing_status = "pending"
     session.add(document)
     session.commit()

@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-
 from app.tools import legal_retrieval as lr
 
 
@@ -9,6 +8,7 @@ from app.tools import legal_retrieval as lr
 def no_classifier(monkeypatch):
     """Precedent-path tests run as if the statute classifier weren't exported."""
     monkeypatch.setattr(lr, "_get_classifier", lambda: None)
+
 
 NARRATIVE = " ".join(
     [
@@ -24,7 +24,9 @@ NARRATIVE = " ".join(
 
 
 def test_short_questions_are_not_fact_patterns():
-    assert not lr.looks_like_fact_pattern("What is the punishment for murder under the IPC?")
+    assert not lr.looks_like_fact_pattern(
+        "What is the punishment for murder under the IPC?"
+    )
     assert not lr.looks_like_fact_pattern("Section 302. " * 10)
 
 
@@ -39,7 +41,9 @@ def test_precedent_pins_are_empty_for_questions_and_when_index_missing(monkeypat
     class Missing:
         available = False
 
-    monkeypatch.setattr("app.tools.precedent_rag.get_precedent_index", lambda: Missing())
+    monkeypatch.setattr(
+        "app.tools.precedent_rag.get_precedent_index", lambda: Missing()
+    )
     assert asyncio.run(lr.precedent_pins(NARRATIVE)) == []
 
 
@@ -52,24 +56,42 @@ def test_precedent_pins_map_votes_to_ipc_and_cap_the_count(monkeypatch):
         return [("304B", 0.9), ("498A", 0.8), ("34", 0.5), ("306", 0.4), ("302", 0.1)]
 
     monkeypatch.setattr("app.tools.precedent_rag.get_precedent_index", lambda: Ready())
-    monkeypatch.setattr("app.tools.precedent_rag.retrieve_precedent_sections", fake_votes)
+    monkeypatch.setattr(
+        "app.tools.precedent_rag.retrieve_precedent_sections", fake_votes
+    )
     pins = asyncio.run(lr.precedent_pins(NARRATIVE, top=3))
-    assert pins == [("Indian Penal Code", "304B"), ("Indian Penal Code", "498A"), ("Indian Penal Code", "34")]
+    assert pins == [
+        ("Indian Penal Code", "304B"),
+        ("Indian Penal Code", "498A"),
+        ("Indian Penal Code", "34"),
+    ]
 
 
 def test_classifier_decides_when_exported(monkeypatch):
     class FakeClassifier:
         def predict(self, sentences):
-            return {"Section 304B": 0.9, "Section 482": 0.7, "Section 4": 0.8, "Section 313": 0.45, "Section 302": 0.1}
+            return {
+                "Section 304B": 0.9,
+                "Section 482": 0.7,
+                "Section 4": 0.8,
+                "Section 313": 0.45,
+                "Section 302": 0.1,
+            }
 
         def decide(self, probs, max_labels=6):
-            return [(l, p) for l, p in sorted(probs.items(), key=lambda kv: -kv[1]) if p >= 0.4][:max_labels]
+            return [
+                (l, p)
+                for l, p in sorted(probs.items(), key=lambda kv: -kv[1])
+                if p >= 0.4
+            ][:max_labels]
 
     monkeypatch.setattr(lr, "_get_classifier", lambda: FakeClassifier())
     pins = asyncio.run(lr.precedent_pins(NARRATIVE))
 
-
-    assert pins == [("Indian Penal Code", "304B"), ("Code of Criminal Procedure", "482")]
+    assert pins == [
+        ("Indian Penal Code", "304B"),
+        ("Code of Criminal Procedure", "482"),
+    ]
 
 
 def test_label_to_pin_uses_the_act_judgments_cite():

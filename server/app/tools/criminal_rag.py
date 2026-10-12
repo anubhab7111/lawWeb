@@ -6,18 +6,17 @@ import json
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
-from app.text_match import any_word
-from app.tools.crime_reporter import ANIMAL_WORDS
 from typing import List, Optional
 
 import numpy as np
-
+from app.text_match import any_word
 from app.tools.base_legal_rag import (
     BaseLegalRAGSystem,
     LegalChunk,
     LegalContext,
     _extract_punishment,
 )
+from app.tools.crime_reporter import ANIMAL_WORDS
 
 
 @dataclass
@@ -332,10 +331,17 @@ DOCTRINE_MATCH_MIN_SCORE = 0.50
 
 
 OFFENCE_DOMAINS = ["criminal", "consumer_cyber_ip", "family", "civil"]
-NON_OFFENCE_ACTS = ("Code of Criminal Procedure", "Bharatiya Nagarik Suraksha Sanhita", "Indian Evidence Act",
-                    "Bharatiya Sakshya Adhiniyam")
-EXTRA_OFFENCE_ACTS = ("Information Technology Act", "Dowry Prohibition Act",
-                      "Protection of Women from Domestic Violence Act")
+NON_OFFENCE_ACTS = (
+    "Code of Criminal Procedure",
+    "Bharatiya Nagarik Suraksha Sanhita",
+    "Indian Evidence Act",
+    "Bharatiya Sakshya Adhiniyam",
+)
+EXTRA_OFFENCE_ACTS = (
+    "Information Technology Act",
+    "Dowry Prohibition Act",
+    "Protection of Women from Domestic Violence Act",
+)
 OFFENCE_POOL = 30
 
 
@@ -352,8 +358,14 @@ _IPC_CRIME_TYPES: Optional[dict] = None
 def _ipc_crime_type(section: str) -> Optional[str]:
     global _IPC_CRIME_TYPES
     if _IPC_CRIME_TYPES is None:
-        mapping = json.loads((Path(__file__).resolve().parents[1] / "data" / "crime_type_map.json").read_text())
-        _IPC_CRIME_TYPES = {k[4:]: v for k, v in mapping.items() if k.startswith("IPC:")}
+        mapping = json.loads(
+            (
+                Path(__file__).resolve().parents[1] / "data" / "crime_type_map.json"
+            ).read_text()
+        )
+        _IPC_CRIME_TYPES = {
+            k[4:]: v for k, v in mapping.items() if k.startswith("IPC:")
+        }
     return _IPC_CRIME_TYPES.get(str(section))
 
 
@@ -368,15 +380,26 @@ RELATED_CRIME_TYPES = [
 
 
 CRIME_TYPE_SECTIONS = {
-    "theft": "379", "robbery": "392", "assault": "323", "threat": "503", "fraud": "420",
-    "harassment": "354", "kidnapping": "363", "rape": "376",
-    "domestic_violence": "498A", "dowry": "304B", "property_damage": "427",
-    "land_dispute": "447", "arson": "436",
+    "theft": "379",
+    "robbery": "392",
+    "assault": "323",
+    "threat": "503",
+    "fraud": "420",
+    "harassment": "354",
+    "kidnapping": "363",
+    "rape": "376",
+    "domestic_violence": "498A",
+    "dowry": "304B",
+    "property_damage": "427",
+    "land_dispute": "447",
+    "arson": "436",
 }
 
 
 def _fits_crime_type_pair(section_type: str, crime_type: str) -> bool:
-    return section_type == crime_type or any({section_type, crime_type} <= g for g in RELATED_CRIME_TYPES)
+    return section_type == crime_type or any(
+        {section_type, crime_type} <= g for g in RELATED_CRIME_TYPES
+    )
 
 
 def _fits_crime_type(section: str, crime_type: Optional[str]) -> bool:
@@ -404,12 +427,17 @@ def _fits_report_lead(section: str, prob: float, crime_type: Optional[str]) -> b
     """A classifier lead on a short report from a merely related crime (a threat section on a rape report) needs a confident classifier."""
     if not _fits_crime_type(section, crime_type):
         return False
-    return _ipc_crime_type(section) in (None, crime_type) or crime_type in (None, "", "general") \
+    return (
+        _ipc_crime_type(section) in (None, crime_type)
+        or crime_type in (None, "", "general")
         or prob >= CLASSIFIER_RELATED_MIN_PROB
+    )
 
 
 def _is_offence_section(act_name: str, section: str) -> bool:
-    return _is_offence_act(act_name) and not (act_name == "Indian Penal Code" and str(section) in STRUCK_DOWN_IPC)
+    return _is_offence_act(act_name) and not (
+        act_name == "Indian Penal Code" and str(section) in STRUCK_DOWN_IPC
+    )
 
 
 _SUBSECTION_RE = re.compile(r"\((\d{1,2})\)\s*(?=[A-Z])")
@@ -423,9 +451,12 @@ _STATUTE_WORDS_RE = re.compile(r"\b(shall|[Ww]hoever|punished)\b")
 def _strip_page_breaks(text: str) -> str:
     pages = _GAZETTE_HEADER_RE.split(text)
     for i, page in enumerate(pages[:-1]):
-        while (m := _MARGIN_NOTE_RE.search(page)) and not _STATUTE_WORDS_RE.search(m.group(0)) \
-                and len(m.group(0).split()) <= 12:
-            page = page[:m.start()].rstrip()
+        while (
+            (m := _MARGIN_NOTE_RE.search(page))
+            and not _STATUTE_WORDS_RE.search(m.group(0))
+            and len(m.group(0).split()) <= 12
+        ):
+            page = page[: m.start()].rstrip()
         pages[i] = page
     return " ".join(p.strip() for p in pages)
 
@@ -447,14 +478,23 @@ def _section_punishment(text: str) -> str:
 
 
 _CRIMINAL_ACT_NAMES = {
-    "Indian Penal Code", "Bharatiya Nyaya Sanhita BNS", "NDPS Act", "Juvenile Justice Act",
-    "Prevention of Money Laundering Act PMLA", "Unlawful Activities Prevention Act UAPA", "Arms Act",
-    "POCSO Act", "Immigration and Foreigners Act", "SC ST Prevention of Atrocities Act",
+    "Indian Penal Code",
+    "Bharatiya Nyaya Sanhita BNS",
+    "NDPS Act",
+    "Juvenile Justice Act",
+    "Prevention of Money Laundering Act PMLA",
+    "Unlawful Activities Prevention Act UAPA",
+    "Arms Act",
+    "POCSO Act",
+    "Immigration and Foreigners Act",
+    "SC ST Prevention of Atrocities Act",
     "Prevention of Corruption Act",
 }
 
 
-CLASSIFIER_DIR = Path(__file__).resolve().parent.parent / "data" / "criminal_section_classifier"
+CLASSIFIER_DIR = (
+    Path(__file__).resolve().parent.parent / "data" / "criminal_section_classifier"
+)
 CLASSIFIER_TOP_N = 10
 CLASSIFIER_FIRST = 5
 CLASSIFIER_LONG_QUERY_WORDS = 40
@@ -466,7 +506,6 @@ REPORT_NOISE_MIN_SCORE = 0.4
 class CriminalRAGSystem(BaseLegalRAGSystem):
     """Criminal law RAG: indexes IPC, BNS, CrPC, BNSS, Evidence Act, BSA, NDPS, POCSO, SC/ST Atrocities Act, PMLA."""
 
-
     PUNISHMENT_FILTERED_ACTS = {
         "indian_penal_code_1860",
         "bharatiya_nyaya_sanhita_bns_2023",
@@ -475,7 +514,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         "sc_st_prevention_of_atrocities_act_1989",
         "prevention_of_money_laundering_act_pmla_2002",
     }
-
 
     INDEX_ALL_SECTIONS = {
         "indian_penal_code_1860",
@@ -509,14 +547,18 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 return []
             z = np.load(weights)
             bns_map = json.loads((CLASSIFIER_DIR / "bns_map.json").read_text())
-            self._classifier = (z["W"], z["b"], [str(label) for label in z["labels"]], bns_map)
+            self._classifier = (
+                z["W"],
+                z["b"],
+                [str(label) for label in z["labels"]],
+                bns_map,
+            )
         if not self._classifier:
             return []
         W, b, labels, bns_map = self._classifier
         q = self._query_vector(query)
         if q is None:
             return []
-
 
         logits = W @ q + b
         probs = np.exp(logits - logits.max())
@@ -527,8 +569,13 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 continue
             triples.append(("Indian Penal Code", labels[i], float(probs[i])))
             if labels[i] in bns_map:
-                triples.append(("Bharatiya Nyaya Sanhita", bns_map[labels[i]], float(probs[i])))
-            if sum(1 for act, _, _ in triples if act == "Indian Penal Code") >= CLASSIFIER_TOP_N:
+                triples.append(
+                    ("Bharatiya Nyaya Sanhita", bns_map[labels[i]], float(probs[i]))
+                )
+            if (
+                sum(1 for act, _, _ in triples if act == "Indian Penal Code")
+                >= CLASSIFIER_TOP_N
+            ):
                 break
         return triples
 
@@ -547,13 +594,26 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 if cids:
                     c = chunks[cids[0]]
                     m = replace(
-                        m, act_name=c.act_name, section=bns, title=f"{c.title} (formerly IPC § {m.section})",
-                        punishment=_section_punishment(self._full_section_text(c.act_name, bns, c.text)) or m.punishment,
+                        m,
+                        act_name=c.act_name,
+                        section=bns,
+                        title=f"{c.title} (formerly IPC § {m.section})",
+                        punishment=_section_punishment(
+                            self._full_section_text(c.act_name, bns, c.text)
+                        )
+                        or m.punishment,
                         definition=c.text,
                     )
                 else:
-                    m = replace(m, title=f"{m.title} (now BNS § {bns}; offences before 1 July 2024 stay under IPC)")
-            key = ("BNS", m.section) if m.act_name.startswith("Bharatiya Nyaya") else (m.act_name, m.section)
+                    m = replace(
+                        m,
+                        title=f"{m.title} (now BNS § {bns}; offences before 1 July 2024 stay under IPC)",
+                    )
+            key = (
+                ("BNS", m.section)
+                if m.act_name.startswith("Bharatiya Nyaya")
+                else (m.act_name, m.section)
+            )
             if key not in seen:
                 seen.add(key)
                 out.append(m)
@@ -577,7 +637,9 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         cids = [c for c in self._pinned_chunk_ids([(act_name, section)]) if c in chunks]
         if len(cids) < 2:
             return fallback
-        part = lambda cid: int(cid.rsplit("_p", 1)[1]) if re.search(r"_p\d+$", cid) else 0
+        part = lambda cid: (
+            int(cid.rsplit("_p", 1)[1]) if re.search(r"_p\d+$", cid) else 0
+        )
         return " ".join(chunks[c].text for c in sorted(cids, key=part))
 
     def _pinned_chunk_ids(self, sections: List[tuple]) -> List[str]:
@@ -608,7 +670,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
     def pdf_subdir(self) -> str:
         return "criminal"
 
-
     def _parse_legal_sections(
         self, full_text: str, source_file: str
     ) -> List[LegalChunk]:
@@ -619,12 +680,10 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         if stem not in self.PUNISHMENT_FILTERED_ACTS or stem in self.INDEX_ALL_SECTIONS:
             return base_chunks
 
-
         filtered: List[LegalChunk] = []
         for chunk in base_chunks:
             if chunk.has_punishment or _CHARGEABLE_PUNISHMENT_RE.search(chunk.text):
                 filtered.append(chunk)
-
 
         if len(filtered) < max(10, len(base_chunks) // 4):
             print(
@@ -634,7 +693,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
             return base_chunks
 
         return filtered
-
 
     async def initialize(self) -> bool:
         from app.tools.unified_legal_rag import get_unified_rag_system
@@ -672,7 +730,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         q = query.lower()
         terms: List[str] = []
 
-
         if any_word(q, ["stabbed", "slash", "cut with knife", "blade"]):
             terms.extend(["grievous hurt", "hurt", "dangerous weapon"])
         if any_word(q, ["beaten", "punched", "hit", "physically assaulted"]):
@@ -680,28 +737,25 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         if any_word(q, ["killed", "murdered", "dead", "death"]):
             terms.extend(["culpable homicide", "murder", "causing death"])
 
-
         if any_word(q, ["rape", "sexual assault", "molest"]):
             terms.extend(["rape", "sexual intent", "outraging modesty"])
         if any_word(q, ["stalking", "following woman", "monitor woman"]):
             terms.extend(["stalking", "following woman"])
 
-
         if any_word(q, ["kidnap", "abduct", "hostage", "ransom"]):
             terms.extend(["kidnapping", "abduction", "ransom"])
 
-
         if any_word(q, ["dowry", "498a", "cruelty by husband"]):
             terms.extend(["cruelty by husband", "dowry death", "abetment of suicide"])
-
 
         if any_word(q, ["forged", "forgery", "forge", "fake document"]):
             terms.extend(["forgery", "using forged document"])
         if any_word(q, ["cheated me", "cheated out of", "deceived me into"]):
             terms.extend(["cheating", "dishonestly inducing delivery of property"])
 
-
-        if any_word(q, [
+        if any_word(
+            q,
+            [
                 "whatsapp",
                 "electronic evidence",
                 "digital evidence",
@@ -709,7 +763,7 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 "chats admissible",
                 "cctv",
                 "call recording",
-            ]
+            ],
         ):
             terms.extend(
                 [
@@ -719,21 +773,16 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-
         if any_word(q, ["fir", "police complaint", "cognizable", "arrest"]):
             terms.extend(["cognizable offence", "complaint", "investigation"])
-
 
         if any_word(q, ["bail", "anticipatory bail", "custody"]):
             terms.extend(["bail", "custody", "arrest"])
 
-
         if any_word(q, ["set fire", "arson", "burnt my house"]):
             terms.extend(["arson", "fire to property"])
 
-
-        if any_word(q, ["broke into", "illegal entry", "trespassed into house"]
-        ):
+        if any_word(q, ["broke into", "illegal entry", "trespassed into house"]):
             terms.extend(["criminal trespass", "house-breaking"])
 
         terms.extend(self._doctrine_terms(query))
@@ -752,15 +801,24 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
         if self._doctrine_cache is None:
             names = list(_DOCTRINE_DESCRIPTIONS)
             vecs = np.array(
-                embeddings.embed_documents([_DOCTRINE_DESCRIPTIONS[n][0] for n in names])
+                embeddings.embed_documents(
+                    [_DOCTRINE_DESCRIPTIONS[n][0] for n in names]
+                )
             )
-            self._doctrine_cache = (names, vecs / np.linalg.norm(vecs, axis=1, keepdims=True))
+            self._doctrine_cache = (
+                names,
+                vecs / np.linalg.norm(vecs, axis=1, keepdims=True),
+            )
         names, doc_vecs = self._doctrine_cache
         q = self._query_vector(query)
         if q is None:
             return []
         scores = doc_vecs @ q
-        return [name for name, score in zip(names, scores) if score >= DOCTRINE_MATCH_MIN_SCORE]
+        return [
+            name
+            for name, score in zip(names, scores)
+            if score >= DOCTRINE_MATCH_MIN_SCORE
+        ]
 
     def _doctrine_terms(self, query: str) -> List[str]:
         """Expansion terms for doctrine families whose description the query matches."""
@@ -801,7 +859,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
 
         return " ".join(parts)
 
-
     async def retrieve_sections(
         self,
         query: str,
@@ -837,26 +894,42 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 k=OFFENCE_POOL if offences_only else k * 2,
                 min_score=0.0,
                 domains=OFFENCE_DOMAINS if offences_only else [self.domain_name],
-                extra_candidates=self._pinned_chunk_ids([(a, s) for a, s, _ in classified]),
+                extra_candidates=self._pinned_chunk_ids(
+                    [(a, s) for a, s, _ in classified]
+                ),
             )
             if offences_only:
-                chunks = [c for c in chunks if _is_offence_section(c.act_name, c.section_number)]
-
+                chunks = [
+                    c
+                    for c in chunks
+                    if _is_offence_section(c.act_name, c.section_number)
+                ]
 
             short = len(query.split()) < CLASSIFIER_LONG_QUERY_WORDS
             lead_sections = [
-                (a, s) for a, s, p in classified
-                if a == "Indian Penal Code" and (not short or p >= CLASSIFIER_SHORT_MIN_PROB)
+                (a, s)
+                for a, s, p in classified
+                if a == "Indian Penal Code"
+                and (not short or p >= CLASSIFIER_SHORT_MIN_PROB)
                 and (not offences_only or _is_offence_section(a, s))
-                and not (offences_only and short and not _fits_report_lead(s, p, crime_type))
+                and not (
+                    offences_only and short and not _fits_report_lead(s, p, crime_type)
+                )
             ][:CLASSIFIER_FIRST]
 
-
-            core = CRIME_TYPE_SECTIONS.get(crime_type) if offences_only and short else None
-            if core and crime_type == "property_damage" and any_word(query, ANIMAL_WORDS):
+            core = (
+                CRIME_TYPE_SECTIONS.get(crime_type) if offences_only and short else None
+            )
+            if (
+                core
+                and crime_type == "property_damage"
+                and any_word(query, ANIMAL_WORDS)
+            ):
                 core = "429"
             if core and ("Indian Penal Code", core) not in lead_sections:
-                lead_sections = [("Indian Penal Code", core)] + lead_sections[:CLASSIFIER_FIRST - 1]
+                lead_sections = [("Indian Penal Code", core)] + lead_sections[
+                    : CLASSIFIER_FIRST - 1
+                ]
             typed_report = offences_only and short and crime_type not in ("", "general")
             reranked_score = {(c.act_name, c.section_number): c.score for c in chunks}
             lead = []
@@ -864,8 +937,14 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 cids = sorted(self._pinned_chunk_ids([pair]))
                 if cids:
                     chunk = unified._chunks[cids[0]]
-                    lead.append(replace(chunk, score=reranked_score.get(
-                        (chunk.act_name, chunk.section_number), 0.5)))
+                    lead.append(
+                        replace(
+                            chunk,
+                            score=reranked_score.get(
+                                (chunk.act_name, chunk.section_number), 0.5
+                            ),
+                        )
+                    )
             chunks = lead + chunks
             lead_rank = {(c.act_name, c.section_number): i for i, c in enumerate(lead)}
 
@@ -878,7 +957,6 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                     continue
                 seen.add((chunk.act_name, sec_num))
 
-
                 requires_punishment = (
                     Path(chunk.source_file).stem.lower()
                     in self.PUNISHMENT_FILTERED_ACTS
@@ -887,13 +965,22 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 full_text = self._full_section_text(chunk.act_name, sec_num, chunk.text)
                 punishment = _section_punishment(full_text) or (
                     chunk.text[:250]
-                    if chunk.has_punishment or _CHARGEABLE_PUNISHMENT_RE.search(chunk.text)
+                    if chunk.has_punishment
+                    or _CHARGEABLE_PUNISHMENT_RE.search(chunk.text)
                     else ""
                 )
                 is_lead = (chunk.act_name, sec_num) in lead_rank
-                if requires_punishment and not is_lead and (not punishment or len(punishment) < 10):
+                if (
+                    requires_punishment
+                    and not is_lead
+                    and (not punishment or len(punishment) < 10)
+                ):
                     continue
-                if not is_lead and typed_report and not self._fits_report(chunk, crime_type):
+                if (
+                    not is_lead
+                    and typed_report
+                    and not self._fits_report(chunk, crime_type)
+                ):
                     continue
 
                 matches.append(
@@ -914,7 +1001,10 @@ class CriminalRAGSystem(BaseLegalRAGSystem):
                 )
 
             matches.sort(
-                key=lambda m: (lead_rank.get((m.act_name, m.section), len(lead_rank)), -m.confidence)
+                key=lambda m: (
+                    lead_rank.get((m.act_name, m.section), len(lead_rank)),
+                    -m.confidence,
+                )
             )
             if offences_only:
                 matches = self._prefer_bns(matches)

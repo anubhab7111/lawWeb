@@ -1,6 +1,6 @@
 """Extended ground-truth entries covering the domains added by the unified all-domain RAG index (family, labour, corporate, tax, environment, consumer, cyber/IP, election,..."""
-EXTENDED_GROUND_TRUTH = [
 
+EXTENDED_GROUND_TRUTH = [
     {
         "query": "What are the grounds for divorce under the Hindu Marriage Act?",
         "relevant_ipc_sections": [],
@@ -57,7 +57,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "family_law",
     },
-
     {
         "query": "How much maternity leave is a woman employee entitled to in India?",
         "relevant_ipc_sections": [],
@@ -109,7 +108,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "labour_law",
     },
-
     {
         "query": "How can a financial creditor initiate corporate insolvency proceedings against a defaulting company?",
         "relevant_ipc_sections": [],
@@ -163,7 +161,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "corporate_law",
     },
-
     {
         "query": "What are the conditions for claiming input tax credit under GST?",
         "relevant_ipc_sections": [],
@@ -217,7 +214,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "tax_law",
     },
-
     {
         "query": "What powers does the Central Government have under the Environment Protection Act to control pollution?",
         "relevant_ipc_sections": [],
@@ -245,7 +241,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "environment_law",
     },
-
     {
         "query": "How do I file a consumer complaint for a defective product and what relief can I get?",
         "relevant_ipc_sections": [],
@@ -274,7 +269,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "consumer_law",
     },
-
     {
         "query": "What is the punishment for identity theft and cheating by personation online?",
         "relevant_ipc_sections": [],
@@ -328,7 +322,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "ip_law",
     },
-
     {
         "query": "What constitutes a corrupt practice in Indian elections?",
         "relevant_ipc_sections": [],
@@ -357,7 +350,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "election_law",
     },
-
     {
         "query": "Can a homebuyer get a refund with interest if the builder delays possession under RERA?",
         "relevant_ipc_sections": [],
@@ -385,7 +377,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "property_law",
     },
-
     {
         "query": "On what grounds can an arbitral award be set aside by a court?",
         "relevant_ipc_sections": [],
@@ -416,7 +407,6 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "commercial_law",
     },
-
     {
         "query": "What are the functions and powers of the National Human Rights Commission?",
         "relevant_ipc_sections": [],
@@ -445,12 +435,15 @@ EXTENDED_GROUND_TRUTH = [
         ),
         "domain": "human_rights_law",
     },
-
     {
         "query": "What is the punishment for abetment of a crime in India?",
         "relevant_ipc_sections": [],
         "relevant_sections": ["109"],
-        "relevant_keywords": ["Section 109", "abetment", "punishment provided for the offence"],
+        "relevant_keywords": [
+            "Section 109",
+            "abetment",
+            "punishment provided for the offence",
+        ],
         "expected_acts": ["Indian Penal Code"],
         "reference_answer": (
             "Under Section 109 of the Indian Penal Code, abetment of an offence "

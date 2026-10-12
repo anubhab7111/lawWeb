@@ -32,7 +32,9 @@ def test_deadline_is_not_violence():
 def test_civil_expander_no_false_triggers():
     civil = CivilRAGSystem()
     assert "RTI" not in civil._preprocess_query("What is a first information report?")
-    assert "mortgage" not in civil._preprocess_query("What is the criminal charge for theft?")
+    assert "mortgage" not in civil._preprocess_query(
+        "What is the criminal charge for theft?"
+    )
 
 
 def test_criminal_expander_no_false_fir():
@@ -59,4 +61,7 @@ def test_citation_act_hint_across_abbreviated_dot():
     occ = iter_citation_occurrences(
         "Under Sec. 420 of the IPC the offence is cheating. Section 438 of the CrPC gives bail."
     )
-    assert [o.act_hint for o in occ] == ["Indian Penal Code", "Code of Criminal Procedure"]
+    assert [o.act_hint for o in occ] == [
+        "Indian Penal Code",
+        "Code of Criminal Procedure",
+    ]

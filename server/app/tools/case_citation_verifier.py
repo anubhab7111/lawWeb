@@ -8,7 +8,6 @@ from typing import List, Tuple
 
 from app.tools.case_law_rag import normalize_case_name
 
-
 _CONN = r"(?:of|for|the|and|de|van|von)"
 _WORD = r"[A-Z][A-Za-z.&'’-]*"
 _PARTY_RE = rf"{_WORD}(?:\s+(?:{_WORD}|{_CONN})){{0,6}}"
@@ -60,7 +59,9 @@ def verify_case_citations(answer: str, case_rag) -> CaseCitationReport:
     for raw, name in iter_case_citations(answer):
         found = case_rag.find_case(name)
         report.checks.append(
-            CaseCitationCheck(raw=raw, name=name, status="verified" if found else "unverified")
+            CaseCitationCheck(
+                raw=raw, name=name, status="verified" if found else "unverified"
+            )
         )
     return report
 
@@ -69,7 +70,11 @@ def case_verification_footer(report: CaseCitationReport) -> str:
     """Advisory footer for unverified case-name citations."""
     if not report.unverified:
         return ""
-    lines = ["", "---", "⚠️ **Case citation check** (against the indexed case-law corpus):"]
+    lines = [
+        "",
+        "---",
+        "⚠️ **Case citation check** (against the indexed case-law corpus):",
+    ]
     for c in report.unverified:
         lines.append(
             f"- {c.name}: could not be verified against the indexed case-law corpus. "
@@ -83,7 +88,22 @@ _CASE_NAME_RE = re.compile(
     rf"[*_]{{0,2}}(?P<p1>{_NAME_PARTY_RE})\s+(?:v\.?|vs\.?|versus)\s+(?P<p2>{_NAME_PARTY_RE})[*_]{{0,2}}"
     rf"(?:\s*\(\d{{4}}\))?"
 )
-_LEAD_INS = frozenset({"in", "see", "as", "per", "under", "also", "cf", "cf.", "following", "refer", "the", "and"})
+_LEAD_INS = frozenset(
+    {
+        "in",
+        "see",
+        "as",
+        "per",
+        "under",
+        "also",
+        "cf",
+        "cf.",
+        "following",
+        "refer",
+        "the",
+        "and",
+    }
+)
 _TRAILING = frozenset({"of", "for", "the", "and", "de", "van", "von", "&"})
 
 
@@ -95,7 +115,11 @@ def _case_name(m: "re.Match") -> str:
     while len(p2) > 1 and p2[-1].lower() in _TRAILING:
         p2 = p2[:-1]
     return f"{' '.join(p1)} v. {' '.join(p2)}"
-_CASE_LAW_LABEL_RE = re.compile(r"^(\s*(?:[-*•]\s*)?(?:\*\*)?Case Law:?(?:\*\*)?:?\s*)", re.IGNORECASE)
+
+
+_CASE_LAW_LABEL_RE = re.compile(
+    r"^(\s*(?:[-*•]\s*)?(?:\*\*)?Case Law:?(?:\*\*)?:?\s*)", re.IGNORECASE
+)
 
 _SENTENCE_END_RE = re.compile(r"(?<=[.;])(?<!\bv\.)(?<!\bvs\.)(?<![\s.][A-Z]\.)\s+")
 NO_VERIFIED_CASE = "None in our case database"
@@ -106,7 +130,11 @@ def strip_unverified_cases(text: str, find_case) -> Tuple[str, List[str]]:
     removed: List[str] = []
 
     def unverified(fragment: str) -> bool:
-        bad = [name for name in map(_case_name, _CASE_NAME_RE.finditer(fragment)) if find_case(name) is None]
+        bad = [
+            name
+            for name in map(_case_name, _CASE_NAME_RE.finditer(fragment))
+            if find_case(name) is None
+        ]
         removed.extend(bad)
         return bool(bad)
 
@@ -115,10 +143,14 @@ def strip_unverified_cases(text: str, find_case) -> Tuple[str, List[str]]:
         if line.lstrip().startswith("|"):
             cells = line.split("|")
             line = "|".join(" — " if unverified(c) else c for c in cells)
-        elif (label := _CASE_LAW_LABEL_RE.match(line)) and unverified(line[label.end():]):
+        elif (label := _CASE_LAW_LABEL_RE.match(line)) and unverified(
+            line[label.end() :]
+        ):
             line = label.group(1) + NO_VERIFIED_CASE
         elif _CASE_NAME_RE.search(line):
-            kept = [sent for sent in _SENTENCE_END_RE.split(line) if not unverified(sent)]
+            kept = [
+                sent for sent in _SENTENCE_END_RE.split(line) if not unverified(sent)
+            ]
             line = " ".join(kept)
             if not line.strip() or line.strip() in ("-", "*", "•"):
                 continue

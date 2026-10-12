@@ -20,21 +20,17 @@ def _make_sentinel(n: int) -> str:
 
 
 _PROTECTED_PATTERNS: list[re.Pattern[str]] = [
-
     re.compile(r"\bAIR\s+\d{4}\s+[A-Z]{2,}\s+\d+\b"),
     re.compile(r"\(\d{4}\)\s+\d+\s+[A-Z]{2,}(?:\s+OnLine)?\s+\d+\b"),
     re.compile(r"\b\d{4}\s+[A-Z]{2,}\s+OnLine\s+[A-Z]{2,}\s+\d+\b"),
-
     re.compile(
         r"\b[A-Z][A-Za-z.&'-]+(?:\s+[A-Z][A-Za-z.&'-]+){0,5}\s+"
         r"(?:v\.?|vs\.?|versus)\s+"
         r"[A-Z][A-Za-z.&'-]+(?:\s+[A-Za-z.&'-]+){0,6}"
     ),
-
     re.compile(
         r"\b(?:[A-Z][A-Za-z]+\s+){1,6}(?:Act|Code|Sanhita|Adhiniyam),?\s+\d{4}\b"
     ),
-
     re.compile(
         r"\b(?:Sections?|Secs?\.?|Articles?|Arts?\.?|Rules?|Orders?|Clauses?|"
         r"Sub-?sections?)\s+\d+[A-Za-z]*(?:\(\w+\))*\b",
@@ -42,9 +38,7 @@ _PROTECTED_PATTERNS: list[re.Pattern[str]] = [
     ),
     re.compile(r"§\s?\d+[A-Za-z]*(?:\(\w+\))*"),
     re.compile(r"\bs\.\s?\d+[A-Za-z]*\b"),
-
     re.compile(r"\b(?:IPC|CrPC|CPC|BNS|BNSS|BSA|POCSO|NDPS|SEBI|RBI|GST|PMLA)\b"),
-
     re.compile(r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b"),
     re.compile(
         r"\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|"
@@ -59,7 +53,6 @@ def mask(text: str) -> tuple[str, dict[str, str]]:
     counter = 0
 
     for pattern in _PROTECTED_PATTERNS:
-
 
         def _replace(m: re.Match[str]) -> str:
             nonlocal counter
@@ -84,7 +77,6 @@ def unmask(text: str, mapping: dict[str, str]) -> str:
 
     for token, original in mapping.items():
         text = text.replace(token, original)
-
 
     def _resolve(m: re.Match[str]) -> str:
         return mapping.get(m.group(0), "")

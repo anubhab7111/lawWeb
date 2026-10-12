@@ -60,7 +60,12 @@ def _is_empty_dir(path: Path) -> bool:
 
 
 def init_layout(root: Path) -> Dict[str, List[str]]:
-    actions: Dict[str, List[str]] = {"created": [], "moved": [], "removed": [], "kept": []}
+    actions: Dict[str, List[str]] = {
+        "created": [],
+        "moved": [],
+        "removed": [],
+        "kept": [],
+    }
     for name in TOP_LEVEL_DIRS:
         target = root / name
         if not target.exists():
@@ -101,7 +106,11 @@ def verify(root: Path, deep: bool = False) -> List[str]:
                 problems.append(f"empty directory: {path.relative_to(root)}")
 
     sc = root / "judgments" / "sc"
-    for manifest in sorted((sc / "manifest").glob("year=*.jsonl")) if (sc / "manifest").is_dir() else []:
+    for manifest in (
+        sorted((sc / "manifest").glob("year=*.jsonl"))
+        if (sc / "manifest").is_dir()
+        else []
+    ):
         year = manifest.stem.split("=")[1]
         rows = [json.loads(line) for line in manifest.open() if line.strip()]
         pdf_dir = sc / "pdf" / f"year={year}"
@@ -114,12 +123,18 @@ def verify(root: Path, deep: bool = False) -> List[str]:
         if deep:
             for r in rows:
                 p = pdf_dir / r["name"]
-                if p.exists() and hashlib.sha256(p.read_bytes()).hexdigest() != r["sha256"]:
+                if (
+                    p.exists()
+                    and hashlib.sha256(p.read_bytes()).hexdigest() != r["sha256"]
+                ):
                     problems.append(f"sc {year}: sha256 mismatch: {r['name']}")
 
     legacy = root / "manifest" / "legacy_migration.jsonl"
     if legacy.exists():
-        quarantined = {p.name.removesuffix(".reason.json") for p in (root / "quarantine").rglob("*.reason.json")}
+        quarantined = {
+            p.name.removesuffix(".reason.json")
+            for p in (root / "quarantine").rglob("*.reason.json")
+        }
         for line in legacy.open():
             r = json.loads(line)
             p = root / r["dst"]
@@ -133,17 +148,23 @@ def verify(root: Path, deep: bool = False) -> List[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--init", action="store_true")
     parser.add_argument("--verify", action="store_true")
-    parser.add_argument("--deep", action="store_true", help="re-hash files against manifests")
+    parser.add_argument(
+        "--deep", action="store_true", help="re-hash files against manifests"
+    )
     args = parser.parse_args()
     root = require_corpus()
 
     if args.init:
         for kind, names in init_layout(root).items():
             if names:
-                print(f"[layout] {kind}: {', '.join(names[:12])}{' ...' if len(names) > 12 else ''} ({len(names)})")
+                print(
+                    f"[layout] {kind}: {', '.join(names[:12])}{' ...' if len(names) > 12 else ''} ({len(names)})"
+                )
     if args.verify:
         problems = verify(root, deep=args.deep)
         for p in problems:

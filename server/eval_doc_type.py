@@ -19,25 +19,46 @@ CHARS = 2000
 PER_TYPE, REFS = 15, 5
 GATE = 0.90
 SYNTHETIC_TYPES = {
-    "sale_deed": "Sale Deed", "agreement_to_sell": "Agreement to Sell", "power_of_attorney": "Power of Attorney",
-    "rent_agreement": "Rent Agreement", "will": "Will / Testament", "partnership_deed": "Partnership Deed",
-    "affidavit": "Affidavit", "bail_application": "Bail Application", "complaint": "Complaint (CrPC)",
-    "notice": "Notice (CrPC/CPC)", "chargesheet": "Chargesheet",
+    "sale_deed": "Sale Deed",
+    "agreement_to_sell": "Agreement to Sell",
+    "power_of_attorney": "Power of Attorney",
+    "rent_agreement": "Rent Agreement",
+    "will": "Will / Testament",
+    "partnership_deed": "Partnership Deed",
+    "affidavit": "Affidavit",
+    "bail_application": "Bail Application",
+    "complaint": "Complaint (CrPC)",
+    "notice": "Notice (CrPC/CPC)",
+    "chargesheet": "Chargesheet",
 }
 
 
 def synthetic_docs(stem: str) -> list:
-    return [d.strip() for d in (SYNTHETIC_DIR / f"{stem}.txt").read_text().split("\n=====\n") if d.strip()]
+    return [
+        d.strip()
+        for d in (SYNTHETIC_DIR / f"{stem}.txt").read_text().split("\n=====\n")
+        if d.strip()
+    ]
 
 
 def build_gold() -> None:
     rows = []
     for stem, doc_type in SYNTHETIC_TYPES.items():
-        rows += [{"id": f"{stem}:{k}", "source": "synthetic", "type": doc_type} for k in range(len(synthetic_docs(stem)))]
-    judgments = sorted(str(p.relative_to(JUDGMENTS)) for p in JUDGMENTS.glob("year=*/*.txt.gz"))
-    rows += [{"id": j, "source": "sc_judgment", "type": "Court Order / Judgment"}
-             for j in random.Random(17).sample(judgments, PER_TYPE)]
-    rows += [{"id": n, "source": "icdar_fir", "type": "FIR"} for n in sorted(json.loads(FIR_OCR.read_text()))[:PER_TYPE]]
+        rows += [
+            {"id": f"{stem}:{k}", "source": "synthetic", "type": doc_type}
+            for k in range(len(synthetic_docs(stem)))
+        ]
+    judgments = sorted(
+        str(p.relative_to(JUDGMENTS)) for p in JUDGMENTS.glob("year=*/*.txt.gz")
+    )
+    rows += [
+        {"id": j, "source": "sc_judgment", "type": "Court Order / Judgment"}
+        for j in random.Random(17).sample(judgments, PER_TYPE)
+    ]
+    rows += [
+        {"id": n, "source": "icdar_fir", "type": "FIR"}
+        for n in sorted(json.loads(FIR_OCR.read_text()))[:PER_TYPE]
+    ]
     by_type = collections.defaultdict(list)
     for r in rows:
         by_type[r["type"]].append(r)
@@ -46,11 +67,16 @@ def build_gold() -> None:
         for k, r in enumerate(rs):
             r["split"] = "dev" if k < REFS else "test"
     GOLD.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
-    print(f"wrote {len(rows)} rows", collections.Counter((r["type"], r["split"]) for r in rows))
+    print(
+        f"wrote {len(rows)} rows",
+        collections.Counter((r["type"], r["split"]) for r in rows),
+    )
 
 
 def load_gold(split: str) -> list:
-    rows = [r for r in map(json.loads, GOLD.read_text().splitlines()) if r["split"] == split]
+    rows = [
+        r for r in map(json.loads, GOLD.read_text().splitlines()) if r["split"] == split
+    ]
     fir = json.loads(FIR_OCR.read_text())
     for r in rows:
         if r["source"] == "synthetic":
@@ -66,7 +92,6 @@ def load_gold(split: str) -> list:
 
 async def embed(texts: list):
     import numpy as np
-
     from app.tools.base_legal_rag import _get_shared_embeddings
 
     emb = await _get_shared_embeddings()
@@ -76,13 +101,16 @@ async def embed(texts: list):
 
 def fit() -> None:
     import numpy as np
-
     from app.tools.document_classifier import REFERENCE_PATH
 
     rows = load_gold("dev")
     X = asyncio.run(embed([r["text"] for r in rows]))
     REFERENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(REFERENCE_PATH, X=X.astype(np.float32), labels=np.array([r["type"] for r in rows]))
+    np.savez(
+        REFERENCE_PATH,
+        X=X.astype(np.float32),
+        labels=np.array([r["type"] for r in rows]),
+    )
     print(f"saved {len(rows)} reference vectors to {REFERENCE_PATH}")
 
 
@@ -111,7 +139,10 @@ def score(system: str, split: str) -> int:
     src = collections.defaultdict(list)
     for r, good in zip(rows, ok):
         src[r["source"]].append(good)
-    print("  by source:", {s: f"{sum(v) / len(v):.3f} (n={len(v)})" for s, v in src.items()})
+    print(
+        "  by source:",
+        {s: f"{sum(v) / len(v):.3f} (n={len(v)})" for s, v in src.items()},
+    )
     if split == "test":
         print(f"\nGATE {'PASS' if acc >= GATE else 'FAIL'}: {acc:.3f} vs {GATE}")
         return 0 if acc >= GATE else 1

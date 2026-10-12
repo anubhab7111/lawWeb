@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 ISO_TO_INDICTRANS2: dict[str, str] = {
     "hi": "hin_Deva",
     "bn": "ben_Beng",

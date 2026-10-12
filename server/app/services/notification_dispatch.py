@@ -4,15 +4,16 @@ import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlmodel import Session, select
-
 from app.config import get_settings
 from app.db.models import Notification, NotificationPreference
 from app.services.email_client import send_email
 from app.services.fcm_client import PushTokenInvalid, push_configured, send_push
+from sqlmodel import Session, select
 
 
-def _channel_enabled(prefs: Optional[NotificationPreference], channel: str, type_: str) -> bool:
+def _channel_enabled(
+    prefs: Optional[NotificationPreference], channel: str, type_: str
+) -> bool:
     if prefs is None:
         return channel == "in_app"
     override = prefs.type_overrides.get(type_, {})
@@ -56,7 +57,9 @@ def send_notification(
         if not _channel_enabled(prefs, channel, type_):
             continue
         if channel == "email" and not settings.smtp_host:
-            print(f"[Notify] SMTP not configured — skipping email '{title}' for {user.email}")
+            print(
+                f"[Notify] SMTP not configured — skipping email '{title}' for {user.email}"
+            )
             continue
         if channel == "push" and not (prefs and prefs.fcm_token and push_configured()):
             continue

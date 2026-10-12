@@ -18,9 +18,13 @@ from app.ingest.judgment_clean import (
 
 _PAGE = re.compile(r'<page width="([\d.]+)" height="([\d.]+)">(.*?)</page>', re.S)
 _LINE = re.compile(
-    r'<line xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</line>', re.S
+    r'<line xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</line>',
+    re.S,
 )
-_WORD = re.compile(r'<word xMin="([\d.]+)" yMin="[\d.]+" xMax="([\d.]+)" yMax="[\d.]+">(.*?)</word>', re.S)
+_WORD = re.compile(
+    r'<word xMin="([\d.]+)" yMin="[\d.]+" xMax="([\d.]+)" yMax="[\d.]+">(.*?)</word>',
+    re.S,
+)
 _REF_END = re.compile(r"\(\d+(?:-[A-H])+[)\]\[]?\s*$")
 
 HEADER_BAND = 0.105
@@ -72,7 +76,10 @@ def parse_bbox_xml(xml: str) -> List[Page]:
 def extract_pages(pdf_path: str, timeout: int = 240) -> List[Page]:
     xml = subprocess.run(
         ["pdftotext", "-bbox-layout", pdf_path, "-"],
-        capture_output=True, text=True, timeout=timeout, check=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=True,
     ).stdout
     return parse_bbox_xml(xml)
 
@@ -98,7 +105,9 @@ def _body_edges(page: Page) -> Optional[Tuple[float, float]]:
     return _percentile(lefts, 0.2), _percentile(rights, 0.8)
 
 
-def _strip_margin_words(line: Line, edges: Optional[Tuple[float, float]], page: Page) -> Optional[Line]:
+def _strip_margin_words(
+    line: Line, edges: Optional[Tuple[float, float]], page: Page
+) -> Optional[Line]:
     if edges:
         left, right = edges
 
@@ -110,7 +119,9 @@ def _strip_margin_words(line: Line, edges: Optional[Tuple[float, float]], page: 
         def outside(w: Word) -> bool:
             return w[0] > 0.85 * page.width or w[1] < 0.1 * page.width
 
-    words = [w for w in line.words if not (len(w[2]) <= MARGIN_WORD_MAX_LEN and outside(w))]
+    words = [
+        w for w in line.words if not (len(w[2]) <= MARGIN_WORD_MAX_LEN and outside(w))
+    ]
     if edges:
         words = [w for w in words if w[1] >= edges[0] - 25]
     if not words:
@@ -127,11 +138,18 @@ def page_lines(page: Page, first_page: bool) -> List[Line]:
         if line is None:
             continue
         text = line.text
-        if not first_page and len(text) < 90 and (
-            line.y0 < HEADER_BAND * page.height or line.y1 > FOOTER_BAND * page.height
+        if (
+            not first_page
+            and len(text) < 90
+            and (
+                line.y0 < HEADER_BAND * page.height
+                or line.y1 > FOOTER_BAND * page.height
+            )
         ):
             continue
-        if _PAGE_NUMBER.match(text) or (len(text) < 110 and _RUNNING_HEADER.search(text)):
+        if _PAGE_NUMBER.match(text) or (
+            len(text) < 110 and _RUNNING_HEADER.search(text)
+        ):
             continue
         kept.append(line)
     return kept

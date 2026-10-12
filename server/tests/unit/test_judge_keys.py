@@ -2,9 +2,8 @@ import asyncio
 import json
 from datetime import date
 
-import httpx
-
 import app.metrics.llm_judge as lj
+import httpx
 
 
 class FakeResponse:
@@ -18,7 +17,11 @@ class FakeResponse:
             raise httpx.HTTPStatusError("err", request=None, response=self)
 
     def json(self):
-        return {"choices": [{"message": {"content": self._content}, "finish_reason": "stop"}]}
+        return {
+            "choices": [
+                {"message": {"content": self._content}, "finish_reason": "stop"}
+            ]
+        }
 
 
 def make_judge(monkeypatch, tmp_path, responses_by_key, usage=None):
@@ -56,7 +59,9 @@ def make_judge(monkeypatch, tmp_path, responses_by_key, usage=None):
 
 def test_alternate_key_takes_over_at_the_daily_limit(monkeypatch, tmp_path):
     judge, seen, path = make_judge(
-        monkeypatch, tmp_path, {"primary": lambda: FakeResponse(200), "alt": lambda: FakeResponse(200)},
+        monkeypatch,
+        tmp_path,
+        {"primary": lambda: FakeResponse(200), "alt": lambda: FakeResponse(200)},
         usage={"date": date.today().isoformat(), "count": 2},
     )
     raw, _, reason = asyncio.run(judge._post_chat("p"))
@@ -68,7 +73,9 @@ def test_alternate_key_takes_over_at_the_daily_limit(monkeypatch, tmp_path):
 
 def test_alternate_key_takes_over_after_a_quota_refusal(monkeypatch, tmp_path):
     judge, seen, _ = make_judge(
-        monkeypatch, tmp_path, {"primary": lambda: FakeResponse(429), "alt": lambda: FakeResponse(200)},
+        monkeypatch,
+        tmp_path,
+        {"primary": lambda: FakeResponse(429), "alt": lambda: FakeResponse(200)},
     )
     raw, _, reason = asyncio.run(judge._post_chat("p"))
     assert raw == "{}" and seen == ["primary", "alt"]
@@ -79,8 +86,13 @@ def test_alternate_key_takes_over_after_a_quota_refusal(monkeypatch, tmp_path):
 def test_every_key_spent_returns_a_failure_without_calling(monkeypatch, tmp_path):
     today = date.today().isoformat()
     judge, seen, _ = make_judge(
-        monkeypatch, tmp_path, {"primary": lambda: FakeResponse(200), "alt": lambda: FakeResponse(200)},
-        usage={"date": today, "by_key": {lj._key_id("primary"): 2, lj._key_id("alt"): 2}},
+        monkeypatch,
+        tmp_path,
+        {"primary": lambda: FakeResponse(200), "alt": lambda: FakeResponse(200)},
+        usage={
+            "date": today,
+            "by_key": {lj._key_id("primary"): 2, lj._key_id("alt"): 2},
+        },
     )
     raw, _, reason = asyncio.run(judge._post_chat("p"))
     assert raw is None and "budget" in reason and seen == []

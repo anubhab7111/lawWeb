@@ -3,10 +3,9 @@
 import logging
 from typing import Any, Optional
 
+from app.config import get_settings
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
-
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,9 @@ _pool: Any = None
 
 def _conninfo(database_url: str) -> str:
     """libpq connection string from the app's DATABASE_URL."""
-    return database_url.split("?", 1)[0].replace("postgresql+psycopg://", "postgresql://", 1)
+    return database_url.split("?", 1)[0].replace(
+        "postgresql+psycopg://", "postgresql://", 1
+    )
 
 
 async def open_postgres_saver(database_url: str) -> tuple:

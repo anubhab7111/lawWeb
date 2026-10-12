@@ -2,12 +2,11 @@
 
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import Session, select
-
 from app.db.engine import get_engine
 from app.db.models import CaseEvent, Notification, SavedCase
 from app.services.notification_dispatch import send_notification_async
 from app.tools.case_sync import sync_case_events
+from sqlmodel import Session, select
 
 _STALE_AFTER = timedelta(hours=6)
 
@@ -24,7 +23,8 @@ async def run_poll_cause_lists_and_sync_cases() -> None:
         cutoff = datetime.now(timezone.utc) - _STALE_AFTER
         stale_cases = session.exec(
             select(SavedCase).where(
-                (SavedCase.last_synced_at.is_(None)) | (SavedCase.last_synced_at < cutoff)
+                (SavedCase.last_synced_at.is_(None))
+                | (SavedCase.last_synced_at < cutoff)
             )
         ).all()
 
@@ -54,7 +54,6 @@ async def run_send_hearing_reminders() -> None:
         for _label, delta, notif_type in _REMINDER_WINDOWS:
             target = now + delta
 
-
             window_start = target - timedelta(minutes=30)
             window_end = target
 
@@ -67,7 +66,6 @@ async def run_send_hearing_reminders() -> None:
             ).all()
 
             for event in upcoming:
-
 
                 already_sent = session.exec(
                     select(Notification).where(

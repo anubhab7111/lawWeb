@@ -8,7 +8,6 @@ from typing import List, Tuple
 
 from app.tools.legal_query_parser import ACT_HINTS
 
-
 _CITE_RE = re.compile(
     r"(?:\b(?:sections?|secs?\.?)\s+(\d{1,4}[A-Z]{0,2})(?:\(\d+[a-z]?\))?\b"
     r"|\bu/s\s*(\d{1,4}[A-Z]{0,2})\b"
@@ -18,7 +17,9 @@ _CITE_RE = re.compile(
 
 
 _NUMBER_RE = re.compile(r"\d{1,4}[A-Za-z]{0,2}")
-_CITE_LIST_RE = re.compile(r"(?:\s*(?:,|and|&)\s*\d{1,4}[A-Za-z]{0,2}(?:\(\d+[a-z]?\))?)+")
+_CITE_LIST_RE = re.compile(
+    r"(?:\s*(?:,|and|&)\s*\d{1,4}[A-Za-z]{0,2}(?:\(\d+[a-z]?\))?)+"
+)
 
 
 _ACT_ALIASES = sorted(ACT_HINTS.items(), key=lambda kv: -len(kv[0]))
@@ -58,7 +59,23 @@ class VerificationReport:
         return len(self.verified) / len(self.checks) if self.checks else 1.0
 
 
-_ABBREVIATIONS = {"sec", "secs", "no", "rs", "cr", "art", "arts", "s", "ss", "v", "vs", "u/s", "p", "c", "pc"}
+_ABBREVIATIONS = {
+    "sec",
+    "secs",
+    "no",
+    "rs",
+    "cr",
+    "art",
+    "arts",
+    "s",
+    "ss",
+    "v",
+    "vs",
+    "u/s",
+    "p",
+    "c",
+    "pc",
+}
 
 
 def _is_sentence_end(text: str, i: int) -> bool:
@@ -96,7 +113,9 @@ def _act_hint_near(text: str, start: int, end: int, is_article: bool) -> str:
     best_hint = ""
     best_dist = None
     for alias, hint in _ACT_ALIASES:
-        m_alias = re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", window)
+        m_alias = re.search(
+            r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", window
+        )
         if m_alias is None:
             continue
         idx = m_alias.start()
@@ -161,9 +180,10 @@ def verify_citations(answer: str, rag, retrieved_sections=None) -> VerificationR
             status = "verified"
             if retrieved_sections is not None and occ.section not in retrieved_sections:
                 status = "not_retrieved"
-            report.checks.append(CitationCheck(occ.raw, occ.section, occ.act_hint, status))
+            report.checks.append(
+                CitationCheck(occ.raw, occ.section, occ.act_hint, status)
+            )
             continue
-
 
         anywhere = rag.find_section("", occ.section, max_parts=5)
         acts = sorted({c.act_name for c in anywhere})

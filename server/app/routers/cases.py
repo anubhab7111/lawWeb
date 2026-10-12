@@ -2,17 +2,16 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
-
 from app.db.engine import get_session
 from app.db.models import CaseAiSummary, CaseEvent, CaseNote, SavedCase, User
 from app.deps.auth import get_current_user
 from app.deps.errors import MessageHTTPException
 from app.tools.case_data_provider import CaseDataProviderError, get_case_data_provider
 from app.tools.case_sync import sync_case_events
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -52,7 +51,9 @@ async def save_case(
         if body.cnr:
             record = await provider.fetch_case_by_cnr(body.cnr)
         elif body.court and body.case_number and body.year:
-            record = await provider.fetch_case_by_number(body.court, body.case_number, body.year)
+            record = await provider.fetch_case_by_number(
+                body.court, body.case_number, body.year
+            )
         else:
             raise MessageHTTPException(
                 status_code=400, detail="Provide either a CNR or court+caseNumber+year"
@@ -62,10 +63,11 @@ async def save_case(
 
     if record.cnr:
         existing = session.exec(
-            select(SavedCase).where(SavedCase.user_id == current_user.id, SavedCase.cnr == record.cnr)
+            select(SavedCase).where(
+                SavedCase.user_id == current_user.id, SavedCase.cnr == record.cnr
+            )
         ).first()
     else:
-
 
         existing = session.exec(
             select(SavedCase).where(
@@ -108,7 +110,9 @@ def list_cases(
     session: Session = Depends(get_session),
 ):
     cases = session.exec(
-        select(SavedCase).where(SavedCase.user_id == current_user.id).order_by(SavedCase.created_at.desc())
+        select(SavedCase)
+        .where(SavedCase.user_id == current_user.id)
+        .order_by(SavedCase.created_at.desc())
     ).all()
     return [c.to_dict() for c in cases]
 
@@ -121,13 +125,19 @@ def get_case(
 ):
     case = _get_owned_case(session, case_id, current_user)
     events = session.exec(
-        select(CaseEvent).where(CaseEvent.saved_case_id == case.id).order_by(CaseEvent.event_date.desc())
+        select(CaseEvent)
+        .where(CaseEvent.saved_case_id == case.id)
+        .order_by(CaseEvent.event_date.desc())
     ).all()
     notes = session.exec(
-        select(CaseNote).where(CaseNote.saved_case_id == case.id).order_by(CaseNote.created_at.desc())
+        select(CaseNote)
+        .where(CaseNote.saved_case_id == case.id)
+        .order_by(CaseNote.created_at.desc())
     ).all()
     summaries = session.exec(
-        select(CaseAiSummary).where(CaseAiSummary.saved_case_id == case.id).order_by(CaseAiSummary.created_at.desc())
+        select(CaseAiSummary)
+        .where(CaseAiSummary.saved_case_id == case.id)
+        .order_by(CaseAiSummary.created_at.desc())
     ).all()
     return {
         **case.to_dict(),
@@ -145,7 +155,9 @@ def add_note(
     session: Session = Depends(get_session),
 ):
     case = _get_owned_case(session, case_id, current_user)
-    note = CaseNote(saved_case_id=case.id, user_id=current_user.id, note_text=body.note_text)
+    note = CaseNote(
+        saved_case_id=case.id, user_id=current_user.id, note_text=body.note_text
+    )
     session.add(note)
     session.commit()
     session.refresh(note)

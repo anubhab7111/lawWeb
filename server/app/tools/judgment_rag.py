@@ -12,7 +12,9 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-INDEX_DIR = Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "judgments"
+INDEX_DIR = (
+    Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "judgments"
+)
 INDEX_FILE = "index.faiss"
 DB_FILE = "chunks.sqlite"
 META_FILE = "meta.json"
@@ -62,17 +64,31 @@ def create_database(path: Path) -> sqlite3.Connection:
 
 
 def insert_chunks(
-    con: sqlite3.Connection, start_row: int, chunks: Sequence[Dict], rebuild_fts: bool = True
+    con: sqlite3.Connection,
+    start_row: int,
+    chunks: Sequence[Dict],
+    rebuild_fts: bool = True,
 ) -> None:
     for offset, c in enumerate(chunks):
         row = start_row + offset
         con.execute(
             "INSERT INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (row, c["chunk_id"], c["doc_id"], c["year"], c["case_title"], c.get("citation", ""),
-             c["role"], json.dumps(c["sections_cited"]), json.dumps(c.get("doc_sections", [])), c["text"]),
+            (
+                row,
+                c["chunk_id"],
+                c["doc_id"],
+                c["year"],
+                c["case_title"],
+                c.get("citation", ""),
+                c["role"],
+                json.dumps(c["sections_cited"]),
+                json.dumps(c.get("doc_sections", [])),
+                c["text"],
+            ),
         )
         con.executemany(
-            "INSERT INTO chunk_sections VALUES (?,?)", [(row, s) for s in c["sections_cited"]]
+            "INSERT INTO chunk_sections VALUES (?,?)",
+            [(row, s) for s in c["sections_cited"]],
         )
     if rebuild_fts:
         con.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
@@ -104,14 +120,18 @@ class JudgmentIndex:
                 f"but embedding_model is {get_settings().embedding_model}; rebuild it"
             )
         try:
-            self._index = faiss.read_index(str(self.dir / INDEX_FILE), faiss.IO_FLAG_MMAP)
+            self._index = faiss.read_index(
+                str(self.dir / INDEX_FILE), faiss.IO_FLAG_MMAP
+            )
         except RuntimeError:
             self._index = faiss.read_index(str(self.dir / INDEX_FILE))
         try:
             faiss.extract_index_ivf(self._index).nprobe = self.nprobe
         except RuntimeError:
             pass
-        self._db = sqlite3.connect(f"file:{self.dir / DB_FILE}?mode=ro", uri=True, check_same_thread=False)
+        self._db = sqlite3.connect(
+            f"file:{self.dir / DB_FILE}?mode=ro", uri=True, check_same_thread=False
+        )
 
     def _fetch(self, rows: Sequence[int]) -> Dict[int, JudgmentPassage]:
         assert self._db is not None
@@ -121,15 +141,31 @@ class JudgmentIndex:
         out = {}
         for r in self._db.execute(
             f"SELECT id, chunk_id, doc_id, year, case_title, citation, role, sections_cited, doc_sections, text "
-            f"FROM chunks WHERE id IN ({marks})", list(rows)
+            f"FROM chunks WHERE id IN ({marks})",
+            list(rows),
         ):
-            out[r[0]] = JudgmentPassage(r[1], r[2], r[3], r[4], r[5], r[6], json.loads(r[7]), json.loads(r[8]), r[9])
+            out[r[0]] = JudgmentPassage(
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                r[5],
+                r[6],
+                json.loads(r[7]),
+                json.loads(r[8]),
+                r[9],
+            )
         return out
 
     def dense(self, query_vecs: np.ndarray, k: int) -> List[List[tuple]]:
         self.load()
-        sims, ids = self._index.search(np.ascontiguousarray(query_vecs, dtype=np.float32), k)
-        return [[(int(i), float(s)) for i, s in zip(row_i, row_s) if i >= 0] for row_i, row_s in zip(ids, sims)]
+        sims, ids = self._index.search(
+            np.ascontiguousarray(query_vecs, dtype=np.float32), k
+        )
+        return [
+            [(int(i), float(s)) for i, s in zip(row_i, row_s) if i >= 0]
+            for row_i, row_s in zip(ids, sims)
+        ]
 
     def lexical(self, query: str, k: int, max_terms: int = 24) -> List[int]:
         self.load()
@@ -162,7 +198,8 @@ class JudgmentIndex:
         info = {
             r[0]: (r[1], json.loads(r[2]))
             for r in self._db.execute(
-                f"SELECT id, doc_id, doc_sections FROM chunks WHERE id IN ({marks})", rows
+                f"SELECT id, doc_id, doc_sections FROM chunks WHERE id IN ({marks})",
+                rows,
             )
         }
         votes: Dict[str, float] = defaultdict(float)
@@ -193,15 +230,24 @@ class JudgmentIndex:
             marks = ",".join("?" * len(batch))
             for r in self._db.execute(
                 f"SELECT id, doc_id, doc_sections, sections_cited, role, chunk_id FROM chunks "
-                f"WHERE id IN ({marks})", batch
+                f"WHERE id IN ({marks})",
+                batch,
             ):
-                out[r[0]] = (r[1], json.loads(r[2]), json.loads(r[3]), r[4], int(r[5].rsplit("#", 1)[1]))
+                out[r[0]] = (
+                    r[1],
+                    json.loads(r[2]),
+                    json.loads(r[3]),
+                    r[4],
+                    int(r[5].rsplit("#", 1)[1]),
+                )
         return out
 
     def doc_chunk_counts(self) -> Dict[str, int]:
         self.load()
         assert self._db is not None
-        return dict(self._db.execute("SELECT doc_id, COUNT(*) FROM chunks GROUP BY doc_id"))
+        return dict(
+            self._db.execute("SELECT doc_id, COUNT(*) FROM chunks GROUP BY doc_id")
+        )
 
     def rows_citing(self, sections: Sequence[str], limit: int = 200) -> List[int]:
         self.load()

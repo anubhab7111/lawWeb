@@ -16,7 +16,18 @@ from app.tools.statutory_validator import StatutoryValidationResult
 
 class StreamingLLM:
     def __init__(self, words=None, fail=False):
-        self.words = words or ["The ", "rent ", "clause ", "is ", "present. ", "See ", "Fake ", "v. ", "Party ", "(2001)."]
+        self.words = words or [
+            "The ",
+            "rent ",
+            "clause ",
+            "is ",
+            "present. ",
+            "See ",
+            "Fake ",
+            "v. ",
+            "Party ",
+            "(2001).",
+        ]
         self.fail = fail
 
     async def astream(self, messages):
@@ -32,15 +43,29 @@ def no_case_index(monkeypatch):
     """The analyzer strips unverified case names via the case-law index; stub it."""
     import app.tools.case_law_rag as clr
 
-    monkeypatch.setattr(clr, "get_case_law_rag_system",
-                        lambda: SimpleNamespace(initialized=True, find_case=lambda name: None))
+    monkeypatch.setattr(
+        clr,
+        "get_case_law_rag_system",
+        lambda: SimpleNamespace(initialized=True, find_case=lambda name: None),
+    )
 
 
-CLASSIFICATION = DocumentClassification(document_type="Rent Agreement", confidence=0.9, jurisdiction_hints=["Delhi"])
-VALIDATION = StatutoryValidationResult(document_type="Rent Agreement", total_checks=4, passed=3, failed=1,
-                                       compliance_score=0.75)
-LAW = IndianLawContext(document_type="Rent Agreement", applicable_acts=["Transfer of Property Act, 1882"],
-                       applicable_sections=["Section 105"], precedent_notes=["Some case"])
+CLASSIFICATION = DocumentClassification(
+    document_type="Rent Agreement", confidence=0.9, jurisdiction_hints=["Delhi"]
+)
+VALIDATION = StatutoryValidationResult(
+    document_type="Rent Agreement",
+    total_checks=4,
+    passed=3,
+    failed=1,
+    compliance_score=0.75,
+)
+LAW = IndianLawContext(
+    document_type="Rent Agreement",
+    applicable_acts=["Transfer of Property Act, 1882"],
+    applicable_sections=["Section 105"],
+    precedent_notes=["Some case"],
+)
 
 
 def _stream(llm):
@@ -49,8 +74,12 @@ def _stream(llm):
         token = cb._stream_queue_var.set(queue)
         try:
             result = await lda.LegalDefectAnalyzer(llm).analyze_defects(
-                CLASSIFICATION, VALIDATION, LAW, document_text="rent is Rs. 28,000",
-                think_output="checklist", stream=True,
+                CLASSIFICATION,
+                VALIDATION,
+                LAW,
+                document_text="rent is Rs. 28,000",
+                think_output="checklist",
+                stream=True,
             )
         finally:
             cb._stream_queue_var.reset(token)
@@ -69,9 +98,16 @@ def test_streamed_report_equals_the_final_report():
     streamed = "".join(items)
     assert "Fake v. Party" in streamed
     assert "Fake v. Party" not in result["formatted_response"]
-    assert streamed.replace(" See Fake v. Party (2001).", "") == result["formatted_response"]
+    assert (
+        streamed.replace(" See Fake v. Party (2001).", "")
+        == result["formatted_response"]
+    )
     assert "The rent clause is present." in streamed
-    assert streamed.index("## ⚖️ Legal Analysis") < streamed.index("The rent") < streamed.index("Transfer of Property")
+    assert (
+        streamed.index("## ⚖️ Legal Analysis")
+        < streamed.index("The rent")
+        < streamed.index("Transfer of Property")
+    )
 
 
 def test_failed_analysis_streams_no_give_up_note_and_returns_the_fallback():
@@ -84,7 +120,9 @@ def test_failed_analysis_streams_no_give_up_note_and_returns_the_fallback():
 
 def test_non_streaming_report_is_unchanged_by_the_split():
     analyzer = lda.LegalDefectAnalyzer(None)
-    full = analyzer._format_final_response(CLASSIFICATION, VALIDATION, LAW, "ANALYSIS", {"think": "checklist"})
+    full = analyzer._format_final_response(
+        CLASSIFICATION, VALIDATION, LAW, "ANALYSIS", {"think": "checklist"}
+    )
     prefix = analyzer._format_prefix(CLASSIFICATION, VALIDATION, {"think": "checklist"})
     assert full == f"{prefix}\nANALYSIS\n{analyzer._format_suffix(LAW)}"
     assert prefix.endswith("## ⚖️ Legal Analysis")
@@ -108,7 +146,11 @@ def _run_handler(monkeypatch, llm):
         return "checklist"
 
     monkeypatch.setattr(cb, "classify_document", classify)
-    monkeypatch.setattr(cb, "get_statutory_validator", lambda: SimpleNamespace(validate=lambda t, d: VALIDATION))
+    monkeypatch.setattr(
+        cb,
+        "get_statutory_validator",
+        lambda: SimpleNamespace(validate=lambda t, d: VALIDATION),
+    )
     monkeypatch.setattr(criminal, "get_criminal_rag_system", lambda: None)
     monkeypatch.setattr(civil, "get_civil_rag_system", lambda: None)
     monkeypatch.setattr(cb, "get_indian_law_rag", lambda *a, **k: LawRag())
@@ -121,7 +163,11 @@ def _run_handler(monkeypatch, llm):
         token = cb._stream_queue_var.set(queue)
         try:
             state = await cb._handle_document_validation(
-                {"document_content": "rent is Rs. 28,000", "messages": [], "current_input": "validate"}
+                {
+                    "document_content": "rent is Rs. 28,000",
+                    "messages": [],
+                    "current_input": "validate",
+                }
             )
         finally:
             cb._stream_queue_var.reset(token)
@@ -136,7 +182,11 @@ def _run_handler(monkeypatch, llm):
 def test_handler_streams_status_then_report_and_ends_on_the_exact_report(monkeypatch):
     state, items = _run_handler(monkeypatch, StreamingLLM())
     events = [i for i in items if isinstance(i, dict)]
-    assert [e["stage"] for e in events if e["type"] == "status"] == ["classify", "retrieval", "generation"]
+    assert [e["stage"] for e in events if e["type"] == "status"] == [
+        "classify",
+        "retrieval",
+        "generation",
+    ]
     assert events[-1] == {"type": "replace", "content": state["response"]}
     assert "Fake v. Party" not in state["response"]
 

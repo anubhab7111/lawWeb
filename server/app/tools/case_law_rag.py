@@ -12,13 +12,13 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.ingest.paths import case_law_dir
 from app.tools.base_legal_rag import (
-    file_fingerprint,
     _bm25_tokenize,
     _get_shared_embeddings,
     _get_shared_reranker,
     _make_bge_embeddings,
     _sigmoid,
     cached_predict,
+    file_fingerprint,
 )
 from app.tools.unified_rerank import segments
 
@@ -31,7 +31,11 @@ def rerank_source(case: "CaseRecord") -> str:
 
 def rerank_header(case: "CaseRecord") -> str:
     """Case name plus its curated doctrines: a summary that opens with the facts ("The respondent was a Minister...") says little about what the case stands for."""
-    return f"{case.case_name} — {'; '.join(case.doctrines)}" if case.doctrines else case.case_name
+    return (
+        f"{case.case_name} — {'; '.join(case.doctrines)}"
+        if case.doctrines
+        else case.case_name
+    )
 
 
 def rerank_pair_text(case: "CaseRecord") -> str:
@@ -51,9 +55,30 @@ _W_DOCTRINE = 0.10
 
 _ISSUE_STOPWORDS = frozenset(
     {
-        "whether", "is", "are", "the", "of", "a", "an", "in", "to", "for",
-        "and", "or", "under", "does", "do", "can", "was", "be", "by",
-        "on", "with", "as", "that", "this",
+        "whether",
+        "is",
+        "are",
+        "the",
+        "of",
+        "a",
+        "an",
+        "in",
+        "to",
+        "for",
+        "and",
+        "or",
+        "under",
+        "does",
+        "do",
+        "can",
+        "was",
+        "be",
+        "by",
+        "on",
+        "with",
+        "as",
+        "that",
+        "this",
     }
 )
 
@@ -157,7 +182,9 @@ def _case_name_tokens(name: str) -> Set[str]:
     return {t for t in normalize_case_name(name).split() if t != "v"}
 
 
-def find_case_in_cases(cases: Dict[str, "CaseRecord"], name: str) -> Optional["CaseRecord"]:
+def find_case_in_cases(
+    cases: Dict[str, "CaseRecord"], name: str
+) -> Optional["CaseRecord"]:
     """Look up an indexed case by name: exact match on the normalized name first, then a bounded fuzzy (token-Jaccard) match above _CASE_NAME_MATCH_THRESHOLD."""
     target = normalize_case_name(name)
     if not target:
@@ -194,7 +221,9 @@ def _statute_overlap_score(
     return hit / len(boost_keys)
 
 
-def _doctrine_overlap_score(case_doctrines: List[str], query_doctrines: List[str]) -> float:
+def _doctrine_overlap_score(
+    case_doctrines: List[str], query_doctrines: List[str]
+) -> float:
     if not case_doctrines or not query_doctrines:
         return 0.0
     cd = {d.lower() for d in case_doctrines}
@@ -280,7 +309,6 @@ class CaseLawRAGSystem:
         if stored_fingerprint is None:
             return True
 
-
         from app.config import get_settings
 
         if meta.get("embedding_model") != get_settings().embedding_model:
@@ -298,10 +326,9 @@ class CaseLawRAGSystem:
         return {p.name: file_fingerprint(p) for p in CASE_LAW_DIR.glob("*.json")}
 
     async def _build_vectorstore(self):
+        from app.config import get_settings
         from langchain_community.vectorstores import FAISS
         from langchain_core.documents import Document
-
-        from app.config import get_settings
 
         case_files = sorted(CASE_LAW_DIR.glob("*.json"))
         if not case_files:
@@ -435,7 +462,9 @@ class CaseLawRAGSystem:
             self.vector_store = await loop.run_in_executor(
                 None,
                 lambda: FAISS.load_local(
-                    str(FAISS_DIR), self.embeddings, allow_dangerous_deserialization=True
+                    str(FAISS_DIR),
+                    self.embeddings,
+                    allow_dangerous_deserialization=True,
                 ),
             )
         except Exception as e:
@@ -456,10 +485,11 @@ class CaseLawRAGSystem:
         for cid, c in self._cases.items():
             self._bm25_ids.append(cid)
             corpus.append(
-                _bm25_tokenize(f"{c.case_name} {c.citation} {' '.join(c.doctrines)} {c.summary}")
+                _bm25_tokenize(
+                    f"{c.case_name} {c.citation} {' '.join(c.doctrines)} {c.summary}"
+                )
             )
         self._bm25 = BM25Okapi(corpus)
-
 
     async def retrieve(
         self,
@@ -496,7 +526,9 @@ class CaseLawRAGSystem:
             tokens = _bm25_tokenize(query)
             if tokens:
                 scores = self._bm25.get_scores(tokens)
-                order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+                order = sorted(
+                    range(len(scores)), key=lambda i: scores[i], reverse=True
+                )
                 for rank, idx in enumerate(order[:candidate_pool]):
                     if scores[idx] <= 0:
                         break
@@ -507,14 +539,15 @@ class CaseLawRAGSystem:
             fused[cid] = fused.get(cid, 0.0) + 1.0 / (60 + rank)
         for cid, rank in sparse_rank.items():
             fused[cid] = fused.get(cid, 0.0) + 1.0 / (60 + rank)
-        candidates = [c for c in sorted(fused, key=fused.get, reverse=True) if c in self._cases][:15]
+        candidates = [
+            c for c in sorted(fused, key=fused.get, reverse=True) if c in self._cases
+        ][:15]
 
         boost_keys: Set[Tuple[str, str]] = set()
         if boost_statutes:
             boost_keys = {(normalize_act(a), s.lower()) for a, s in boost_statutes}
         query_issues = query_issues or []
         query_doctrines = query_doctrines or []
-
 
         curated = sorted(
             (cid for cid, c in self._cases.items() if cid not in candidates),
@@ -525,7 +558,8 @@ class CaseLawRAGSystem:
             reverse=True,
         )
         candidates += [
-            cid for cid in curated[:_MAX_CURATED_CANDIDATES]
+            cid
+            for cid in curated[:_MAX_CURATED_CANDIDATES]
             if _doctrine_overlap_score(self._cases[cid].doctrines, query_doctrines) > 0
             or _statute_overlap_score(self._cases[cid].statutes_cited, boost_keys) > 0
         ]
@@ -536,7 +570,9 @@ class CaseLawRAGSystem:
         relevance: Dict[str, float] = {}
         if reranker is not None:
             try:
-                pairs = [(query, rerank_pair_text(self._cases[cid])) for cid in candidates]
+                pairs = [
+                    (query, rerank_pair_text(self._cases[cid])) for cid in candidates
+                ]
                 logits = await loop.run_in_executor(
                     None, lambda: cached_predict(reranker, pairs)
                 )

@@ -13,9 +13,12 @@ _MARGIN_LEAD = re.compile(r"^[A-Ha-h](?:\s{3,}|\s*$)")
 _MARGIN_TRAIL = re.compile(r"\s{5,}[A-Ha-h][,.;:]?\s*$")
 _PAGE_NUMBER = re.compile(r"^\s*\d{1,4}\s*$")
 _RUNNING_HEADER = re.compile(
-    r"supreme\s+court\s+reports?|\[\d{4}\]\s*(?:suppl?\.?\s*)?\d*\s*s\.c\.r\.", re.IGNORECASE
+    r"supreme\s+court\s+reports?|\[\d{4}\]\s*(?:suppl?\.?\s*)?\d*\s*s\.c\.r\.",
+    re.IGNORECASE,
 )
-_GARBLED_TOKEN = re.compile(r"[A-Za-z]{2,}[\d\[\]!£|~;][A-Za-z]{2,}|[A-Za-z]+[!£~|]+[A-Za-z]*")
+_GARBLED_TOKEN = re.compile(
+    r"[A-Za-z]{2,}[\d\[\]!£|~;][A-Za-z]{2,}|[A-Za-z]+[!£~|]+[A-Za-z]*"
+)
 _HYPHEN_BREAK = re.compile(r"(\w)-$")
 
 
@@ -51,7 +54,9 @@ def _strip_margins(line: str) -> str:
     return line.rstrip()
 
 
-_CASE_HEADER = re.compile(r"^\s*(?:\d{1,4}\s+)?[A-Z][A-Z .,&'()-]{2,45}\sv\.?\s[A-Z .,&'()-]{2,45}(?:\s+\S{1,4})?\s*$")
+_CASE_HEADER = re.compile(
+    r"^\s*(?:\d{1,4}\s+)?[A-Z][A-Z .,&'()-]{2,45}\sv\.?\s[A-Z .,&'()-]{2,45}(?:\s+\S{1,4})?\s*$"
+)
 
 
 def _is_noise(line: str) -> bool:
@@ -59,7 +64,11 @@ def _is_noise(line: str) -> bool:
         return True
     if len(line) < 110 and _RUNNING_HEADER.search(line):
         return True
-    return len(line) < 100 and bool(_CASE_HEADER.match(line)) and bool(re.search(r"\d", line))
+    return (
+        len(line) < 100
+        and bool(_CASE_HEADER.match(line))
+        and bool(re.search(r"\d", line))
+    )
 
 
 def _indent(line: str) -> int:
@@ -90,7 +99,10 @@ def _paragraph_lines(raw: str) -> List[List[str]]:
                 pending_blank = True
                 continue
             if current and _SENTENCE_END.search(current[-1]):
-                jump = _indent(line) - base >= 4 and _indent(line) > _indent(current[-1]) + 2
+                jump = (
+                    _indent(line) - base >= 4
+                    and _indent(line) > _indent(current[-1]) + 2
+                )
                 if pending_blank or jump or _NUMBERED_PARA.match(line.strip()):
                     paragraphs.append(current)
                     current = []

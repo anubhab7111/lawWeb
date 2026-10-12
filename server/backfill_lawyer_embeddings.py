@@ -7,16 +7,14 @@ import os
 import sys
 from pathlib import Path
 
-
 _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
-from sqlmodel import Session, select
-
 from app.db.engine import get_engine
 from app.db.models import Lawyer
 from app.tools.lawyer_recommender import embed_lawyers_batch
+from sqlmodel import Session, select
 
 
 async def main() -> None:

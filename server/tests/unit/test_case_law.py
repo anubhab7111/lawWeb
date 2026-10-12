@@ -15,15 +15,25 @@ from app.tools.case_law_rag import (
 
 def _case(case_id, name):
     return CaseRecord(
-        case_id=case_id, case_name=name, citation="", court="",
-        bench_size=1, court_rank=1, date="", status="reported",
+        case_id=case_id,
+        case_name=name,
+        citation="",
+        court="",
+        bench_size=1,
+        court_rank=1,
+        date="",
+        status="reported",
     )
 
 
 def test_normalize_act():
-    assert normalize_act("Bharatiya Nyaya Sanhita BNS") == normalize_act("Bharatiya Nyaya Sanhita")
+    assert normalize_act("Bharatiya Nyaya Sanhita BNS") == normalize_act(
+        "Bharatiya Nyaya Sanhita"
+    )
     assert normalize_act("Indian Contract Act") == normalize_act("Indian Contract")
-    assert normalize_act("Insolvency and Bankruptcy Code IBC") == normalize_act("Insolvency and Bankruptcy")
+    assert normalize_act("Insolvency and Bankruptcy Code IBC") == normalize_act(
+        "Insolvency and Bankruptcy"
+    )
     assert normalize_act("POCSO Act") == normalize_act("POCSO")
 
 
@@ -37,12 +47,12 @@ def test_statute_overlap_matches_index_names():
 
 
 def test_normalize_case_name_ignores_year_vs_spelling_and_whitespace():
-    assert normalize_case_name("Ghose v. Mugneeram Bangur (1954)") == normalize_case_name(
-        "ghose   vs  mugneeram bangur"
-    )
-    assert normalize_case_name("Anvar P.V. v. P.K. Basheer (2014)") == normalize_case_name(
-        "Anvar P.V. versus P.K. Basheer"
-    )
+    assert normalize_case_name(
+        "Ghose v. Mugneeram Bangur (1954)"
+    ) == normalize_case_name("ghose   vs  mugneeram bangur")
+    assert normalize_case_name(
+        "Anvar P.V. v. P.K. Basheer (2014)"
+    ) == normalize_case_name("Anvar P.V. versus P.K. Basheer")
 
 
 def test_find_case_exact_match_after_normalization():

@@ -51,12 +51,16 @@ async def main() -> None:
             }
         )
         status = "HIT" if hr else "miss"
-        print(f"[{status}] {query!r} -> target {entry['case_name']!r}; got {retrieved[:3]}")
+        print(
+            f"[{status}] {query!r} -> target {entry['case_name']!r}; got {retrieved[:3]}"
+        )
 
     hit_rate_at_5 = sum(hits) / len(hits) if hits else 0.0
     mrr = sum(rrs) / len(rrs) if rrs else 0.0
 
-    print(f"\nn_queries={len(manifest)}  hit_rate@{K}={hit_rate_at_5:.3f}  mrr={mrr:.3f}")
+    print(
+        f"\nn_queries={len(manifest)}  hit_rate@{K}={hit_rate_at_5:.3f}  mrr={mrr:.3f}"
+    )
 
     out_path = _SERVER_DIR / "eval_case_law_results.json"
     with open(out_path, "w", encoding="utf-8") as f:

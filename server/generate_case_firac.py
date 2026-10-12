@@ -13,11 +13,10 @@ _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
-from langchain_ollama import ChatOllama
-
 from app.config import get_settings
 from app.ingest.paths import case_law_dir
 from app.tools.case_firac_extractor import extract_case_firac
+from langchain_ollama import ChatOllama
 
 CASE_LAW_DIR = case_law_dir()
 
@@ -32,8 +31,6 @@ def _build_llm() -> ChatOllama:
         num_predict=1536,
         timeout=180.0,
         reasoning=False,
-
-
         format="json",
         keep_alive="15m",
     )

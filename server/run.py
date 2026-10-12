@@ -12,7 +12,6 @@ from app.tools.offline_index import ensure_indices_built
 def main():
     """Run the FastAPI server."""
 
-
     try:
         sys.stdout.reconfigure(line_buffering=True)
         sys.stderr.reconfigure(line_buffering=True)
@@ -20,7 +19,6 @@ def main():
         pass
 
     settings = get_settings()
-
 
     asyncio.run(ensure_indices_built())
 

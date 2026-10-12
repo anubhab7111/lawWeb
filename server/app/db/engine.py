@@ -2,9 +2,8 @@
 
 from functools import lru_cache
 
-from sqlmodel import Session, create_engine
-
 from app.config import get_settings
+from sqlmodel import Session, create_engine
 
 
 def _normalize_url(url: str) -> str:

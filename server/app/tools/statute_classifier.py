@@ -16,16 +16,25 @@ def clean_facts(sentences: Sequence[str]) -> str:
     return " ".join(_ENTITY.sub("[UNK]", s).strip() for s in sentences if s.strip())
 
 
-def chunk_ids(tokenizer, text: str, max_chunks: int, chunk_len: int = 512, stride: int = 0) -> List[List[int]]:
+def chunk_ids(
+    tokenizer, text: str, max_chunks: int, chunk_len: int = 512, stride: int = 0
+) -> List[List[int]]:
     """Token-id chunks of at most chunk_len (incl."""
     body = tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
     width = chunk_len - 2
     step = width - stride
     starts = list(range(0, max(len(body) - stride, 1), step)) or [0]
     if len(starts) > max_chunks:
-        pick = [round(i * (len(starts) - 1) / (max_chunks - 1)) for i in range(max_chunks)] if max_chunks > 1 else [0]
+        pick = (
+            [round(i * (len(starts) - 1) / (max_chunks - 1)) for i in range(max_chunks)]
+            if max_chunks > 1
+            else [0]
+        )
         starts = [starts[i] for i in pick]
-    return [[tokenizer.cls_token_id] + body[s : s + width] + [tokenizer.sep_token_id] for s in starts]
+    return [
+        [tokenizer.cls_token_id] + body[s : s + width] + [tokenizer.sep_token_id]
+        for s in starts
+    ]
 
 
 class ChunkedStatuteClassifier(nn.Module):
@@ -33,13 +42,17 @@ class ChunkedStatuteClassifier(nn.Module):
         super().__init__()
         self.encoder = encoder
         hidden = encoder.config.hidden_size
-        self.attn = nn.Sequential(nn.Linear(hidden, hidden), nn.Tanh(), nn.Linear(hidden, 1))
+        self.attn = nn.Sequential(
+            nn.Linear(hidden, hidden), nn.Tanh(), nn.Linear(hidden, 1)
+        )
         self.drop = nn.Dropout(dropout)
         self.head = nn.Linear(hidden, n_labels)
 
     def forward(self, input_ids, attention_mask, doc_index, n_docs):
         """input_ids: (total_chunks, L); doc_index: (total_chunks,) owning document."""
-        cls = self.encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state[:, 0]
+        cls = self.encoder(
+            input_ids=input_ids, attention_mask=attention_mask
+        ).last_hidden_state[:, 0]
         logits_a = self.attn(cls).squeeze(-1)
         pooled = cls.new_zeros(n_docs, cls.size(-1))
         for d in range(n_docs):
@@ -49,7 +62,12 @@ class ChunkedStatuteClassifier(nn.Module):
         return self.head(self.drop(pooled))
 
 
-SERVING_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "statute_classifier"
+SERVING_DIR = (
+    __import__("pathlib").Path(__file__).resolve().parent.parent
+    / "data"
+    / "faiss_index"
+    / "statute_classifier"
+)
 
 
 class StatuteClassifier:
@@ -66,7 +84,9 @@ class StatuteClassifier:
         self.tokenizer = AutoTokenizer.from_pretrained(meta["base_model"])
         encoder = AutoModel.from_config(AutoConfig.from_pretrained(meta["base_model"]))
         self.model = ChunkedStatuteClassifier(encoder, len(self.labels))
-        self.model.load_state_dict(torch.load(model_dir / "model.pt", map_location="cpu"))
+        self.model.load_state_dict(
+            torch.load(model_dir / "model.pt", map_location="cpu")
+        )
         self.model.to(device).eval()
         self.device, self.max_chunks = device, max_chunks
 
@@ -78,7 +98,9 @@ class StatuteClassifier:
     def predict(self, sentences: Sequence[str]) -> dict:
         chunks = chunk_ids(self.tokenizer, clean_facts(sentences), self.max_chunks)
         ids, mask, owner, n = collate([chunks], self.tokenizer.pad_token_id)
-        logits = self.model(ids.to(self.device), mask.to(self.device), owner.to(self.device), n)
+        logits = self.model(
+            ids.to(self.device), mask.to(self.device), owner.to(self.device), n
+        )
         probs = torch.sigmoid(logits.float())[0].cpu().tolist()
         return dict(zip(self.labels, probs))
 

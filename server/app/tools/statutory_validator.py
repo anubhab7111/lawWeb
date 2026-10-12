@@ -1,8 +1,8 @@
 """Statutory Requirements Validator (Layer 2) Pure rule-based engine — NO LLM dependency."""
 
 import re
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -41,7 +41,11 @@ class StatutoryValidationResult:
             "present_elements": self.present_elements,
             "non_compliance": self.non_compliance,
             "warnings": self.warnings,
-            "compliance_score": None if self.compliance_score is None else round(self.compliance_score, 2),
+            "compliance_score": (
+                None
+                if self.compliance_score is None
+                else round(self.compliance_score, 2)
+            ),
         }
 
 
@@ -875,42 +879,68 @@ PARTNERSHIP_DEED_CHECKLIST: List[Dict[str, Any]] = [
         "description": "Name of the firm and the nature of its business",
         "statute": "Indian Partnership Act, 1932 Section 4",
         "severity": "mandatory",
-        "patterns": [r"firm\s*name", r"name\s*of\s*the\s*firm", r"(?:carry|carrying)\s*on\s*(?:the\s*)?business", r"nature\s*of\s*(?:the\s*)?business"],
+        "patterns": [
+            r"firm\s*name",
+            r"name\s*of\s*the\s*firm",
+            r"(?:carry|carrying)\s*on\s*(?:the\s*)?business",
+            r"nature\s*of\s*(?:the\s*)?business",
+        ],
     },
     {
         "element": "Partners' Details",
         "description": "Names, addresses and capacities of all partners",
         "statute": "Indian Partnership Act, 1932 Section 4; Section 58",
         "severity": "mandatory",
-        "patterns": [r"partners?\b.*\b(?:residing|resident|address)", r"first\s*partner", r"second\s*partner"],
+        "patterns": [
+            r"partners?\b.*\b(?:residing|resident|address)",
+            r"first\s*partner",
+            r"second\s*partner",
+        ],
     },
     {
         "element": "Capital Contribution",
         "description": "Capital contributed by each partner",
         "statute": "Indian Partnership Act, 1932 Section 13",
         "severity": "mandatory",
-        "patterns": [r"capital\s*contribution", r"contribut(?:e|es|ed|ion)\s*(?:the\s*)?capital", r"capital\s*of\s*(?:rs\.?|inr|₹)"],
+        "patterns": [
+            r"capital\s*contribution",
+            r"contribut(?:e|es|ed|ion)\s*(?:the\s*)?capital",
+            r"capital\s*of\s*(?:rs\.?|inr|₹)",
+        ],
     },
     {
         "element": "Profit and Loss Sharing",
         "description": "Ratio in which profits and losses are shared",
         "statute": "Indian Partnership Act, 1932 Sections 13(b), 13(e)",
         "severity": "mandatory",
-        "patterns": [r"profit[\s-]*(?:and|&)?[\s-]*loss", r"profit[\s-]?sharing", r"share\s*(?:the\s*)?profits?"],
+        "patterns": [
+            r"profit[\s-]*(?:and|&)?[\s-]*loss",
+            r"profit[\s-]?sharing",
+            r"share\s*(?:the\s*)?profits?",
+        ],
     },
     {
         "element": "Duration / Dissolution",
         "description": "Whether the firm is at will or for a fixed term, and how it dissolves",
         "statute": "Indian Partnership Act, 1932 Sections 7, 39-44",
         "severity": "recommended",
-        "patterns": [r"partnership\s*at\s*will", r"dissol(?:ve|ved|ution)", r"duration\s*of\s*(?:the\s*)?partnership"],
+        "patterns": [
+            r"partnership\s*at\s*will",
+            r"dissol(?:ve|ved|ution)",
+            r"duration\s*of\s*(?:the\s*)?partnership",
+        ],
     },
     {
         "element": "Execution and Stamp Duty",
         "description": "Signed by all partners on appropriately stamped paper (registration of the firm is optional but advisable)",
         "statute": "Indian Stamp Act, 1899 / State Stamp Acts; Indian Partnership Act, 1932 Section 58",
         "severity": "recommended",
-        "patterns": [r"stamp\s*paper", r"e[\s-]?stamp", r"witness(?:es)?", r"in\s*witness\s*whereof"],
+        "patterns": [
+            r"stamp\s*paper",
+            r"e[\s-]?stamp",
+            r"witness(?:es)?",
+            r"in\s*witness\s*whereof",
+        ],
     },
 ]
 
@@ -920,42 +950,71 @@ BAIL_APPLICATION_CHECKLIST: List[Dict[str, Any]] = [
         "description": "Court, case/FIR number, police station and sections charged",
         "statute": "Section 437/439 CrPC; Sections 480/483 BNSS",
         "severity": "mandatory",
-        "patterns": [r"fir\s*(?:no|number)", r"crime\s*no", r"police\s*station", r"case\s*no"],
+        "patterns": [
+            r"fir\s*(?:no|number)",
+            r"crime\s*no",
+            r"police\s*station",
+            r"case\s*no",
+        ],
     },
     {
         "element": "Statutory Provision Invoked",
         "description": "The provision under which bail is sought (regular, anticipatory or default bail)",
         "statute": "Sections 437, 438, 439 CrPC / Sections 480, 482, 483 BNSS",
         "severity": "mandatory",
-        "patterns": [r"section\s*(?:437|438|439|167)\b", r"section\s*(?:480|482|483|187)\b", r"anticipatory\s*bail", r"regular\s*bail", r"default\s*bail"],
+        "patterns": [
+            r"section\s*(?:437|438|439|167)\b",
+            r"section\s*(?:480|482|483|187)\b",
+            r"anticipatory\s*bail",
+            r"regular\s*bail",
+            r"default\s*bail",
+        ],
     },
     {
         "element": "Grounds for Bail",
         "description": "Specific grounds (false implication, no flight risk, cooperation with investigation, parity, custody period)",
         "statute": "Sections 437(1), 439 CrPC; Gurbaksh Singh Sibbia v. State of Punjab (1980)",
         "severity": "mandatory",
-        "patterns": [r"grounds?\s*(?:for|of)\s*bail", r"falsely\s*implicated", r"no\s*(?:risk|chance)\s*of\s*(?:absconding|fleeing|tampering)", r"cooperate\s*with\s*the\s*investigation"],
+        "patterns": [
+            r"grounds?\s*(?:for|of)\s*bail",
+            r"falsely\s*implicated",
+            r"no\s*(?:risk|chance)\s*of\s*(?:absconding|fleeing|tampering)",
+            r"cooperate\s*with\s*the\s*investigation",
+        ],
     },
     {
         "element": "Custody Status",
         "description": "Date of arrest / period in custody, or apprehension of arrest for anticipatory bail",
         "statute": "Section 437 CrPC; Section 482 BNSS",
         "severity": "mandatory",
-        "patterns": [r"(?:arrested|in\s*custody)\s*(?:on|since)", r"apprehen(?:d|sion)\s*of\s*arrest", r"judicial\s*custody", r"police\s*custody"],
+        "patterns": [
+            r"(?:arrested|in\s*custody)\s*(?:on|since)",
+            r"apprehen(?:d|sion)\s*of\s*arrest",
+            r"judicial\s*custody",
+            r"police\s*custody",
+        ],
     },
     {
         "element": "Undertaking / Conditions",
         "description": "Willingness to furnish surety and abide by conditions",
         "statute": "Section 437(3) CrPC; Section 480 BNSS",
         "severity": "recommended",
-        "patterns": [r"surety", r"bail\s*bond", r"undertak(?:e|ing)", r"abide\s*by\s*(?:any|the)\s*conditions?"],
+        "patterns": [
+            r"surety",
+            r"bail\s*bond",
+            r"undertak(?:e|ing)",
+            r"abide\s*by\s*(?:any|the)\s*conditions?",
+        ],
     },
     {
         "element": "Prior Applications",
         "description": "Whether any earlier bail application was filed or rejected",
         "statute": "Supreme Court practice directions",
         "severity": "recommended",
-        "patterns": [r"(?:no\s*)?(?:earlier|previous|prior)\s*(?:bail\s*)?application", r"first\s*bail\s*application"],
+        "patterns": [
+            r"(?:no\s*)?(?:earlier|previous|prior)\s*(?:bail\s*)?application",
+            r"first\s*bail\s*application",
+        ],
     },
 ]
 
@@ -965,14 +1024,22 @@ COMPLAINT_CHECKLIST: List[Dict[str, Any]] = [
         "description": "Court addressed and full names/addresses of complainant and accused",
         "statute": "Section 200 CrPC; Section 223 BNSS",
         "severity": "mandatory",
-        "patterns": [r"(?:before|to)\s*the\s*(?:hon\'?ble\s*)?(?:chief\s*)?(?:judicial\s*)?magistrate", r"complainant", r"accused"],
+        "patterns": [
+            r"(?:before|to)\s*the\s*(?:hon\'?ble\s*)?(?:chief\s*)?(?:judicial\s*)?magistrate",
+            r"complainant",
+            r"accused",
+        ],
     },
     {
         "element": "Facts and Offence Alleged",
         "description": "Chronological facts with the offence(s) and sections alleged",
         "statute": "Section 200 CrPC; Section 223 BNSS",
         "severity": "mandatory",
-        "patterns": [r"facts?\s*of\s*the\s*case", r"offen[cs]es?\s*(?:under|punishable)", r"section\s*\d+\s*(?:ipc|bns|of)"],
+        "patterns": [
+            r"facts?\s*of\s*the\s*case",
+            r"offen[cs]es?\s*(?:under|punishable)",
+            r"section\s*\d+\s*(?:ipc|bns|of)",
+        ],
     },
     {
         "element": "Jurisdiction",
@@ -986,7 +1053,12 @@ COMPLAINT_CHECKLIST: List[Dict[str, Any]] = [
         "description": "Relief sought (cognizance, summoning the accused, or investigation under Section 156(3))",
         "statute": "Sections 156(3), 190, 200 CrPC; Sections 175(3), 210, 223 BNSS",
         "severity": "mandatory",
-        "patterns": [r"prayer", r"it\s*is\s*(?:therefore\s*)?prayed", r"take\s*cognizance", r"summon\s*the\s*accused"],
+        "patterns": [
+            r"prayer",
+            r"it\s*is\s*(?:therefore\s*)?prayed",
+            r"take\s*cognizance",
+            r"summon\s*the\s*accused",
+        ],
     },
     {
         "element": "Verification / Affidavit",
@@ -1003,7 +1075,11 @@ CHARGESHEET_CHECKLIST: List[Dict[str, Any]] = [
         "description": "Police station, FIR number and date, sections of law",
         "statute": "Section 173(2) CrPC; Section 193(3) BNSS",
         "severity": "mandatory",
-        "patterns": [r"fir\s*(?:no|number)", r"police\s*station", r"sections?\s*of\s*law"],
+        "patterns": [
+            r"fir\s*(?:no|number)",
+            r"police\s*station",
+            r"sections?\s*of\s*law",
+        ],
     },
     {
         "element": "Accused Details",
@@ -1024,14 +1100,23 @@ CHARGESHEET_CHECKLIST: List[Dict[str, Any]] = [
         "description": "Documents and material objects relied upon",
         "statute": "Section 173(5) CrPC; Section 193(6) BNSS",
         "severity": "mandatory",
-        "patterns": [r"(?:list\s*of\s*)?documents", r"material\s*(?:objects|exhibits)", r"seized", r"forensic|fsl"],
+        "patterns": [
+            r"(?:list\s*of\s*)?documents",
+            r"material\s*(?:objects|exhibits)",
+            r"seized",
+            r"forensic|fsl",
+        ],
     },
     {
         "element": "Investigating Officer Signature",
         "description": "Report signed by the investigating officer / officer in charge",
         "statute": "Section 173(2) CrPC",
         "severity": "recommended",
-        "patterns": [r"investigating\s*officer", r"officer\s*in\s*charge", r"forwarded\s*(?:by|to)"],
+        "patterns": [
+            r"investigating\s*officer",
+            r"officer\s*in\s*charge",
+            r"forwarded\s*(?:by|to)",
+        ],
     },
     {
         "element": "Sanction (where required)",
@@ -1100,7 +1185,6 @@ class StatutoryValidator:
             severity = item["severity"]
             patterns = item["patterns"]
 
-
             found = False
             matched_patterns = []
 
@@ -1129,14 +1213,12 @@ class StatutoryValidator:
                 elif severity == "recommended":
                     non_compliance.append(entry)
 
-
         additional_nc = self._check_additional_compliance(document_type, text)
         non_compliance.extend(additional_nc)
 
         total_checks = len(checklist)
         passed = len(present_elements)
         failed = total_checks - passed
-
 
         if mandatory_total > 0:
             compliance_score = mandatory_passed / mandatory_total

@@ -85,6 +85,9 @@ async def rank_sections_from_facts(
             rerank_pool=RERANK_POOL,
         )
         per_window.append(
-            [(c.act_name, c.section_number.replace("Article", "").strip().upper()) for c in result.chunks]
+            [
+                (c.act_name, c.section_number.replace("Article", "").strip().upper())
+                for c in result.chunks
+            ]
         )
     return aggregate(per_window)

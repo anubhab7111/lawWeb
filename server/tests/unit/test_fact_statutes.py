@@ -23,7 +23,11 @@ def test_depth_limits_how_far_down_each_window_is_read():
 
 
 def test_evidence_must_recur_across_windows_to_outrank_a_single_top_hit():
-    windows = [[(IPC, "302"), (IPC, "34")], [(IPC, "323"), (IPC, "34")], [(IPC, "506"), (IPC, "34")]]
+    windows = [
+        [(IPC, "302"), (IPC, "34")],
+        [(IPC, "323"), (IPC, "34")],
+        [(IPC, "506"), (IPC, "34")],
+    ]
     assert ranked(windows)[0] == "34"
 
 

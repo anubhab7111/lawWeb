@@ -1,8 +1,7 @@
 """Shared streaming-read guard for file uploads."""
 
-from fastapi import UploadFile
-
 from app.deps.errors import MessageHTTPException
+from fastapi import UploadFile
 
 _CHUNK_SIZE = 1024 * 1024
 

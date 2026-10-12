@@ -2,14 +2,13 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-from sqlmodel import Session, select
-
 from app.db.engine import get_session
 from app.db.models import Notification, NotificationPreference, User
 from app.deps.auth import get_current_user
 from app.deps.errors import MessageHTTPException
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -28,7 +27,9 @@ def list_notifications(
 ):
     notifications = session.exec(
         select(Notification)
-        .where(Notification.user_id == current_user.id, Notification.channel == "in_app")
+        .where(
+            Notification.user_id == current_user.id, Notification.channel == "in_app"
+        )
         .order_by(Notification.created_at.desc())
         .limit(max(1, min(limit, 200)))
     ).all()
@@ -56,7 +57,9 @@ def get_preferences(
     session: Session = Depends(get_session),
 ):
     prefs = session.exec(
-        select(NotificationPreference).where(NotificationPreference.user_id == current_user.id)
+        select(NotificationPreference).where(
+            NotificationPreference.user_id == current_user.id
+        )
     ).first()
     if prefs is None:
         prefs = NotificationPreference(user_id=current_user.id)
@@ -73,7 +76,9 @@ def update_preferences(
     session: Session = Depends(get_session),
 ):
     prefs = session.exec(
-        select(NotificationPreference).where(NotificationPreference.user_id == current_user.id)
+        select(NotificationPreference).where(
+            NotificationPreference.user_id == current_user.id
+        )
     ).first()
     if prefs is None:
         prefs = NotificationPreference(user_id=current_user.id)

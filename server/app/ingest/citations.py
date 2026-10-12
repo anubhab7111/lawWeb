@@ -18,9 +18,19 @@ _NUM_RE = re.compile(r"\d{1,4}(?:-?[A-Z]{1,2}\b)?", re.IGNORECASE)
 
 
 _ACTS: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r"(?:B\.?\s?N\.?\s?S\.?\s?S\.?\b|Bharatiya\s+Nagarik\s+Suraksha)", re.I), "BNSS"),
+    (
+        re.compile(
+            r"(?:B\.?\s?N\.?\s?S\.?\s?S\.?\b|Bharatiya\s+Nagarik\s+Suraksha)", re.I
+        ),
+        "BNSS",
+    ),
     (re.compile(r"(?:B\.?\s?N\.?\s?S\.?\b|Bharatiya\s+Nyaya\s+Sanhita)", re.I), "BNS"),
-    (re.compile(r"(?:I\.?\s?P\.?\s?C\.?\b|Indian\s+Penal\s+Code|Penal\s+Code)", re.I), "IPC"),
+    (
+        re.compile(
+            r"(?:I\.?\s?P\.?\s?C\.?\b|Indian\s+Penal\s+Code|Penal\s+Code)", re.I
+        ),
+        "IPC",
+    ),
     (
         re.compile(
             r"(?:Cr\.?\s?P\.?\s?C\.?\b|Code\s+of\s+Criminal\s+Procedure|Criminal\s+Procedure\s+Code)",

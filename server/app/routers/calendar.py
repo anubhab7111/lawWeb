@@ -4,18 +4,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
+from app.config import get_settings
+from app.db.engine import get_session
+from app.db.models import CalendarConnection, CalendarEvent, SavedCase, User
+from app.deps.auth import get_current_user
+from app.deps.errors import MessageHTTPException
+from app.security import jwt_secret
+from app.services import calendar_oauth, calendar_sync
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
-
-from app.db.engine import get_session
-from app.config import get_settings
-from app.db.models import CalendarConnection, CalendarEvent, SavedCase, User
-from app.security import jwt_secret
-from app.services import calendar_oauth, calendar_sync
-from app.deps.auth import get_current_user
-from app.deps.errors import MessageHTTPException
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -82,16 +81,23 @@ def delete_event(
     event = session.get(CalendarEvent, event_id)
     if event is None or event.user_id != current_user.id:
         raise MessageHTTPException(status_code=404, detail="Event not found")
-    remote = {"google": event.google_calendar_event_id, "outlook": event.outlook_event_id}
+    remote = {
+        "google": event.google_calendar_event_id,
+        "outlook": event.outlook_event_id,
+    }
     session.delete(event)
     session.commit()
     for provider, remote_id in remote.items():
         conn = remote_id and _connection(session, current_user.id, provider)
         if conn:
             try:
-                calendar_oauth.delete_event(provider, calendar_sync.provider_token(conn), remote_id)
+                calendar_oauth.delete_event(
+                    provider, calendar_sync.provider_token(conn), remote_id
+                )
             except Exception as e:
-                print(f"[CalendarSync] couldn't remove {provider} event {remote_id}: {e}")
+                print(
+                    f"[CalendarSync] couldn't remove {provider} event {remote_id}: {e}"
+                )
     return {"message": "Event deleted"}
 
 
@@ -101,10 +107,13 @@ def _provider_or_404(provider: str) -> str:
     return provider
 
 
-def _connection(session: Session, user_id: str, provider: str) -> Optional[CalendarConnection]:
+def _connection(
+    session: Session, user_id: str, provider: str
+) -> Optional[CalendarConnection]:
     return session.exec(
         select(CalendarConnection).where(
-            CalendarConnection.user_id == user_id, CalendarConnection.provider == provider
+            CalendarConnection.user_id == user_id,
+            CalendarConnection.provider == provider,
         )
     ).first()
 
@@ -122,7 +131,11 @@ def sync_providers(
                 "provider": name,
                 "configured": calendar_oauth.is_configured(name),
                 "connected": conn is not None,
-                "lastSyncedAt": conn.last_synced_at.isoformat() if conn and conn.last_synced_at else None,
+                "lastSyncedAt": (
+                    conn.last_synced_at.isoformat()
+                    if conn and conn.last_synced_at
+                    else None
+                ),
             }
         )
     return out
@@ -132,9 +145,16 @@ def sync_providers(
 def sync_connect(provider: str, current_user: User = Depends(get_current_user)):
     _provider_or_404(provider)
     if not calendar_oauth.is_configured(provider):
-        raise MessageHTTPException(status_code=501, detail=f"{provider.title()} sync isn't configured on this server")
+        raise MessageHTTPException(
+            status_code=501,
+            detail=f"{provider.title()} sync isn't configured on this server",
+        )
     state = jwt.encode(
-        {"uid": current_user.id, "provider": provider, "exp": datetime.now(timezone.utc) + timedelta(minutes=10)},
+        {
+            "uid": current_user.id,
+            "provider": provider,
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
+        },
         jwt_secret(),
         algorithm="HS256",
     )
@@ -165,7 +185,9 @@ def sync_callback(
 
     conn = _connection(session, claims["uid"], provider)
     if conn is None:
-        conn = CalendarConnection(user_id=claims["uid"], provider=provider, refresh_token_enc="")
+        conn = CalendarConnection(
+            user_id=claims["uid"], provider=provider, refresh_token_enc=""
+        )
     conn.refresh_token_enc = calendar_oauth.encrypt_token(refresh)
     session.add(conn)
     session.commit()
@@ -181,7 +203,9 @@ def sync_now(
     _provider_or_404(provider)
     conn = _connection(session, current_user.id, provider)
     if conn is None:
-        raise MessageHTTPException(status_code=400, detail=f"Connect your {provider.title()} calendar first")
+        raise MessageHTTPException(
+            status_code=400, detail=f"Connect your {provider.title()} calendar first"
+        )
     try:
         return calendar_sync.sync_connection(session, conn)
     except calendar_oauth.CalendarProviderError as e:

@@ -4,11 +4,10 @@ import time
 from collections import defaultdict, deque
 from typing import Deque, Dict, Optional
 
-from fastapi import Depends, HTTPException, Request
-
 from app.config import get_settings
 from app.db.models import User
 from app.deps.auth import get_current_user_optional
+from fastapi import Depends, HTTPException, Request
 
 _WINDOW_SECONDS = 60.0
 _MAX_TRACKED_KEYS = 10_000
@@ -21,7 +20,9 @@ def _prune(now: float) -> None:
         del _hits[key]
 
 
-def check_rate_limit(key: str, limit: int, now: Optional[float] = None) -> Optional[int]:
+def check_rate_limit(
+    key: str, limit: int, now: Optional[float] = None
+) -> Optional[int]:
     """Record a hit for `key`."""
     now = time.monotonic() if now is None else now
     if len(_hits) > _MAX_TRACKED_KEYS:
@@ -45,7 +46,11 @@ async def chat_rate_limit(
     limit = get_settings().chat_rate_limit_per_minute
     if limit <= 0:
         return
-    key = f"user:{user.id}" if user else f"ip:{request.client.host if request.client else '?'}"
+    key = (
+        f"user:{user.id}"
+        if user
+        else f"ip:{request.client.host if request.client else '?'}"
+    )
     retry_after = check_rate_limit(key, limit)
     if retry_after is not None:
         raise HTTPException(

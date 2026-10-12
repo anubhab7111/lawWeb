@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import numpy as np
-
 from app.ingest.paths import corpus_path
 from app.ingest.thermal import ThermalGuard
 from app.tools import judgment_rag as jr
@@ -25,7 +24,9 @@ NUMBERED_ACTS = ("IPC:", "CrPC:")
 def _years() -> List[int]:
     root = corpus_path("judgments", "sc", "chunks")
     return sorted(
-        int(p.name.split("=")[1]) for p in root.glob("year=*") if (p / "_DONE.json").exists()
+        int(p.name.split("=")[1])
+        for p in root.glob("year=*")
+        if (p / "_DONE.json").exists()
     )
 
 
@@ -40,7 +41,9 @@ def select_year(year: int) -> List[Dict]:
     doc_sections: Dict[str, set] = {}
     for c in chunks:
         doc_sections.setdefault(c["doc_id"], set()).update(
-            s.split(":", 1)[1] for s in c["sections_cited"] if s.startswith(NUMBERED_ACTS)
+            s.split(":", 1)[1]
+            for s in c["sections_cited"]
+            if s.startswith(NUMBERED_ACTS)
         )
     return [{**c, "doc_sections": sorted(doc_sections[c["doc_id"]])} for c in chunks]
 
@@ -63,7 +66,9 @@ def phase_select(years: List[int]) -> Dict[int, int]:
             target.with_suffix(".tmp").rename(target)
         with gzip.open(target, "rt", encoding="utf-8") as f:
             counts[year] = sum(1 for _ in f)
-    print(f"[judgment-index] selected {sum(counts.values())} chunks from {sum(1 for n in counts.values() if n)} years")
+    print(
+        f"[judgment-index] selected {sum(counts.values())} chunks from {sum(1 for n in counts.values() if n)} years"
+    )
     return counts
 
 
@@ -93,10 +98,16 @@ def migrate_embeddings(years: List[int]) -> None:
         old = emb / f"year={year}.npy"
         if not old.exists():
             continue
-        chunks = _read_selected(sel, year) if (sel / f"year={year}.jsonl.gz").exists() else []
+        chunks = (
+            _read_selected(sel, year)
+            if (sel / f"year={year}.jsonl.gz").exists()
+            else []
+        )
         vecs = np.load(old)
         if len(chunks) == len(vecs):
-            _save_vectors(emb / f"year={year}.npz", [c["chunk_id"] for c in chunks], vecs)
+            _save_vectors(
+                emb / f"year={year}.npz", [c["chunk_id"] for c in chunks], vecs
+            )
         old.unlink()
 
 
@@ -129,13 +140,23 @@ def phase_embed(years: List[int], device: str) -> None:
             texts = [embed_text(c) for c in missing]
             parts = []
             for i in range(0, len(texts), 128):
-                parts.append(pr.encode_texts(embeddings, texts[i : i + 128], batch_size=32).astype(np.float16))
+                parts.append(
+                    pr.encode_texts(
+                        embeddings, texts[i : i + 128], batch_size=32
+                    ).astype(np.float16)
+                )
                 guard.step()
             fresh = np.concatenate(parts)
             cached.update({c["chunk_id"]: v for c, v in zip(missing, fresh)})
-        vecs = np.stack([cached[c["chunk_id"]] for c in chunks]) if chunks else np.empty((0, 1024), dtype=np.float16)
+        vecs = (
+            np.stack([cached[c["chunk_id"]] for c in chunks])
+            if chunks
+            else np.empty((0, 1024), dtype=np.float16)
+        )
         _save_vectors(emb / f"year={year}.npz", [c["chunk_id"] for c in chunks], vecs)
-        print(f"[judgment-index] {year}: {len(missing)} new / {len(chunks)} chunks embedded ({done}/{len(pending)}, {time.time() - started:.0f}s)")
+        print(
+            f"[judgment-index] {year}: {len(missing)} new / {len(chunks)} chunks embedded ({done}/{len(pending)}, {time.time() - started:.0f}s)"
+        )
 
 
 def _year_vectors(sel: Path, emb: Path, year: int):
@@ -163,15 +184,23 @@ def train_ivf(years: List[int], dim: int, nlist: int, sample: int, seed: int = 0
         parts.append(vecs[take])
     train = np.concatenate(parts)[:sample]
     quantizer = faiss.IndexFlatIP(dim)
-    index = faiss.IndexIVFScalarQuantizer(quantizer, dim, nlist, faiss.ScalarQuantizer.QT_8bit, faiss.METRIC_INNER_PRODUCT)
+    index = faiss.IndexIVFScalarQuantizer(
+        quantizer, dim, nlist, faiss.ScalarQuantizer.QT_8bit, faiss.METRIC_INNER_PRODUCT
+    )
     index.train(train)
-    print(f"[judgment-index] IVF trained: nlist {nlist} on {len(train)} of {total} vectors")
+    print(
+        f"[judgment-index] IVF trained: nlist {nlist} on {len(train)} of {total} vectors"
+    )
     return index
 
 
-def phase_assemble(years: List[int], out_dir: Optional[Path] = None, nlist: int = 4096, sample: int = 200_000) -> None:
+def phase_assemble(
+    years: List[int],
+    out_dir: Optional[Path] = None,
+    nlist: int = 4096,
+    sample: int = 200_000,
+) -> None:
     import faiss
-
     from app.config import get_settings
 
     out_dir = out_dir or jr.INDEX_DIR
@@ -194,7 +223,9 @@ def phase_assemble(years: List[int], out_dir: Optional[Path] = None, nlist: int 
         row += len(chunks)
         con.commit()
     assert index is not None, "nothing to assemble"
-    print(f"[judgment-index] building full-text index over {row} chunks ...", flush=True)
+    print(
+        f"[judgment-index] building full-text index over {row} chunks ...", flush=True
+    )
     con.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
     con.execute("CREATE INDEX chunks_doc ON chunks(doc_id)")
     con.commit()
@@ -212,25 +243,37 @@ def phase_assemble(years: List[int], out_dir: Optional[Path] = None, nlist: int 
             }
         )
     )
-    print(f"[judgment-index] index: {row} chunks from {len(docs)} judgments -> {out_dir}")
+    print(
+        f"[judgment-index] index: {row} chunks from {len(docs)} judgments -> {out_dir}"
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--years", type=int, nargs="*")
     parser.add_argument("--select-only", action="store_true")
     parser.add_argument("--embed-only", action="store_true")
-    parser.add_argument("--reselect", action="store_true", help="discard the cached selection (after changing the criteria)")
+    parser.add_argument(
+        "--reselect",
+        action="store_true",
+        help="discard the cached selection (after changing the criteria)",
+    )
     parser.add_argument("--nlist", type=int, default=4096)
-    parser.add_argument("--out-dir", type=Path, help="write the index elsewhere (smoke tests)")
+    parser.add_argument(
+        "--out-dir", type=Path, help="write the index elsewhere (smoke tests)"
+    )
     args = parser.parse_args()
 
     years = args.years or _years()
     print(f"[judgment-index] {len(years)} processed years")
     migrate_embeddings(years)
     if args.reselect:
-        shutil.rmtree(corpus_path("builds", "judgments", "selected"), ignore_errors=True)
+        shutil.rmtree(
+            corpus_path("builds", "judgments", "selected"), ignore_errors=True
+        )
     phase_select(years)
     if args.select_only:
         return

@@ -11,10 +11,14 @@ def _sc_year(root, year, names):
     for n in names:
         data = f"%PDF {n}".encode()
         (pdf / n).write_bytes(data)
-        rows.append({"name": n, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+        rows.append(
+            {"name": n, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        )
     manifest = root / "judgments" / "sc" / "manifest"
     manifest.mkdir(parents=True, exist_ok=True)
-    (manifest / f"year={year}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (manifest / f"year={year}.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows)
+    )
 
 
 def test_init_tidies_root_strays(tmp_path):
@@ -65,9 +69,16 @@ def test_verify_accepts_quarantined_legacy_files(tmp_path):
     (tmp_path / "case_law").mkdir(exist_ok=True)
     (tmp_path / "case_law" / "kept.json").write_text("{}")
     (tmp_path / "quarantine" / "case_law").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "quarantine" / "case_law" / "gone.reason.json").write_text('{"reason": "wrong judgment"}')
-    rows = [{"dst": "case_law/kept.json", "sha256": ""}, {"dst": "case_law/gone.json", "sha256": ""}]
-    (tmp_path / "manifest" / "legacy_migration.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (tmp_path / "quarantine" / "case_law" / "gone.reason.json").write_text(
+        '{"reason": "wrong judgment"}'
+    )
+    rows = [
+        {"dst": "case_law/kept.json", "sha256": ""},
+        {"dst": "case_law/gone.json", "sha256": ""},
+    ]
+    (tmp_path / "manifest" / "legacy_migration.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows)
+    )
     legacy = lambda: [p for p in verify(tmp_path) if p.startswith("legacy")]
     assert legacy() == []
     (tmp_path / "quarantine" / "case_law" / "gone.reason.json").unlink()

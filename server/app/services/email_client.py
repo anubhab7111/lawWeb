@@ -9,7 +9,9 @@ from app.config import get_settings
 def send_email(to_address: str, subject: str, body: str) -> bool:
     settings = get_settings()
     if not settings.smtp_host:
-        print(f"[EmailClient] SMTP not configured — would send to {to_address}: {subject}")
+        print(
+            f"[EmailClient] SMTP not configured — would send to {to_address}: {subject}"
+        )
         return False
 
     message = EmailMessage()

@@ -1,5 +1,4 @@
 import pytest
-
 from app.ingest.judgment_chunker import (
     ChunkValidationError,
     chunk_judgment,

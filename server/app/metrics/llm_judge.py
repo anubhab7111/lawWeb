@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import httpx
-
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -217,16 +216,13 @@ def _extract_json(text: str) -> Optional[dict]:
 
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-
     text = re.sub(r"```(?:json)?", "", text).strip()
     text = text.replace("```", "").strip()
-
 
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-
 
     pattern = re.compile(r'\{[^{}]*"score"\s*:\s*[\d.]+[^{}]*\}', re.DOTALL)
     match = pattern.search(text)
@@ -235,7 +231,6 @@ def _extract_json(text: str) -> Optional[dict]:
             return json.loads(match.group(0))
         except json.JSONDecodeError:
             pass
-
 
     pattern2 = re.compile(r"\{.*?\}", re.DOTALL)
     for m in pattern2.finditer(text):
@@ -297,7 +292,6 @@ def _parse_score(raw: str, metric: str) -> JudgeScore:
             )
         except (TypeError, ValueError):
             pass
-
 
     float_match = re.search(r"\b(0\.\d+|1\.0|1)\b", raw)
     if float_match:
@@ -397,13 +391,19 @@ class LLMJudge:
         self._api_keys: List[str] = [k for k in (self._api_key, alt) if k]
         self._exhausted: Set[str] = set()
         self._model_name: str = (
-            model or getattr(settings, "openrouter_model", None) or OPENROUTER_DEFAULT_MODEL
+            model
+            or getattr(settings, "openrouter_model", None)
+            or OPENROUTER_DEFAULT_MODEL
         )
         self._base_url: str = (
-            base_url or getattr(settings, "openrouter_base_url", None) or OPENROUTER_BASE_URL
+            base_url
+            or getattr(settings, "openrouter_base_url", None)
+            or OPENROUTER_BASE_URL
         )
         self._daily_limit: int = int(
-            daily_limit if daily_limit is not None else getattr(settings, "openrouter_daily_limit", 50)
+            daily_limit
+            if daily_limit is not None
+            else getattr(settings, "openrouter_daily_limit", 50)
         )
 
         self._max_retries = max_retries
@@ -423,7 +423,6 @@ class LLMJudge:
             self._daily_limit,
         )
 
-
     async def _post_chat(
         self, prompt: str, max_tokens: int = 512
     ) -> tuple[Optional[str], float, Optional[str]]:
@@ -434,8 +433,12 @@ class LLMJudge:
         primary_id = _key_id(self._api_keys[0])
         counts = _usage_today(primary_id)
         api_key = next(
-            (k for k in self._api_keys
-             if k not in self._exhausted and counts.get(_key_id(k), 0) < self._daily_limit),
+            (
+                k
+                for k in self._api_keys
+                if k not in self._exhausted
+                and counts.get(_key_id(k), 0) < self._daily_limit
+            ),
             None,
         )
         if api_key is None:
@@ -468,8 +471,6 @@ class LLMJudge:
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.0,
                             "max_tokens": max_tokens,
-
-
                             "reasoning": {"effort": "low"},
                         },
                     )
@@ -481,8 +482,12 @@ class LLMJudge:
                 choice = data["choices"][0]
                 raw = choice["message"]["content"] or ""
                 if not raw and choice.get("finish_reason") == "length":
-                    return None, elapsed, (
-                        f"judge used all {max_tokens} tokens on hidden reasoning (finish_reason=length)"
+                    return (
+                        None,
+                        elapsed,
+                        (
+                            f"judge used all {max_tokens} tokens on hidden reasoning (finish_reason=length)"
+                        ),
                     )
                 return raw, elapsed, None
 
@@ -492,10 +497,15 @@ class LLMJudge:
                 )
                 if exc.response.status_code == 429:
                     self._exhausted.add(api_key)
-                    nxt = next((k for k in self._api_keys if k not in self._exhausted), None)
+                    nxt = next(
+                        (k for k in self._api_keys if k not in self._exhausted), None
+                    )
                     if nxt is None:
                         break
-                    logger.warning("OpenRouter key %s hit its quota; switching keys.", _key_id(api_key))
+                    logger.warning(
+                        "OpenRouter key %s hit its quota; switching keys.",
+                        _key_id(api_key),
+                    )
                     api_key = nxt
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
@@ -534,7 +544,6 @@ class LLMJudge:
             {"score": score.score, "reasoning": score.reasoning, "raw": raw},
         )
         return score
-
 
     async def faithfulness(
         self,
@@ -620,7 +629,6 @@ class LLMJudge:
         )
         return await self._invoke(prompt, "context_recall")
 
-
     _TRIAD_METRICS = (
         "faithfulness",
         "answer_relevance",
@@ -654,7 +662,6 @@ class LLMJudge:
         raw = cached.get("raw") if cached else None
         elapsed = 0.0
         if not raw:
-
 
             raw, elapsed, reason = await self._post_chat(prompt, max_tokens=8192)
             if not raw:

@@ -1,7 +1,7 @@
 """App package initialization."""
 
-from app.chatbot import get_chatbot, LegalChatbot
-from app.config import get_settings, Settings
+from app.chatbot import LegalChatbot, get_chatbot
+from app.config import Settings, get_settings
 
 __all__ = [
     "get_chatbot",

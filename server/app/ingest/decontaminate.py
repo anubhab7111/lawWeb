@@ -15,7 +15,6 @@ from typing import Dict, Iterable, List
 
 import numpy as np
 import pandas as pd
-
 from app.ingest.iltur_export import lsi_dir
 from app.ingest.paths import corpus_path
 
@@ -51,7 +50,9 @@ def shingle_hashes(tokens: List[str], n: int = SHINGLE_WORDS) -> np.ndarray:
         for k in range(n):
             h = h * _PRIME + ids[k : k + count]
     masked = np.fromiter((t == _MASK for t in tokens), dtype=bool, count=len(tokens))
-    window_masked = np.convolve(masked.astype(np.int8), np.ones(n, dtype=np.int8), mode="valid") > 0
+    window_masked = (
+        np.convolve(masked.astype(np.int8), np.ones(n, dtype=np.int8), mode="valid") > 0
+    )
     return h[~window_masked]
 
 
@@ -80,7 +81,12 @@ class TestShingles:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(path, hashes=self.hashes, case_of=self.case_of, case_ids=np.array(self.case_ids))
+        np.savez(
+            path,
+            hashes=self.hashes,
+            case_of=self.case_of,
+            case_ids=np.array(self.case_ids),
+        )
 
     @classmethod
     def load(cls, path: Path) -> "TestShingles":
@@ -115,12 +121,16 @@ def build_test_index(split: str = "test") -> TestShingles:
     if cache.exists():
         return TestShingles.load(cache)
     df = pd.read_parquet(lsi_dir() / f"{split}.parquet", columns=["id", "sentences"])
-    index = TestShingles.from_texts({str(r.id): " ".join(r.sentences) for r in df.itertuples()})
+    index = TestShingles.from_texts(
+        {str(r.id): " ".join(r.sentences) for r in df.itertuples()}
+    )
     index.save(cache)
     return index
 
 
-def scan_years(years: Iterable[int], min_shingles: int = MIN_SHINGLES, split: str = "test") -> Dict:
+def scan_years(
+    years: Iterable[int], min_shingles: int = MIN_SHINGLES, split: str = "test"
+) -> Dict:
     index = build_test_index(split)
     root = corpus_path("judgments", "sc", "clean")
     flagged: Dict[str, Dict] = {}
@@ -136,11 +146,15 @@ def scan_years(years: Iterable[int], min_shingles: int = MIN_SHINGLES, split: st
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--years", type=int, nargs="*")
     parser.add_argument("--min-shingles", type=int, default=MIN_SHINGLES)
     parser.add_argument(
-        "--split", default="test", choices=["test", "dev"],
+        "--split",
+        default="test",
+        choices=["test", "dev"],
         help="dev: also exclude a tuning set's source judgments, so tuned parameters can't exploit them",
     )
     args = parser.parse_args()
@@ -150,7 +164,9 @@ def main() -> None:
     report = scan_years(years, args.min_shingles, args.split)
     out = corpus_path("builds", "decontam")
     out.mkdir(parents=True, exist_ok=True)
-    name = "sc_flagged.json" if args.split == "test" else f"sc_flagged_{args.split}.json"
+    name = (
+        "sc_flagged.json" if args.split == "test" else f"sc_flagged_{args.split}.json"
+    )
     (out / name).write_text(json.dumps(report, indent=1))
     sizes = sorted(max(v.values()) for v in report["flagged_docs"].values())
     print(

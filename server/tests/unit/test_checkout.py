@@ -4,15 +4,14 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from app.db.engine import get_engine
 from app.db.init_db import init_db
 from app.db.models import Booking, Lawyer, User
 from app.main import app
 from app.routers import bookings
 from app.routers.auth import _make_token
+from fastapi.testclient import TestClient
+from sqlmodel import Session, select
 
 
 @pytest.fixture(scope="module")
@@ -40,7 +39,9 @@ class FakeGateway:
     def sale(self, payload):
         self.charges += 1
         return SimpleNamespace(
-            is_success=True, message="", transaction=SimpleNamespace(id=f"tx-{self.charges}")
+            is_success=True,
+            message="",
+            transaction=SimpleNamespace(id=f"tx-{self.charges}"),
         )
 
 
@@ -51,7 +52,10 @@ def _total(rate):
 def _post(client, user_id, lawyer_id, rate, key, when, time="10:00"):
     return client.post(
         "/api/bookings/checkout",
-        headers={"Authorization": f"Bearer {_make_token(user_id)}", "Idempotency-Key": key},
+        headers={
+            "Authorization": f"Bearer {_make_token(user_id)}",
+            "Idempotency-Key": key,
+        },
         json={
             "amount": _total(rate),
             "paymentMethodNonce": "fake-valid-nonce",

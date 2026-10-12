@@ -6,16 +6,15 @@ from typing import Optional
 
 import bcrypt
 import jwt
+from app.db.engine import get_session
+from app.db.models import User
+from app.deps.auth import get_current_user
+from app.security import jwt_secret as _jwt_secret
 from fastapi import APIRouter, Depends, Header, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
-
-from app.db.engine import get_session
-from app.db.models import User
-from app.deps.auth import get_current_user
-from app.security import jwt_secret as _jwt_secret
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -59,7 +58,9 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
     if not _EMAIL_RE.match(body.email.strip()):
         return _error(400, "Enter a valid email address")
     if len(body.password) < _MIN_PASSWORD_CHARS:
-        return _error(400, f"Password must be at least {_MIN_PASSWORD_CHARS} characters")
+        return _error(
+            400, f"Password must be at least {_MIN_PASSWORD_CHARS} characters"
+        )
     if len(body.password.encode()) > _BCRYPT_MAX_BYTES:
         return _error(400, "Password must be 72 bytes or fewer")
 
@@ -92,7 +93,6 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
     password_bytes = (body.password or "").encode()
     if len(password_bytes) > _BCRYPT_MAX_BYTES:
 
-
         return _error(400, "Invalid credentials")
     if not bcrypt.checkpw(password_bytes, user.password.encode()):
         return _error(400, "Invalid credentials")
@@ -119,7 +119,9 @@ def me(
     authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    token = authorization.split(" ")[1] if authorization and " " in authorization else None
+    token = (
+        authorization.split(" ")[1] if authorization and " " in authorization else None
+    )
     if not token:
         return _error(401, "No token provided")
 
@@ -131,7 +133,6 @@ def me(
     user = session.get(User, decoded.get("id"))
     if not user:
         return _error(404, "User not found")
-
 
     remaining = decoded.get("exp", 0) - datetime.now(timezone.utc).timestamp()
     if remaining < 15 * 60:

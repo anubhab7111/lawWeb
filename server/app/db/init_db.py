@@ -4,12 +4,11 @@ import json
 import sys
 from pathlib import Path
 
-from sqlalchemy import inspect
-from sqlmodel import Session, select
-
 from app.db.engine import get_engine
 from app.db.migrations import run_migrations
 from app.db.models import Lawyer
+from sqlalchemy import inspect
+from sqlmodel import Session, select
 
 SCHEMA_FILE = Path(__file__).parent / "schema.sql"
 
@@ -44,11 +43,15 @@ def _embed_missing_lawyers(engine) -> None:
     from app.tools.lawyer_recommender import embed_lawyers_batch
 
     with Session(engine) as session:
-        lawyers = session.exec(select(Lawyer).where(Lawyer.bio_embedding.is_(None))).all()
+        lawyers = session.exec(
+            select(Lawyer).where(Lawyer.bio_embedding.is_(None))
+        ).all()
         if not lawyers:
             return
         print(f"Embedding {len(lawyers)} lawyer bios (skip with --skip-embeddings)...")
-        vectors = asyncio.run(embed_lawyers_batch([(l.specialty, l.bio) for l in lawyers]))
+        vectors = asyncio.run(
+            embed_lawyers_batch([(l.specialty, l.bio) for l in lawyers])
+        )
         for lawyer, vector in zip(lawyers, vectors):
             lawyer.bio_embedding = vector
             session.add(lawyer)
@@ -65,7 +68,6 @@ def init_db(embed: bool = True) -> None:
         print("Created tables from schema.sql")
     else:
         print("Tables already exist, skipping schema.sql")
-
 
     run_migrations(engine)
 

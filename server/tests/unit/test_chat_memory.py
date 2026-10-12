@@ -6,19 +6,31 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-from langgraph.checkpoint.memory import InMemorySaver
-
 from app import chatbot as cb
 from app import checkpointing
 from app.config import get_settings
-
-from test_chatbot import FakeLLM, Rig, _classification, _report, _statute, run  # noqa: F401
+from langgraph.checkpoint.memory import InMemorySaver
+from test_chatbot import _report  # noqa: F401
 from test_chatbot import env  # noqa: F401  (autouse fixture)
+from test_chatbot import (
+    FakeLLM,
+    Rig,
+    _classification,
+    _statute,
+    run,
+)
 
 
-def _rig(monkeypatch, answers=("Answer one.", "Answer two.", "Answer three."), saver=None):
-    rig = Rig(monkeypatch, FakeLLM(list(answers)), _classification("general_query"),
-              [_statute()], [_report(1.0)])
+def _rig(
+    monkeypatch, answers=("Answer one.", "Answer two.", "Answer three."), saver=None
+):
+    rig = Rig(
+        monkeypatch,
+        FakeLLM(list(answers)),
+        _classification("general_query"),
+        [_statute()],
+        [_report(1.0)],
+    )
     if saver is not None:
         rig.bot = cb.LegalChatbot(saver)
     return rig
@@ -55,8 +67,10 @@ def test_accounts_do_not_share_a_thread_even_with_the_same_session_id(monkeypatc
     async def scenario():
         await rig.bot.chat("alice's private question", "user:1:shared-id")
         await rig.bot.chat("bob asks something", "user:2:shared-id")
-        return (await rig.bot.get_session_history("user:1:shared-id"),
-                await rig.bot.get_session_history("user:2:shared-id"))
+        return (
+            await rig.bot.get_session_history("user:1:shared-id"),
+            await rig.bot.get_session_history("user:2:shared-id"),
+        )
 
     alice, bob = run(scenario())
     assert alice[0]["content"] == "alice's private question"
@@ -68,10 +82,18 @@ def test_only_message_history_is_checkpointed(monkeypatch):
     """The turn graph's state (tool results holding retriever objects, sets, uploaded text) must never reach the checkpointer: LangGraph's serializer fails on arbitrary objects and..."""
     saver = InMemorySaver()
     rig = _rig(monkeypatch, saver=saver)
-    run(rig.bot.chat("What is anticipatory bail?", "s", document_content="SECRET DOC " * 50))
+    run(
+        rig.bot.chat(
+            "What is anticipatory bail?", "s", document_content="SECRET DOC " * 50
+        )
+    )
 
     tup = saver.get_tuple({"configurable": {"thread_id": "s"}})
-    channels = {k for k in tup.checkpoint["channel_values"] if not k.startswith(("branch:", "__"))}
+    channels = {
+        k
+        for k in tup.checkpoint["channel_values"]
+        if not k.startswith(("branch:", "__"))
+    }
     assert channels == {"messages"}
 
     namespaces = {ns for thread in saver.storage.values() for ns in thread}
@@ -82,7 +104,10 @@ def test_only_message_history_is_checkpointed(monkeypatch):
 
 def test_seed_session_primes_an_empty_thread_only(monkeypatch):
     rig = _rig(monkeypatch)
-    seeded = [{"role": "user", "content": "old q"}, {"role": "assistant", "content": "old a"}]
+    seeded = [
+        {"role": "user", "content": "old q"},
+        {"role": "assistant", "content": "old a"},
+    ]
 
     async def scenario():
         assert await rig.bot.has_session("s") is False
@@ -119,7 +144,9 @@ def _db_url():
     return get_settings().database_url or os.environ["DATABASE_URL"]
 
 
-def test_postgres_checkpointer_persists_across_a_restart_and_reaps_idle_threads(monkeypatch):
+def test_postgres_checkpointer_persists_across_a_restart_and_reaps_idle_threads(
+    monkeypatch,
+):
     async def scenario():
         pool, saver = await checkpointing.open_postgres_saver(_db_url())
         tid_active, tid_idle = f"guest:{uuid.uuid4()}", f"guest:{uuid.uuid4()}"
@@ -130,7 +157,6 @@ def test_postgres_checkpointer_persists_across_a_restart_and_reaps_idle_threads(
         finally:
             await pool.close()
 
-
         pool2, saver2 = await checkpointing.open_postgres_saver(_db_url())
         try:
             second = _rig(monkeypatch, saver=saver2)
@@ -138,7 +164,6 @@ def test_postgres_checkpointer_persists_across_a_restart_and_reaps_idle_threads(
             assert [m["role"] for m in history] == ["user", "assistant"]
             await second.bot.chat("And for economic offences?", tid_active)
             assert "What is anticipatory bail?" in second.llm.prompts[0]
-
 
             async with pool2.connection() as conn:
                 await conn.execute(
@@ -161,7 +186,9 @@ def test_postgres_checkpointer_persists_across_a_restart_and_reaps_idle_threads(
     run(scenario())
 
 
-def test_init_checkpointer_falls_back_to_memory_when_postgres_is_unreachable(monkeypatch):
+def test_init_checkpointer_falls_back_to_memory_when_postgres_is_unreachable(
+    monkeypatch,
+):
     monkeypatch.setattr(checkpointing, "_saver", None)
     monkeypatch.setattr(checkpointing, "_pool", None)
     monkeypatch.setenv("DATABASE_URL", "postgresql://nobody:x@127.0.0.1:1/none")
@@ -200,12 +227,11 @@ def test_init_checkpointer_uses_postgres_when_reachable(monkeypatch):
 
 
 def test_authenticated_thread_is_reseeded_from_the_db_transcript(monkeypatch):
-    from sqlmodel import Session
-
     from app.db.engine import get_engine
     from app.db.init_db import init_db
     from app.db.models import User
     from app.routers import chat as chat_router
+    from sqlmodel import Session
 
     init_db(embed=False)
     sid = str(uuid.uuid4())
@@ -219,13 +245,19 @@ def test_authenticated_thread_is_reseeded_from_the_db_transcript(monkeypatch):
         s.refresh(owner)
         s.refresh(other)
         chat_router._persist_turn_sync(
-            s, owner, sid, user_message="stored question", assistant_message="stored answer"
+            s,
+            owner,
+            sid,
+            user_message="stored question",
+            assistant_message="stored answer",
         )
 
         async def scenario():
 
             await chat_router._seed_from_db_if_needed(s, rig.bot, other, sid)
-            assert await rig.bot.has_session(chat_router._memory_key(other, sid)) is False
+            assert (
+                await rig.bot.has_session(chat_router._memory_key(other, sid)) is False
+            )
 
             await chat_router._seed_from_db_if_needed(s, rig.bot, owner, sid)
             key = chat_router._memory_key(owner, sid)

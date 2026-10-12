@@ -7,8 +7,14 @@ from app.tools.unified_legal_rag import UnifiedLegalRAGSystem
 
 def _chunk(cid, act, section):
     return LegalChunk(
-        chunk_id=cid, domain="criminal", act_name=act, section_number=section,
-        title="t", text=f"{act} section {section} text", source_file="x.pdf", domains=["criminal"],
+        chunk_id=cid,
+        domain="criminal",
+        act_name=act,
+        section_number=section,
+        title="t",
+        text=f"{act} section {section} text",
+        source_file="x.pdf",
+        domains=["criminal"],
     )
 
 
@@ -22,7 +28,16 @@ class FakeStore:
     def similarity_search_with_score(self, query, k=4, filter=None, fetch_k=20):
         self.calls.append({"k": k, "fetch_k": fetch_k, "filtered": filter is not None})
         docs = [
-            (SimpleNamespace(metadata={"chunk_id": c.chunk_id, "act_name": c.act_name, "domains": "criminal"}), 0.5)
+            (
+                SimpleNamespace(
+                    metadata={
+                        "chunk_id": c.chunk_id,
+                        "act_name": c.act_name,
+                        "domains": "criminal",
+                    }
+                ),
+                0.5,
+            )
             for c in self.chunks
         ]
         if filter:
@@ -49,7 +64,15 @@ CHUNKS = [
 
 def test_scoping_by_act_excludes_other_acts_and_overfetches():
     rag = _rag(CHUNKS)
-    result = asyncio.run(rag.retrieve("murder", k=10, use_reranker=False, min_score=0.0, acts=["Indian Penal Code"]))
+    result = asyncio.run(
+        rag.retrieve(
+            "murder",
+            k=10,
+            use_reranker=False,
+            min_score=0.0,
+            acts=["Indian Penal Code"],
+        )
+    )
     assert {c.section_number for c in result.chunks} == {"302", "34"}
     assert all(c.act_name == "Indian Penal Code" for c in result.chunks)
     call = rag.vector_store.calls[0]
@@ -58,6 +81,8 @@ def test_scoping_by_act_excludes_other_acts_and_overfetches():
 
 def test_unscoped_retrieval_is_unchanged():
     rag = _rag(CHUNKS)
-    result = asyncio.run(rag.retrieve("murder", k=10, use_reranker=False, min_score=0.0))
+    result = asyncio.run(
+        rag.retrieve("murder", k=10, use_reranker=False, min_score=0.0)
+    )
     assert len(result.chunks) == 4
     assert rag.vector_store.calls[0]["filtered"] is False

@@ -46,12 +46,10 @@ class CrimeReportInfo(TypedDict):
 class DocumentValidationInfo(TypedDict):
     """Result of the 3-layer document validation pipeline with ReAct reasoning."""
 
-
     classified_type: str
     classification_confidence: float
     sub_type: Optional[str]
     jurisdiction_hints: List[str]
-
 
     compliance_score: float
     total_checks: int
@@ -61,13 +59,11 @@ class DocumentValidationInfo(TypedDict):
     present_elements: List[Any]
     non_compliance: List[Any]
 
-
     llm_analysis: str
     applicable_acts: List[str]
     applicable_sections: List[str]
     precedent_notes: List[str]
     state_specific_notes: List[str]
-
 
     reasoning_trace: Optional[dict]
 
@@ -75,14 +71,11 @@ class DocumentValidationInfo(TypedDict):
 class ChatState(TypedDict):
     """Main state for the chatbot graph."""
 
-
     messages: List[Message]
     current_input: str
     conversation_context: Optional[str]
 
-
     retrieval_query: Optional[str]
-
 
     intent: Optional[
         Literal[
@@ -94,40 +87,27 @@ class ChatState(TypedDict):
         ]
     ]
 
-
     routing_confidence: Optional[float]
     routing_reasoning: Optional[str]
     is_ambiguous: Optional[bool]
     secondary_intents: Optional[List[str]]
     extracted_entities: Optional[List[str]]
 
-
-    selected_tools: Optional[
-        List[str]
-    ]
-    domain_hint: Optional[
-        Literal["criminal"]
-    ]
-    active_document_context: Optional[
-        bool
-    ]
-
+    selected_tools: Optional[List[str]]
+    domain_hint: Optional[Literal["criminal"]]
+    active_document_context: Optional[bool]
 
     document_content: Optional[str]
     document_type: Optional[str]
     document_info: Optional[DocumentInfo]
 
-
     document_validation: Optional[DocumentValidationInfo]
-
 
     crime_details: Optional[str]
     crime_report: Optional[CrimeReportInfo]
 
-
     lawyer_query: Optional[str]
     lawyers_found: Optional[List[LawyerInfo]]
-
 
     sub_questions: Optional[List[str]]
     tool_results: Optional[Dict[str, Any]]
@@ -145,13 +125,10 @@ class ChatState(TypedDict):
     clarification: Optional[bool]
     followup_answered: Optional[bool]
 
-
     response: Optional[str]
-
 
     session_id: Optional[str]
     error: Optional[str]
     started_at: Optional[float]
-
 
     trace: Optional[Dict[str, Any]]

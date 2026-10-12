@@ -11,7 +11,9 @@ def test_short_line_untouched():
 
 
 def test_long_text_is_fully_covered_in_bounded_pieces():
-    text = " ".join(f"Sentence number {i} explains the rule in detail." for i in range(200))
+    text = " ".join(
+        f"Sentence number {i} explains the rule in detail." for i in range(200)
+    )
     pieces = split_for_translation(text)
     assert all(len(p) <= 400 for p in pieces)
     assert " ".join(pieces).split() == text.split()

@@ -1,6 +1,5 @@
 """Keyword bank for the chatbot's multi-offense detection."""
 
-
 CRIME_TYPE_KEYWORDS = frozenset(
     [
         "forgery",

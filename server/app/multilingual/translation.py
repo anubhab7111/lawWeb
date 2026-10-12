@@ -8,9 +8,8 @@ import logging
 import re
 from typing import Any, Optional
 
-from cachetools import TTLCache
-
 from app.config import get_settings
+from cachetools import TTLCache
 
 from . import entity_guard
 from .lang_map import ENGLISH_TAG
@@ -96,12 +95,10 @@ class IndicTrans2Service:
             else None
         )
 
-
     def _resolve_device(self) -> str:
         device = get_settings().translation_device
         if device in ("cuda", "cpu"):
             return device
-
 
         try:
             import torch
@@ -180,15 +177,15 @@ class IndicTrans2Service:
                 self._loaded = True
             except Exception as exc:  # noqa: BLE001
                 self._load_failed = True
-                logger.warning("IndicTrans2 unavailable (%s); staying English-only", exc)
+                logger.warning(
+                    "IndicTrans2 unavailable (%s); staying English-only", exc
+                )
             return self._loaded
-
 
     def _translate_blocking(self, text: str, src_tag: str, tgt_tag: str) -> str:
         assert self._processor is not None
         direction = self._indic_en if tgt_tag == ENGLISH_TAG else self._en_indic
         assert direction is not None
-
 
         lines = text.split("\n")
         segments: list[tuple[int, str]] = []
@@ -205,14 +202,15 @@ class IndicTrans2Service:
             masked_parts.append(masked)
             mappings.append(mapping)
 
-
         preprocessed = self._processor.preprocess_batch(
             masked_parts, src_lang=src_tag, tgt_lang=tgt_tag
         )
         batch = []
         for item in preprocessed:
             parts = item.split(" ")
-            batch.append(parts[:2] + direction.sp_src.encode(" ".join(parts[2:]), out_type=str))
+            batch.append(
+                parts[:2] + direction.sp_src.encode(" ".join(parts[2:]), out_type=str)
+            )
 
         results = direction.translator.translate_batch(
             batch,
@@ -227,7 +225,8 @@ class IndicTrans2Service:
         for (line_no, _), out, mapping in zip(segments, outputs, mappings):
             rebuilt.setdefault(line_no, []).append(entity_guard.unmask(out, mapping))
         return "\n".join(
-            " ".join(rebuilt[i]) if i in rebuilt else line for i, line in enumerate(lines)
+            " ".join(rebuilt[i]) if i in rebuilt else line
+            for i, line in enumerate(lines)
         )
 
     async def translate(self, text: str, src_tag: str, tgt_tag: str) -> str:
@@ -250,7 +249,9 @@ class IndicTrans2Service:
                 None, self._translate_blocking, text, src_tag, tgt_tag
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Translation %s→%s failed (%s); returning source", src_tag, tgt_tag, exc)
+            logger.warning(
+                "Translation %s→%s failed (%s); returning source", src_tag, tgt_tag, exc
+            )
             return text
 
         if self._cache is not None:

@@ -11,11 +11,10 @@ _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
-from sqlmodel import Session, delete, select
-
 from app.db.engine import get_engine
 from app.db.models import VaultDocument, VaultDocumentEmbedding
 from app.services.vault_indexer import index_vault_document
+from sqlmodel import Session, delete, select
 
 
 async def main() -> None:
@@ -33,7 +32,6 @@ async def main() -> None:
             select(VaultDocument).where(VaultDocument.extracted_text.is_not(None))
         ).all()
 
-
         targets: list[tuple[str, str]] = []
         for doc in docs:
             has_vectors = session.exec(
@@ -50,7 +48,6 @@ async def main() -> None:
 
         print(f"Re-embedding {len(targets)} vault document(s)...")
 
-
         for doc_id, _text in targets:
             session.exec(
                 delete(VaultDocumentEmbedding).where(
@@ -58,7 +55,6 @@ async def main() -> None:
                 )
             )
         session.commit()
-
 
     for doc_id, text in targets:
         await index_vault_document(doc_id, text)

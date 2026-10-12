@@ -3,10 +3,9 @@
 from datetime import datetime, timedelta, timezone
 from typing import Dict
 
-from sqlmodel import Session, select
-
 from app.db.models import CalendarConnection, CalendarEvent
 from app.services import calendar_oauth
+from sqlmodel import Session, select
 
 _ID_FIELD = {"google": "google_calendar_event_id", "outlook": "outlook_event_id"}
 
@@ -23,7 +22,8 @@ def sync_connection(session: Session, connection: CalendarConnection) -> Dict[st
     cutoff = datetime.now(timezone.utc) - timedelta(days=1)
     events = session.exec(
         select(CalendarEvent).where(
-            CalendarEvent.user_id == connection.user_id, CalendarEvent.start_at >= cutoff
+            CalendarEvent.user_id == connection.user_id,
+            CalendarEvent.start_at >= cutoff,
         )
     ).all()
 
@@ -33,7 +33,12 @@ def sync_connection(session: Session, connection: CalendarConnection) -> Dict[st
             continue
         try:
             remote_id = calendar_oauth.push_event(
-                connection.provider, token, event.title, event.start_at, event.end_at, None
+                connection.provider,
+                token,
+                event.title,
+                event.start_at,
+                event.end_at,
+                None,
             )
         except calendar_oauth.CalendarProviderError as e:
             print(f"[CalendarSync] {e}")

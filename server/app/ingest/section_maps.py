@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pdfplumber
-
 from app.ingest.paths import statutes_dir
 
 OUT = Path(__file__).resolve().parent.parent / "data" / "section_maps.json"
@@ -67,8 +66,10 @@ def main() -> None:
     for name, pdf in TABLES.items():
         pairs = extract(statutes_dir() / "mappings" / pdf)
         maps[name] = build_maps(pairs)
-        print(f"[section_maps] {name}: {len(pairs)} rows -> {len(maps[name]['old_to_new'])} old, "
-              f"{len(maps[name]['new_to_old'])} new sections")
+        print(
+            f"[section_maps] {name}: {len(pairs)} rows -> {len(maps[name]['old_to_new'])} old, "
+            f"{len(maps[name]['new_to_old'])} new sections"
+        )
     OUT.write_text(json.dumps(maps, indent=0, sort_keys=True))
     for old in ("302", "420", "34", "498A", "304B", "120B"):
         print(f"  IPC {old} -> BNS {maps['ipc_bns']['old_to_new'].get(old)}")

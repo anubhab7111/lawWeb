@@ -3,7 +3,6 @@ import json
 
 import pandas as pd
 import pytest
-
 from app.config import get_settings
 from app.ingest.process_judgments import dedupe_across_years, keep_year
 
@@ -26,11 +25,22 @@ def _year(root, year, stems):
     with gzip.open(chunks / "chunks.jsonl.gz", "wt") as f:
         for stem in stems:
             for i in range(2):
-                f.write(json.dumps({"doc_id": f"sc-{stem}", "chunk_id": f"sc-{stem}#{i:03d}", "year": year}) + "\n")
-    (chunks / "_DONE.json").write_text(json.dumps({"year": year, "chunks": 2 * len(stems)}))
-    pd.DataFrame({"stem": stems, "year": year, "status": "ok", "reason": None}).to_parquet(
-        text / "_extraction.parquet", index=False
+                f.write(
+                    json.dumps(
+                        {
+                            "doc_id": f"sc-{stem}",
+                            "chunk_id": f"sc-{stem}#{i:03d}",
+                            "year": year,
+                        }
+                    )
+                    + "\n"
+                )
+    (chunks / "_DONE.json").write_text(
+        json.dumps({"year": year, "chunks": 2 * len(stems)})
     )
+    pd.DataFrame(
+        {"stem": stems, "year": year, "status": "ok", "reason": None}
+    ).to_parquet(text / "_extraction.parquet", index=False)
 
 
 def _doc_ids(root, year):
@@ -51,11 +61,25 @@ def test_duplicates_are_dropped_from_the_non_kept_year_and_recorded(corpus):
     assert result["dropped_docs"] == 1
     assert _doc_ids(corpus, 1950) == {"sc-1950_1_5_9"}
     assert _doc_ids(corpus, 1951) == {"sc-1951_1_1_51", "sc-1951_1_60_70"}
-    ledger = [json.loads(l) for l in (corpus.parent.parent / "manifest" / "sc_cross_year_duplicates.jsonl").open()]
-    assert ledger == [{"doc_id": "sc-1951_1_1_51", "kept_year": 1951, "dropped_year": 1950}]
-    ext = pd.read_parquet(corpus / "text" / "year=1950" / "_extraction.parquet").set_index("stem")
+    ledger = [
+        json.loads(l)
+        for l in (
+            corpus.parent.parent / "manifest" / "sc_cross_year_duplicates.jsonl"
+        ).open()
+    ]
+    assert ledger == [
+        {"doc_id": "sc-1951_1_1_51", "kept_year": 1951, "dropped_year": 1950}
+    ]
+    ext = pd.read_parquet(
+        corpus / "text" / "year=1950" / "_extraction.parquet"
+    ).set_index("stem")
     assert ext.loc["1951_1_1_51", "status"] == "duplicate"
-    assert json.loads((corpus / "chunks" / "year=1950" / "_DONE.json").read_text())["chunks"] == 2
+    assert (
+        json.loads((corpus / "chunks" / "year=1950" / "_DONE.json").read_text())[
+            "chunks"
+        ]
+        == 2
+    )
 
 
 def test_dedupe_is_idempotent(corpus):

@@ -13,7 +13,14 @@ from typing import Dict, Iterator, List, Tuple
 
 from app.ingest.paths import LEGACY_DATA_DIR, require_corpus
 
-STATUTE_DIRS = ("bare_acts", "mappings", "rules", "guides", "notifications", "explanatory")
+STATUTE_DIRS = (
+    "bare_acts",
+    "mappings",
+    "rules",
+    "guides",
+    "notifications",
+    "explanatory",
+)
 SKIP_NAMES = {"__pycache__", ".DS_Store"}
 
 
@@ -77,11 +84,15 @@ def migrate(src_root: Path, dst_root: Path, delete_source: bool = False) -> Dict
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--delete-source", action="store_true")
     args = parser.parse_args()
 
-    result = migrate(LEGACY_DATA_DIR, require_corpus(), delete_source=args.delete_source)
+    result = migrate(
+        LEGACY_DATA_DIR, require_corpus(), delete_source=args.delete_source
+    )
     print(
         f"[migrate] {result['files']} files, {result['bytes'] / 1e6:.1f} MB; "
         f"{len(result['failures'])} failed verification; {result['removed']} source files removed"

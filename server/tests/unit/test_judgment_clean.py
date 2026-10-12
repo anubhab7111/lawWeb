@@ -23,7 +23,9 @@ D   two lines with a margin marker.
 def test_margin_letters_page_numbers_and_running_headers_are_removed():
     cleaned = clean_judgment_text(RAW)
     assert "SUPREME COURT REPORTS" not in cleaned
-    assert not any(line.strip() in {"556", "A", "B", "c", "D"} for line in cleaned.splitlines())
+    assert not any(
+        line.strip() in {"556", "A", "B", "c", "D"} for line in cleaned.splitlines()
+    )
     assert "SONA BALA BORA AND ORS." in cleaned
     assert "[RUMA PAL AND C.K. THAKKER, JJ.]" in cleaned
 
@@ -34,13 +36,21 @@ def test_hyphenated_line_breaks_are_rejoined():
 
 def test_paragraphs_are_reconstructed_from_indentation():
     paragraphs = clean_judgment_text(RAW).split("\n\n")
-    assert any(p.startswith("Held, the appellant") and p.endswith("clearly.") for p in paragraphs)
-    assert any(p.startswith("The second paragraph") and p.endswith("margin marker.") for p in paragraphs)
+    assert any(
+        p.startswith("Held, the appellant") and p.endswith("clearly.")
+        for p in paragraphs
+    )
+    assert any(
+        p.startswith("The second paragraph") and p.endswith("margin marker.")
+        for p in paragraphs
+    )
     assert paragraphs[-1] == "Third paragraph."
 
 
 def test_text_quality_flags_garbled_and_empty_text():
-    good = "The appellant was convicted under Section 302 of the Indian Penal Code. " * 40
+    good = (
+        "The appellant was convicted under Section 302 of the Indian Penal Code. " * 40
+    )
     bad = "La1v-Mi£Conduct en1p[uy1ne11t di~sm1ssal ti!ne ra1se f;ffect " * 40
     assert text_quality(good, pages=1)["ok"]
     assert not text_quality(bad, pages=1)["ok"]

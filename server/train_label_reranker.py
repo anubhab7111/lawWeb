@@ -19,8 +19,6 @@ load_dotenv(_SERVER_DIR / ".env")
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import torch  # noqa: E402
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_linear_schedule_with_warmup  # noqa: E402
-
 from app.ingest.iltur_export import lsi_dir  # noqa: E402
 from app.ingest.paths import corpus_path  # noqa: E402
 from app.ingest.thermal import ThermalGuard  # noqa: E402
@@ -28,6 +26,11 @@ from app.metrics.iltur_loader import label_names  # noqa: E402
 from app.tools import label_reranker as lr  # noqa: E402
 from app.tools.statute_classifier import clean_facts  # noqa: E402
 from score_iltur import load_scores  # noqa: E402
+from transformers import AutoModelForSequenceClassification  # noqa: E402
+from transformers import (
+    AutoTokenizer,
+    get_linear_schedule_with_warmup,
+)
 
 
 def top_candidates(scores, k):
@@ -36,7 +39,9 @@ def top_candidates(scores, k):
 
 def build_pairs(tokenizer, split, n_cases, hard_k, n_random, seed, segments=2):
     names = list(label_names())
-    df = pd.read_parquet(lsi_dir() / f"{split}.parquet", columns=["id", "sentences", "label_ids"])
+    df = pd.read_parquet(
+        lsi_dir() / f"{split}.parquet", columns=["id", "sentences", "label_ids"]
+    )
     rng = random.Random(seed)
     idx = list(range(len(df)))
     rng.shuffle(idx)
@@ -47,8 +52,12 @@ def build_pairs(tokenizer, split, n_cases, hard_k, n_random, seed, segments=2):
         r = df.iloc[i]
         gold = {names[j] for j in r.label_ids}
         segs = lr.fact_segments(tokenizer, clean_facts(list(r.sentences)), segments)
-        hard = [l for l in top_candidates(prec.get(str(r.id), {}), hard_k) if l not in gold]
-        rand = rng.sample([l for l in names if l not in gold and l not in hard], n_random)
+        hard = [
+            l for l in top_candidates(prec.get(str(r.id), {}), hard_k) if l not in gold
+        ]
+        rand = rng.sample(
+            [l for l in names if l not in gold and l not in hard], n_random
+        )
         for label in gold:
             pairs.append((rng.choice(segs), label, 1.0))
         for label in hard + rand:
@@ -61,7 +70,9 @@ def build_pairs(tokenizer, split, n_cases, hard_k, n_random, seed, segments=2):
 def evaluate(model, tokenizer, device, n_cases=600, k=15, seed=7):
     """Rerank precedent's top-k dev candidates; compare MRR and hit@3 with precedent's order."""
     names = list(label_names())
-    df = pd.read_parquet(lsi_dir() / "dev.parquet", columns=["id", "sentences", "label_ids"]).sample(n_cases, random_state=seed)
+    df = pd.read_parquet(
+        lsi_dir() / "dev.parquet", columns=["id", "sentences", "label_ids"]
+    ).sample(n_cases, random_state=seed)
     prec = load_scores("precedent", "dev")
     model.eval()
     stats = {"prec_mrr": 0.0, "rr_mrr": 0.0, "prec_hit3": 0.0, "rr_hit3": 0.0}
@@ -72,7 +83,9 @@ def evaluate(model, tokenizer, device, n_cases=600, k=15, seed=7):
             continue
         segs = lr.fact_segments(tokenizer, clean_facts(list(r.sentences)), 3)
         pairs = [(s, c) for s in segs for c in cands]
-        enc = lr.encode_pairs(tokenizer, [p[0] for p in pairs], [p[1] for p in pairs]).to(device)
+        enc = lr.encode_pairs(
+            tokenizer, [p[0] for p in pairs], [p[1] for p in pairs]
+        ).to(device)
         with torch.autocast("cuda", dtype=torch.float16, enabled=device == "cuda"):
             logits = model(**enc).logits.float().squeeze(-1).cpu().numpy()
         best = logits.reshape(len(segs), len(cands)).max(axis=0)
@@ -86,7 +99,9 @@ def evaluate(model, tokenizer, device, n_cases=600, k=15, seed=7):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--base", default=lr.BASE_MODEL)
     parser.add_argument("--cases", type=int, default=20000)
     parser.add_argument("--hard-k", type=int, default=12)
@@ -102,7 +117,9 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     tokenizer = AutoTokenizer.from_pretrained(args.base)
-    model = AutoModelForSequenceClassification.from_pretrained(args.base, num_labels=1).to(device)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        args.base, num_labels=1
+    ).to(device)
     model.gradient_checkpointing_enable()
     model.get_input_embeddings().weight.requires_grad_(False)
     out = corpus_path("builds", "reranker", args.tag)
@@ -112,14 +129,27 @@ def main() -> None:
     base_eval = evaluate(model, tokenizer, device, n_cases=150 if args.bench else 600)
     print(f"[reranker] before fine-tuning (dev): {base_eval}", flush=True)
 
-    pairs = build_pairs(tokenizer, "train", args.cases if not args.bench else 400, args.hard_k, args.random, seed=0)
+    pairs = build_pairs(
+        tokenizer,
+        "train",
+        args.cases if not args.bench else 400,
+        args.hard_k,
+        args.random,
+        seed=0,
+    )
     pos = sum(p[2] for p in pairs)
     print(f"[reranker] {len(pairs)} training pairs ({pos:.0f} positive)", flush=True)
-    optim = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=0.01)
+    optim = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad],
+        lr=args.lr,
+        weight_decay=0.01,
+    )
     steps = len(pairs) // (args.micro * args.accum) * args.epochs
     sched = get_linear_schedule_with_warmup(optim, int(0.05 * steps), max(steps, 1))
     scaler = torch.amp.GradScaler("cuda", enabled=device == "cuda")
-    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor((len(pairs) - pos) / max(pos, 1)).sqrt().to(device))
+    loss_fn = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor((len(pairs) - pos) / max(pos, 1)).sqrt().to(device)
+    )
 
     state = {"epoch": 0, "micro": 0}
     if ckpt.exists() and not args.bench:
@@ -129,7 +159,10 @@ def main() -> None:
         sched.load_state_dict(saved["sched"])
         scaler.load_state_dict(saved["scaler"])
         state = saved["state"]
-        print(f"[reranker] resumed at epoch {state['epoch'] + 1} micro-batch {state['micro']}", flush=True)
+        print(
+            f"[reranker] resumed at epoch {state['epoch'] + 1} micro-batch {state['micro']}",
+            flush=True,
+        )
 
     model.train()
     guard = ThermalGuard()
@@ -139,7 +172,9 @@ def main() -> None:
             if m < state["micro"]:
                 continue
             batch = pairs[i : i + args.micro]
-            enc = lr.encode_pairs(tokenizer, [b[0] for b in batch], [b[1] for b in batch]).to(device)
+            enc = lr.encode_pairs(
+                tokenizer, [b[0] for b in batch], [b[1] for b in batch]
+            ).to(device)
             y = torch.tensor([b[2] for b in batch], device=device)
             with torch.autocast("cuda", dtype=torch.float16, enabled=device == "cuda"):
                 logits = model(**enc).logits.float().squeeze(-1)
@@ -154,17 +189,41 @@ def main() -> None:
                 sched.step()
             if args.bench and m == 100:
                 rate = (m + 1) * args.micro / (time.time() - started)
-                print(f"[bench] {rate:.1f} pairs/s; peak VRAM {torch.cuda.max_memory_allocated() / 2**30:.2f} GB; "
-                      f"{args.cases} cases (~{args.cases * 16} pairs) -> {args.cases * 16 / rate / 3600:.1f} h/epoch")
+                print(
+                    f"[bench] {rate:.1f} pairs/s; peak VRAM {torch.cuda.max_memory_allocated() / 2**30:.2f} GB; "
+                    f"{args.cases} cases (~{args.cases * 16} pairs) -> {args.cases * 16 / rate / 3600:.1f} h/epoch"
+                )
                 return
             if (m + 1) % args.ckpt_every == 0 and (m + 1) % args.accum == 0:
-                torch.save({"model": model.state_dict(), "optim": optim.state_dict(), "sched": sched.state_dict(),
-                            "scaler": scaler.state_dict(), "state": {"epoch": epoch, "micro": m + 1}}, ckpt)
-                print(f"[reranker] epoch {epoch + 1} {i + args.micro}/{len(pairs)} pairs ({time.time() - started:.0f}s)", flush=True)
+                torch.save(
+                    {
+                        "model": model.state_dict(),
+                        "optim": optim.state_dict(),
+                        "sched": sched.state_dict(),
+                        "scaler": scaler.state_dict(),
+                        "state": {"epoch": epoch, "micro": m + 1},
+                    },
+                    ckpt,
+                )
+                print(
+                    f"[reranker] epoch {epoch + 1} {i + args.micro}/{len(pairs)} pairs ({time.time() - started:.0f}s)",
+                    flush=True,
+                )
         state["micro"] = 0
-        torch.save({"model": model.state_dict(), "optim": optim.state_dict(), "sched": sched.state_dict(),
-                    "scaler": scaler.state_dict(), "state": {"epoch": epoch + 1, "micro": 0}}, ckpt)
-        print(f"[reranker] epoch {epoch + 1} (dev): {evaluate(model, tokenizer, device)}", flush=True)
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optim": optim.state_dict(),
+                "sched": sched.state_dict(),
+                "scaler": scaler.state_dict(),
+                "state": {"epoch": epoch + 1, "micro": 0},
+            },
+            ckpt,
+        )
+        print(
+            f"[reranker] epoch {epoch + 1} (dev): {evaluate(model, tokenizer, device)}",
+            flush=True,
+        )
 
     out.mkdir(parents=True, exist_ok=True)
     model.half().save_pretrained(out)

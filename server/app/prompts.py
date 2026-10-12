@@ -399,7 +399,9 @@ CLARIFY_LAW_OR_REPORT = (
 LAWYER_DETAILS_PREFIX = "To find the right lawyer for you, "
 LAWYER_DETAILS_ASK = {
     ("location",): "which **city or district** should the lawyer be in?",
-    ("matter",): "what is the **matter about** (for example divorce, property, bail, a cheque bounce)?",
+    (
+        "matter",
+    ): "what is the **matter about** (for example divorce, property, bail, a cheque bounce)?",
     ("location", "matter"): (
         "could you tell me **which city or district** you are in, and **what the matter is about** "
         "(for example divorce, property, bail, a cheque bounce)?"
@@ -415,16 +417,24 @@ CRIME_DETAILS_ASK = (
 _EMERGENCY = "🚨 **If you are in danger or need urgent help, call 112 now.** "
 _WOMEN = "**Women Helpline: 181.** "
 SERIOUS_CRIME_HELPLINES = {
-    "rape": _EMERGENCY + _WOMEN + "You can get free medical care and a free medical examination at any "
+    "rape": _EMERGENCY
+    + _WOMEN
+    + "You can get free medical care and a free medical examination at any "
     "government or private hospital, and you can file the FIR at any police station (a Zero FIR).\n\n",
-    "domestic_violence": _EMERGENCY + _WOMEN + "A Protection Officer or the police can help you get a "
+    "domestic_violence": _EMERGENCY
+    + _WOMEN
+    + "A Protection Officer or the police can help you get a "
     "protection order under the Domestic Violence Act.\n\n",
-    "murder": _EMERGENCY + "Do not disturb the scene, and report it to the police immediately.\n\n",
-    "threat": _EMERGENCY + "Keep the messages, call recordings and the names of anyone who heard the "
+    "murder": _EMERGENCY
+    + "Do not disturb the scene, and report it to the police immediately.\n\n",
+    "threat": _EMERGENCY
+    + "Keep the messages, call recordings and the names of anyone who heard the "
     "threat; they are evidence for the police complaint.\n\n",
-    "kidnapping": _EMERGENCY + "Report a missing or abducted person to the police immediately — there is "
+    "kidnapping": _EMERGENCY
+    + "Report a missing or abducted person to the police immediately — there is "
     "no waiting period. Child Helpline: 1098.\n\n",
-    "assault": _EMERGENCY + "Get your injuries treated and ask for a medical certificate; it is "
+    "assault": _EMERGENCY
+    + "Get your injuries treated and ask for a medical certificate; it is "
     "important evidence.\n\n",
 }
 SERIOUS_CRIMES = frozenset(SERIOUS_CRIME_HELPLINES)

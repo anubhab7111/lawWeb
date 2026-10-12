@@ -23,7 +23,8 @@ def build_manifest() -> List[ManifestEntry]:
     for d in ontology["doctrines"]:
         for case_name in d.get("landmark_cases", []):
             entry = by_case.setdefault(
-                case_name, {"case_name": case_name, "doctrines": [], "statutes_cited": []}
+                case_name,
+                {"case_name": case_name, "doctrines": [], "statutes_cited": []},
             )
             if d["doctrine"] not in entry["doctrines"]:
                 entry["doctrines"].append(d["doctrine"])

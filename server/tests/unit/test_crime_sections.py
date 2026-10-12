@@ -5,13 +5,25 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.tools.criminal_rag import (
-    CriminalRAGSystem, SectionMatch, _fits_crime_type, _fits_report_lead, _is_offence_section, _strip_page_breaks,
+    CriminalRAGSystem,
+    SectionMatch,
+    _fits_crime_type,
+    _fits_report_lead,
+    _is_offence_section,
+    _strip_page_breaks,
 )
 
 
 def _match(act, section, title="t"):
-    return SectionMatch(section=section, title=title, confidence=0.9, reasons=[], punishment="", definition="",
-                        act_name=act)
+    return SectionMatch(
+        section=section,
+        title=title,
+        confidence=0.9,
+        reasons=[],
+        punishment="",
+        definition="",
+        act_name=act,
+    )
 
 
 def test_offence_sections_exclude_procedure_and_struck_down_adultery():
@@ -34,17 +46,30 @@ def test_section_from_unrelated_crime_family_does_not_fit_the_report():
 
 
 def test_ipc_match_is_replaced_by_indexed_bns_section_and_deduplicated(monkeypatch):
-    bns_chunk = SimpleNamespace(act_name="Bharatiya Nyaya Sanhita BNS", title="Cheating", text="318. Cheating.")
-    monkeypatch.setattr("app.tools.unified_legal_rag.get_unified_rag_system",
-                        lambda: SimpleNamespace(_chunks={"c1": bns_chunk}))
+    bns_chunk = SimpleNamespace(
+        act_name="Bharatiya Nyaya Sanhita BNS", title="Cheating", text="318. Cheating."
+    )
+    monkeypatch.setattr(
+        "app.tools.unified_legal_rag.get_unified_rag_system",
+        lambda: SimpleNamespace(_chunks={"c1": bns_chunk}),
+    )
     rag = CriminalRAGSystem.__new__(CriminalRAGSystem)
-    rag._pinned_chunk_ids = lambda pairs: ["c1"] if pairs == [("Bharatiya Nyaya Sanhita", "318")] else []
+    rag._pinned_chunk_ids = lambda pairs: (
+        ["c1"] if pairs == [("Bharatiya Nyaya Sanhita", "318")] else []
+    )
 
-    out = rag._prefer_bns([_match("Indian Penal Code", "420"), _match("Bharatiya Nyaya Sanhita BNS", "318"),
-                           _match("Indian Penal Code", "379", title="Theft")])
+    out = rag._prefer_bns(
+        [
+            _match("Indian Penal Code", "420"),
+            _match("Bharatiya Nyaya Sanhita BNS", "318"),
+            _match("Indian Penal Code", "379", title="Theft"),
+        ]
+    )
 
-    assert [(m.act_name, m.section) for m in out] == [("Bharatiya Nyaya Sanhita BNS", "318"),
-                                                       ("Indian Penal Code", "379")]
+    assert [(m.act_name, m.section) for m in out] == [
+        ("Bharatiya Nyaya Sanhita BNS", "318"),
+        ("Indian Penal Code", "379"),
+    ]
     assert "formerly IPC § 420" in out[0].title
     assert "now BNS § 303" in out[1].title
 
@@ -68,17 +93,21 @@ def test_every_pinned_crime_section_has_a_bns_equivalent():
 def test_every_subsection_punishment_is_listed_with_its_condition():
     from app.tools.criminal_rag import _section_punishment
 
-    text = ("351.(1) Whoever threatens another commits criminal intimidation. "
-            "(2) Whoever commits the offence of criminal intimidation shall be punished with imprisonment "
-            "which may extend to two years. (3) Whoever commits the offence of criminal intimidation by "
-            "threatening to cause death shall be punished with imprisonment which may extend to seven years. "
-            "Sec. 1] THE GAZETTE OF INDIA EXTRAORDINARY 97___ "
-            "(2) Whoever commits the offence of criminal intimidation shall be punished with imprisonment "
-            "which may extend to two years.")
+    text = (
+        "351.(1) Whoever threatens another commits criminal intimidation. "
+        "(2) Whoever commits the offence of criminal intimidation shall be punished with imprisonment "
+        "which may extend to two years. (3) Whoever commits the offence of criminal intimidation by "
+        "threatening to cause death shall be punished with imprisonment which may extend to seven years. "
+        "Sec. 1] THE GAZETTE OF INDIA EXTRAORDINARY 97___ "
+        "(2) Whoever commits the offence of criminal intimidation shall be punished with imprisonment "
+        "which may extend to two years."
+    )
     out = _section_punishment(text)
     assert out.count("(2)") == 1 and "GAZETTE" not in out
-    assert "(3) Whoever commits the offence of criminal intimidation by threatening to cause death: " \
-           "imprisonment which may extend to seven years" in out
+    assert (
+        "(3) Whoever commits the offence of criminal intimidation by threatening to cause death: "
+        "imprisonment which may extend to seven years" in out
+    )
 
 
 def test_single_punishment_section_keeps_the_plain_clause():
@@ -89,7 +118,9 @@ def test_single_punishment_section_keeps_the_plain_clause():
 
 
 def test_reranked_section_on_a_short_report_must_fit_its_crime_type():
-    chunk = lambda act, sec, score: SimpleNamespace(act_name=act, section_number=sec, score=score)
+    chunk = lambda act, sec, score: SimpleNamespace(
+        act_name=act, section_number=sec, score=score
+    )
     bns = "Bharatiya Nyaya Sanhita BNS"
     fits = CriminalRAGSystem._fits_report
     assert not fits(chunk(bns, "318", 1.0), "theft")
@@ -108,9 +139,15 @@ def test_related_crime_classifier_lead_needs_a_confident_classifier():
 
 
 def test_margin_notes_before_a_page_header_are_dropped():
-    text = ("(2) Whoever,— (a) being a police officer, commits rape,— Rape. Punishment for rape. "
-            "Sec. 1] THE GAZETTE OF INDIA EXTRAORDINARY 23____ (i) within the limits of the police station")
-    assert _strip_page_breaks(text) == ("(2) Whoever,— (a) being a police officer, commits rape,— "
-                                        "(i) within the limits of the police station")
+    text = (
+        "(2) Whoever,— (a) being a police officer, commits rape,— Rape. Punishment for rape. "
+        "Sec. 1] THE GAZETTE OF INDIA EXTRAORDINARY 23____ (i) within the limits of the police station"
+    )
+    assert _strip_page_breaks(text) == (
+        "(2) Whoever,— (a) being a police officer, commits rape,— "
+        "(i) within the limits of the police station"
+    )
     kept = "(3) Whoever commits theft shall be punished. Sec. 2] THE GAZETTE OF INDIA EXTRAORDINARY 24 next"
-    assert _strip_page_breaks(kept) == "(3) Whoever commits theft shall be punished. next"
+    assert (
+        _strip_page_breaks(kept) == "(3) Whoever commits theft shall be punished. next"
+    )

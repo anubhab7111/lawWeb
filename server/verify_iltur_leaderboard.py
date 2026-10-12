@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """verify_iltur_leaderboard.py — score test predictions with the IL-TUR leaderboard's own code."""
+
 import importlib.util
 import json
 import os
@@ -12,9 +13,9 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
+from app.ingest.paths import corpus_path
 from app.metrics import iltur_official as io
 from app.metrics.iltur_loader import label_names
-from app.ingest.paths import corpus_path
 from report_iltur import matrices
 from score_iltur import gold_labels
 
@@ -29,7 +30,11 @@ except Exception as e:
     start = src.index("def evaluate_lsi")
     end = src.index("\ndef ", start + 10)
     ns = {}
-    exec("import json\nimport numpy as np\nfrom sklearn.metrics import f1_score\n" + src[start:end], ns)
+    exec(
+        "import json\nimport numpy as np\nfrom sklearn.metrics import f1_score\n"
+        + src[start:end],
+        ns,
+    )
     eu = type("m", (), {"evaluate_lsi": staticmethod(ns["evaluate_lsi"])})
 
 vocab = list(label_names())
@@ -47,9 +52,13 @@ dg = io.gold_matrix([dev_g[i] for i in dev_ids], vocab)
 t = io.fit_global_threshold(dm, dg)
 th = io.fit_label_thresholds(dm, dg, fallback=t, shrink=0.3)
 pred = io.predict_threshold(tm, th)
-predictions = {cid: io.labels_from_row(pred[i], vocab) for i, cid in enumerate(test_ids)}
-print(f"{system}: mean labels predicted per case {sum(map(len, predictions.values())) / len(predictions):.2f} "
-      f"(gold {sum(map(len, test_g.values())) / len(test_g):.2f})")
+predictions = {
+    cid: io.labels_from_row(pred[i], vocab) for i, cid in enumerate(test_ids)
+}
+print(
+    f"{system}: mean labels predicted per case {sum(map(len, predictions.values())) / len(predictions):.2f} "
+    f"(gold {sum(map(len, test_g.values())) / len(test_g):.2f})"
+)
 os.chdir(LB)
 result = eu.evaluate_lsi({i: test_g[i] for i in test_ids}, predictions)
 print("OFFICIAL leaderboard evaluate_lsi ->", result)

@@ -6,7 +6,6 @@ import math
 import re
 from typing import Dict, List, Optional, Sequence
 
-
 _WHITESPACE_RE = re.compile(r"\s+")
 _PUNCTUATION_RE = re.compile(r"[^\w\s]")
 
@@ -18,7 +17,6 @@ def count_tokens_approx(text: str) -> int:
 
     cleaned = _WHITESPACE_RE.sub(" ", text.strip())
     word_count = len(cleaned.split())
-
 
     token_count = math.ceil(word_count * 1.333 * 1.10)
     return max(1, token_count)
@@ -57,7 +55,6 @@ def compute_latency_stats(latencies: Sequence[float]) -> Dict[str, float]:
     n = len(values)
     mean = sum(values) / n
 
-
     if n > 1:
         variance = sum((v - mean) ** 2 for v in values) / (n - 1)
         stdev = math.sqrt(variance)
@@ -77,32 +74,26 @@ def compute_latency_stats(latencies: Sequence[float]) -> Dict[str, float]:
 
 
 PRICING_TABLE: Dict[str, Dict[str, float]] = {
-
-
     "ollama_local": {
         "input_per_1k_tokens": 0.00010,
         "output_per_1k_tokens": 0.00010,
         "description": "Self-hosted Ollama (Mistral-7B / LLaMA-3-8B)",
     },
-
     "cloud_small": {
         "input_per_1k_tokens": 0.00020,
         "output_per_1k_tokens": 0.00020,
         "description": "Cloud small (Mistral-7B / LLaMA-3-8B via API)",
     },
-
     "cloud_medium": {
         "input_per_1k_tokens": 0.00090,
         "output_per_1k_tokens": 0.00090,
         "description": "Cloud medium (Mixtral-8x7B / LLaMA-3-70B via API)",
     },
-
     "gpt4o": {
         "input_per_1k_tokens": 0.00500,
         "output_per_1k_tokens": 0.01500,
         "description": "OpenAI GPT-4o",
     },
-
     "claude_sonnet": {
         "input_per_1k_tokens": 0.00300,
         "output_per_1k_tokens": 0.01500,
@@ -146,7 +137,6 @@ def estimate_cost_per_1k(
     avg_output = total_output / n
     avg_total = avg_input + avg_output
 
-
     cost_per_query = (
         avg_input / 1000 * pricing["input_per_1k_tokens"]
         + avg_output / 1000 * pricing["output_per_1k_tokens"]
@@ -189,7 +179,6 @@ def compute_token_efficiency(
     total = input_tokens + output_tokens
 
     output_ratio = round(output_tokens / input_tokens, 4)
-
 
     clamped_output = min(output_tokens, 512)
     efficiency_score = round(clamped_output / total, 4) if total > 0 else 0.0
@@ -259,7 +248,6 @@ if __name__ == "__main__":
     for k, v in stats.items():
         print(f"  {k:<10} {v}")
 
-
     sample_tokens = [
         {"input_tokens": 1800, "output_tokens": 350},
         {"input_tokens": 2100, "output_tokens": 420},
@@ -270,7 +258,6 @@ if __name__ == "__main__":
         print(
             f"  {cost['description']:<50} ${cost['cost_per_1k_usd']:.4f} / 1k queries"
         )
-
 
     answer_text = "The Supreme Court in Kesavananda Bharati held that Parliament cannot amend the basic structure of the Constitution."
     eff = compute_token_efficiency(answer=answer_text, input_tokens=1800)

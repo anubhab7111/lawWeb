@@ -2,10 +2,6 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
-from sqlmodel import Session
-
 from app.config import get_settings
 from app.db.engine import get_session
 from app.db.models import User
@@ -14,6 +10,9 @@ from app.deps.uploads import read_upload_within_limit
 from app.tools.document_extractor import get_document_extractor
 from app.tools.firac_extractor import FiracExtraction, extract_firac
 from app.tools.legal_retrieval import retrieve_case_law, retrieve_statutes
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+from sqlmodel import Session
 
 router = APIRouter(prefix="/api/similar-cases", tags=["similar-cases"])
 

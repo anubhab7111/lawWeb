@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """rebuild_rag_indices.py — CLI tool to force-rebuild FAISS indexes for specific domains."""
 
-import asyncio
 import argparse
-import shutil
-from pathlib import Path
+import asyncio
 import os
+import shutil
 import sys
+from pathlib import Path
 
 _SERVER_DIR = Path(__file__).resolve().parent
 sys.path.append(str(_SERVER_DIR))
@@ -30,23 +30,20 @@ async def rebuild_domain(domain: str):
 
     print(f"\n[Rebuild] Processing domain: {domain}...")
 
-
     system = DOMAINS[domain]()
-
 
     source_dir = getattr(system, "_bare_acts_dir", None) or case_law_dir()
     if not Path(source_dir).is_dir():
-        print(f"  Error: source directory {source_dir} not found (drive mounted?). Aborting.")
+        print(
+            f"  Error: source directory {source_dir} not found (drive mounted?). Aborting."
+        )
         return
 
-
     faiss_dir = _SERVER_DIR / "app" / "data" / "faiss_index" / domain
-
 
     if faiss_dir.exists():
         print(f"  Removing existing index at {faiss_dir}...")
         shutil.rmtree(faiss_dir)
-
 
     print(f"  Building new index from PDFs...")
     success = await system.build_offline(device=REBUILD_DEVICE)
@@ -58,7 +55,6 @@ async def rebuild_domain(domain: str):
             indexed = getattr(system, "_cases", None) or {}
         print(f"  Successfully rebuilt '{domain}' index with {len(indexed)} item(s).")
 
-
         if domain == "unified":
             counts = {}
             for c in system._chunks.values():
@@ -67,7 +63,6 @@ async def rebuild_domain(domain: str):
                 print(f"    {d}: {counts[d]} chunks")
     else:
         print(f"  Failed to rebuild '{domain}' index.")
-
 
     system.embeddings = None
     system.vector_store = None

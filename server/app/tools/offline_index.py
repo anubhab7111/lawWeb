@@ -28,6 +28,10 @@ async def ensure_indices_built() -> None:
         try:
             ok = await system.build_offline(device=device)
             if not ok:
-                print(f"[startup] {label} index build failed — will retry lazily on first request.")
+                print(
+                    f"[startup] {label} index build failed — will retry lazily on first request."
+                )
         except Exception as e:
-            print(f"[startup] {label} offline build error: {e} — will retry lazily on first request.")
+            print(
+                f"[startup] {label} offline build error: {e} — will retry lazily on first request."
+            )

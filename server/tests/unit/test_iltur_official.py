@@ -1,7 +1,6 @@
 import numpy as np
-from sklearn.metrics import f1_score
-
 from app.metrics import iltur_official as io
+from sklearn.metrics import f1_score
 
 VOCAB = ["Section 34", "Section 294", "Section 294(b)", "Section 302"]
 
@@ -11,7 +10,9 @@ def test_matches_the_leaderboard_computation_including_absent_labels():
     preds = [["Section 302"], ["Section 294"]]
     g, p = io.gold_matrix(golds, VOCAB), io.gold_matrix(preds, VOCAB)
 
-    assert io.official_macro_f1(g, p) == 100 * f1_score(g, p, average="macro", zero_division=0)
+    assert io.official_macro_f1(g, p) == 100 * f1_score(
+        g, p, average="macro", zero_division=0
+    )
 
     assert abs(io.official_macro_f1(g, p) - 25.0) < 1e-9
 
@@ -40,7 +41,9 @@ def test_label_thresholds_are_fitted_per_column_and_improve_dev_f1():
     th = io.fit_label_thresholds(scores, gold, fallback=0.5)
     assert 0.5 < th[0] <= 0.7 and 0.2 < th[1] <= 0.4
     tuned = io.official_macro_f1(gold, io.predict_threshold(scores, th, min_labels=0))
-    flat = io.official_macro_f1(gold, io.predict_threshold(scores, [0.5, 0.5], min_labels=0))
+    flat = io.official_macro_f1(
+        gold, io.predict_threshold(scores, [0.5, 0.5], min_labels=0)
+    )
     assert tuned > flat and tuned > 99
 
 

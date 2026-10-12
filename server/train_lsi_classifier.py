@@ -21,14 +21,17 @@ load_dotenv(_SERVER_DIR / ".env")
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import torch  # noqa: E402
-from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warmup  # noqa: E402
-
 from app.ingest.iltur_export import lsi_dir  # noqa: E402
 from app.ingest.paths import corpus_path  # noqa: E402
 from app.ingest.thermal import ThermalGuard  # noqa: E402
 from app.metrics import iltur_official as io  # noqa: E402
 from app.metrics.iltur_loader import label_names  # noqa: E402
 from app.tools import statute_classifier as sc  # noqa: E402
+from transformers import AutoTokenizer  # noqa: E402
+from transformers import (
+    AutoModel,
+    get_linear_schedule_with_warmup,
+)
 
 N_LABELS = 100
 
@@ -45,10 +48,18 @@ def tokenized(split: str, tokenizer, max_chunks: int):
     if path.exists():
         with open(path, "rb") as f:
             return pickle.load(f)
-    df = pd.read_parquet(lsi_dir() / f"{split}.parquet", columns=["id", "sentences", "label_ids"])
+    df = pd.read_parquet(
+        lsi_dir() / f"{split}.parquet", columns=["id", "sentences", "label_ids"]
+    )
     rows = []
     for i, r in enumerate(df.itertuples(), start=1):
-        rows.append((str(r.id), sc.chunk_ids(tokenizer, sc.clean_facts(list(r.sentences)), max_chunks), list(r.label_ids)))
+        rows.append(
+            (
+                str(r.id),
+                sc.chunk_ids(tokenizer, sc.clean_facts(list(r.sentences)), max_chunks),
+                list(r.label_ids),
+            )
+        )
         if i % 5000 == 0:
             print(f"  tokenized {split} {i}/{len(df)}", flush=True)
     with open(path, "wb") as f:
@@ -115,7 +126,10 @@ def write_scores(rows, probs, split):
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("shard_*.pkl"):
         old.unlink()
-    scores = {cid: {names[j]: float(p) for j, p in enumerate(probs[i]) if p >= 1e-4} for i, (cid, _, _) in enumerate(rows)}
+    scores = {
+        cid: {names[j]: float(p) for j, p in enumerate(probs[i]) if p >= 1e-4}
+        for i, (cid, _, _) in enumerate(rows)
+    }
     with open(out / "shard_0000.pkl", "wb") as f:
         pickle.dump(scores, f)
 
@@ -128,10 +142,19 @@ def build_model(device, grad_ckpt=True):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--max-chunks", type=int, default=2)
-    parser.add_argument("--chunk-budget", type=int, default=4, help="max chunks per micro-batch (GPU memory)")
-    parser.add_argument("--accum", type=int, default=4, help="micro-batches per optimizer step")
+    parser.add_argument(
+        "--chunk-budget",
+        type=int,
+        default=4,
+        help="max chunks per micro-batch (GPU memory)",
+    )
+    parser.add_argument(
+        "--accum", type=int, default=4, help="micro-batches per optimizer step"
+    )
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--head-lr", type=float, default=1e-3)
@@ -160,14 +183,26 @@ def main() -> None:
             print(f"[classifier] wrote {split} scores ({len(rows)} cases)")
         return
 
-    head_params = [p for n, p in model.named_parameters() if not n.startswith("encoder.")]
+    head_params = [
+        p for n, p in model.named_parameters() if not n.startswith("encoder.")
+    ]
     enc_params = [p for n, p in model.named_parameters() if n.startswith("encoder.")]
-    optim = torch.optim.AdamW([{"params": enc_params, "lr": args.lr}, {"params": head_params, "lr": args.head_lr}], weight_decay=0.01)
-    batches_per_epoch = sum(1 for _ in micro_batches(train, args.chunk_budget, shuffle=False))
+    optim = torch.optim.AdamW(
+        [
+            {"params": enc_params, "lr": args.lr},
+            {"params": head_params, "lr": args.head_lr},
+        ],
+        weight_decay=0.01,
+    )
+    batches_per_epoch = sum(
+        1 for _ in micro_batches(train, args.chunk_budget, shuffle=False)
+    )
     total_steps = math.ceil(batches_per_epoch / args.accum) * args.epochs
     sched = get_linear_schedule_with_warmup(optim, int(0.06 * total_steps), total_steps)
     scaler = torch.amp.GradScaler("cuda", enabled=device == "cuda")
-    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight(train, args.pos_weight_cap).to(device))
+    loss_fn = torch.nn.BCEWithLogitsLoss(
+        pos_weight=pos_weight(train, args.pos_weight_cap).to(device)
+    )
 
     state = {"epoch": 0, "micro": 0, "best": -1.0}
     last = ckpt_dir / "last.pt"
@@ -178,14 +213,18 @@ def main() -> None:
         sched.load_state_dict(saved["sched"])
         scaler.load_state_dict(saved["scaler"])
         state = saved["state"]
-        print(f"[classifier] resumed at epoch {state['epoch']} micro-batch {state['micro']}")
+        print(
+            f"[classifier] resumed at epoch {state['epoch']} micro-batch {state['micro']}"
+        )
 
     model.train()
     guard = ThermalGuard()
     started = time.time()
     for epoch in range(state["epoch"], args.epochs):
         seen_docs = 0
-        for m, idx in enumerate(micro_batches(train, args.chunk_budget, shuffle=True, seed=epoch)):
+        for m, idx in enumerate(
+            micro_batches(train, args.chunk_budget, shuffle=True, seed=epoch)
+        ):
             if m < state["micro"]:
                 continue
             ids, mask, owner, n = sc.collate([train[i][1] for i in idx], pad)
@@ -204,25 +243,51 @@ def main() -> None:
                 sched.step()
             if args.bench and m == 60:
                 rate = seen_docs / (time.time() - started)
-                print(f"[bench] max_chunks={args.max_chunks}: {rate:.2f} docs/s -> {len(train) / rate / 3600:.2f} h/epoch; "
-                      f"peak VRAM {torch.cuda.max_memory_allocated() / 2**30:.2f} GB")
+                print(
+                    f"[bench] max_chunks={args.max_chunks}: {rate:.2f} docs/s -> {len(train) / rate / 3600:.2f} h/epoch; "
+                    f"peak VRAM {torch.cuda.max_memory_allocated() / 2**30:.2f} GB"
+                )
                 return
             if (m + 1) % 2000 == 0:
                 state["micro"] = m + 1
-                torch.save({"model": model.state_dict(), "optim": optim.state_dict(), "sched": sched.state_dict(),
-                            "scaler": scaler.state_dict(), "state": state}, last)
-                print(f"[classifier] epoch {epoch + 1} micro {m + 1}/{batches_per_epoch} loss {loss.item() * args.accum:.4f} "
-                      f"({time.time() - started:.0f}s)", flush=True)
+                torch.save(
+                    {
+                        "model": model.state_dict(),
+                        "optim": optim.state_dict(),
+                        "sched": sched.state_dict(),
+                        "scaler": scaler.state_dict(),
+                        "state": state,
+                    },
+                    last,
+                )
+                print(
+                    f"[classifier] epoch {epoch + 1} micro {m + 1}/{batches_per_epoch} loss {loss.item() * args.accum:.4f} "
+                    f"({time.time() - started:.0f}s)",
+                    flush=True,
+                )
         probs = predict(model, dev, pad, args.chunk_budget, device)
         f1, t = dev_macro_f1(probs, dev)
-        print(f"[classifier] epoch {epoch + 1}: dev macro-F1 {f1:.2f} (threshold {t:.2f})", flush=True)
+        print(
+            f"[classifier] epoch {epoch + 1}: dev macro-F1 {f1:.2f} (threshold {t:.2f})",
+            flush=True,
+        )
         if f1 > state["best"]:
             state["best"] = f1
             torch.save(model.state_dict(), ckpt_dir / "best.pt")
         state["epoch"], state["micro"] = epoch + 1, 0
-        torch.save({"model": model.state_dict(), "optim": optim.state_dict(), "sched": sched.state_dict(),
-                    "scaler": scaler.state_dict(), "state": state}, last)
-    print(f"[classifier] best dev macro-F1 {state['best']:.2f}; run --score-only to write scores")
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optim": optim.state_dict(),
+                "sched": sched.state_dict(),
+                "scaler": scaler.state_dict(),
+                "state": state,
+            },
+            last,
+        )
+    print(
+        f"[classifier] best dev macro-F1 {state['best']:.2f}; run --score-only to write scores"
+    )
 
 
 if __name__ == "__main__":

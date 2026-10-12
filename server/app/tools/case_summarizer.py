@@ -3,7 +3,9 @@
 from app.chatbot import get_fast_llm_prose, invoke_llm_safely, strip_reasoning_tags
 
 
-async def summarize_case_event(case_title: str, event_title: str, event_detail: str) -> str:
+async def summarize_case_event(
+    case_title: str, event_title: str, event_detail: str
+) -> str:
     prompt = (
         "Summarize this court case update in 2-3 plain-language sentences for "
         "someone without a legal background. Do not add information not present below.\n\n"

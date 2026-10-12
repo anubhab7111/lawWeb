@@ -32,10 +32,23 @@ def _court_rank(court: str, bench_size: int) -> int:
     return 2 if "high court" in court else 1
 
 
-def record_from_file(entry: ManifestEntry, path: Path, *, title: str, citation: str, court: str,
-                     date: str, bench_size: int, url: str) -> dict:
+def record_from_file(
+    entry: ManifestEntry,
+    path: Path,
+    *,
+    title: str,
+    citation: str,
+    court: str,
+    date: str,
+    bench_size: int,
+    url: str,
+) -> dict:
     """`title` ("A vs B on 15 January, 1963") becomes the first text line, as in the existing records."""
-    raw = gzip.open(path, "rt", encoding="utf-8").read() if path.suffix == ".gz" else path.read_text(encoding="utf-8")
+    raw = (
+        gzip.open(path, "rt", encoding="utf-8").read()
+        if path.suffix == ".gz"
+        else path.read_text(encoding="utf-8")
+    )
     body = re.sub(r"\n{3,}", "\n\n", raw).strip()
     return {
         "case_name": entry["case_name"],
@@ -48,21 +61,33 @@ def record_from_file(entry: ManifestEntry, path: Path, *, title: str, citation: 
         "doctrines": entry["doctrines"],
         "statutes_cited": entry["statutes_cited"],
         "url": url,
-        "text": f"{title}\n\nEquivalent citations: {citation}\n\n{body}"[:MAX_TEXT_CHARS],
+        "text": f"{title}\n\nEquivalent citations: {citation}\n\n{body}"[
+            :MAX_TEXT_CHARS
+        ],
     }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--case", required=True, help="case name exactly as in the manifest")
-    parser.add_argument("--from-file", required=True, type=Path, help=".txt or .txt.gz judgment text")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--case", required=True, help="case name exactly as in the manifest"
+    )
+    parser.add_argument(
+        "--from-file", required=True, type=Path, help=".txt or .txt.gz judgment text"
+    )
     parser.add_argument("--title", required=True, help="'A vs B on 15 January, 1963'")
     parser.add_argument("--citation", default="")
     parser.add_argument("--court", default="Supreme Court of India")
     parser.add_argument("--date", default="", help="YYYY-MM-DD")
     parser.add_argument("--bench-size", type=int, default=1)
     parser.add_argument("--url", default="")
-    parser.add_argument("--force", action="store_true", help="overwrite an existing record (drops its firac)")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite an existing record (drops its firac)",
+    )
     args = parser.parse_args()
 
     entry = next((e for e in build_manifest() if e["case_name"] == args.case), None)
@@ -73,9 +98,19 @@ def main() -> None:
     out_path = out_dir / f"{_slug(entry['case_name'])}.json"
     if out_path.exists() and not args.force:
         sys.exit(f"{out_path.name} already exists; pass --force to replace it")
-    record = record_from_file(entry, args.from_file, title=args.title, citation=args.citation, court=args.court,
-                              date=args.date, bench_size=args.bench_size, url=args.url)
-    out_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    record = record_from_file(
+        entry,
+        args.from_file,
+        title=args.title,
+        citation=args.citation,
+        court=args.court,
+        date=args.date,
+        bench_size=args.bench_size,
+        url=args.url,
+    )
+    out_path.write_text(
+        json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     print(f"saved {out_path.name}: {len(record['text'])} chars")
 
 

@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
-
 from app.metrics.iltur_eval import fact_windows
 
-INDEX_DIR = Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "precedent"
+INDEX_DIR = (
+    Path(__file__).resolve().parent.parent / "data" / "faiss_index" / "precedent"
+)
 INDEX_FILE = "index.faiss"
 META_FILE = "meta.json"
 WINDOW_CASE_FILE = "window_case_idx.npy"
@@ -22,7 +23,9 @@ NEIGHBORS = 20
 VOTE_POWER = 8.0
 
 
-def encode_texts(embeddings: Any, texts: Sequence[str], batch_size: int = 64) -> np.ndarray:
+def encode_texts(
+    embeddings: Any, texts: Sequence[str], batch_size: int = 64
+) -> np.ndarray:
     """L2-normalised float32 embeddings for texts, using the loaded BGE model."""
     client = getattr(embeddings, "client", None)
     if client is not None:
@@ -78,7 +81,9 @@ class PrecedentIndex:
 
     @property
     def available(self) -> bool:
-        return all((self.dir / f).exists() for f in (INDEX_FILE, META_FILE, WINDOW_CASE_FILE))
+        return all(
+            (self.dir / f).exists() for f in (INDEX_FILE, META_FILE, WINDOW_CASE_FILE)
+        )
 
     def load(self) -> None:
         import faiss
@@ -113,7 +118,9 @@ class PrecedentIndex:
     def search(self, query_vecs: np.ndarray, k: int = NEIGHBORS, extra: int = 0):
         """(sims, owning case idx) of the k nearest windows per query vector."""
         self.load()
-        sims, ids = self._index.search(np.ascontiguousarray(query_vecs, dtype=np.float32), k + extra)
+        sims, ids = self._index.search(
+            np.ascontiguousarray(query_vecs, dtype=np.float32), k + extra
+        )
         cases = np.where(ids >= 0, self._window_case[np.clip(ids, 0, None)], -1)
         return sims, cases
 
@@ -126,7 +133,9 @@ class PrecedentIndex:
     ) -> List[Tuple[str, float]]:
 
         sims, cases = self.search(query_vecs, k, extra=k if exclude else 0)
-        return rank_votes(vote_labels(sims, cases, self.meta["case_labels"], exclude, power))
+        return rank_votes(
+            vote_labels(sims, cases, self.meta["case_labels"], exclude, power)
+        )
 
 
 _index: Optional[PrecedentIndex] = None

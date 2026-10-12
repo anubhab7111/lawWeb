@@ -7,9 +7,8 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from langchain_ollama import ChatOllama
-
 from app.chatbot import get_llm, invoke_llm_safely, strip_reasoning_tags
+from langchain_ollama import ChatOllama
 
 _HEAD_CHARS = 4500
 _TAIL_CHARS = 3500

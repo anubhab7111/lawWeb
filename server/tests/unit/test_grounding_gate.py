@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 from app.tools import grounding_verifier as gv
 
-
 CONTEXT = (
     "**Applicable Statutory Provisions** (each is tagged with its legal domain):\n"
     "• **Constitution of India Article 21** — Protection of life and personal liberty [constitutional]\n"
@@ -39,10 +38,13 @@ CONTEXT = (
 )
 SECTIONS = {"21", "19", "10", "13B", "56"}
 
-DECOY_COPYRIGHT_56 = [SimpleNamespace(
-    text="56. Protection of separate rights.—Subject to the provisions of this Act, where the "
-         "several rights comprising the copyright in any work are owned by different persons.",
-    act_name="Copyright Act")]
+DECOY_COPYRIGHT_56 = [
+    SimpleNamespace(
+        text="56. Protection of separate rights.—Subject to the provisions of this Act, where the "
+        "several rights comprising the copyright in any work are owned by different persons.",
+        act_name="Copyright Act",
+    )
+]
 
 
 class StubRag:
@@ -73,12 +75,13 @@ def test_the_first_provision_after_the_block_header_is_parsed():
 
 
 def test_verbatim_statute_with_must_is_supported():
-    claim = only_claim("They must have been living separately for a period of one year or more.")
+    claim = only_claim(
+        "They must have been living separately for a period of one year or more."
+    )
     assert claim.status == gv.SUPPORTED
 
 
 def test_faithful_restatement_of_an_exception_is_not_a_contradiction():
-
 
     claim = only_claim(
         "Under Article 21 no person can be deprived of life or personal liberty without "
@@ -88,7 +91,6 @@ def test_faithful_restatement_of_an_exception_is_not_a_contradiction():
 
 
 def test_qualifiers_elsewhere_in_the_context_do_not_condemn_an_uncited_claim():
-
 
     claim = only_claim(
         "The court must grant a decree on the motion of both parties made after six months."
@@ -105,7 +107,6 @@ def test_a_claim_resting_on_case_law_is_not_flagged_for_lacking_the_section_text
 
 def test_a_qualifier_phrased_differently_from_the_source_is_not_invented():
 
-
     claim = only_claim(
         "Section 10 of the Contract Act makes agreements binding unless a specific "
         "law requires them to be in writing."
@@ -114,7 +115,6 @@ def test_a_qualifier_phrased_differently_from_the_source_is_not_invented():
 
 
 def test_a_claim_with_no_qualifier_language_anywhere_in_the_source_is_still_caught():
-
 
     claim = only_claim(
         "Article 19 protects freedom of speech unless the President declares a "
@@ -125,7 +125,6 @@ def test_a_claim_with_no_qualifier_language_anywhere_in_the_source_is_still_caug
 
 def test_a_claim_spanning_two_cited_provisions_is_checked_against_both():
 
-
     claim = only_claim(
         "All citizens' freedom of speech, expression, and right to move freely, "
         "form associations, or carry on any trade, occupation, profession or "
@@ -135,7 +134,6 @@ def test_a_claim_spanning_two_cited_provisions_is_checked_against_both():
 
 
 def test_a_negated_absolute_marker_does_not_assert_an_exceptionless_rule():
-
 
     claim = only_claim(
         "No absolute right exists under Article 21, which is subject to "
@@ -150,7 +148,9 @@ def test_an_unnegated_absolute_marker_still_asserts_an_exceptionless_rule():
 
 
 def test_an_exceptionless_rule_about_a_qualified_provision_is_a_contradiction():
-    claim = only_claim("Article 21 is an absolute right that can never be restricted under any procedure.")
+    claim = only_claim(
+        "Article 21 is an absolute right that can never be restricted under any procedure."
+    )
     assert claim.status == gv.CONTRADICTED
 
 
@@ -163,26 +163,33 @@ def test_an_invented_condition_is_a_contradiction():
 
 
 def test_a_quantity_the_provision_does_not_state_is_flagged():
-    claim = only_claim("Section 13B of the Hindu Marriage Act allows a decree only after ten years.")
+    claim = only_claim(
+        "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    )
     assert claim.status == gv.CONTRADICTED
     assert "10 year" in claim.reason
 
 
 def test_number_words_and_digits_are_the_same_quantity():
-    ok = only_claim("Under Section 13B the petition must come not later than 18 months after the date.")
+    ok = only_claim(
+        "Under Section 13B the petition must come not later than 18 months after the date."
+    )
     assert ok.status == gv.SUPPORTED
-    assert gv._quantities("imprisonment up to seven years") == gv._quantities("imprisonment up to 7 years")
+    assert gv._quantities("imprisonment up to seven years") == gv._quantities(
+        "imprisonment up to 7 years"
+    )
     assert ("18", "month") in gv._quantities("not later than eighteen months")
 
 
 def test_a_citation_to_a_section_that_was_not_retrieved_is_ungrounded():
-    claim = only_claim("Section 999 of the Indian Evidence Act provides that chats carry a presumption of forgery.")
+    claim = only_claim(
+        "Section 999 of the Indian Evidence Act provides that chats carry a presumption of forgery."
+    )
     assert claim.status == gv.UNGROUNDED
     assert "not among the retrieved provisions" in claim.reason
 
 
 def test_a_miscited_section_cannot_ride_on_a_neighbouring_provisions_wording():
-
 
     claim = only_claim(
         "Section 999 of the Indian Contract Act says a contract to do an act becomes void "
@@ -194,8 +201,9 @@ def test_a_miscited_section_cannot_ride_on_a_neighbouring_provisions_wording():
 
 def test_an_actless_citation_resolves_to_the_retrieved_provision_not_another_act():
 
-
-    claim = only_claim("Section 56 makes a contract void when the act becomes impossible or unlawful.")
+    claim = only_claim(
+        "Section 56 makes a contract void when the act becomes impossible or unlawful."
+    )
     assert claim.status == gv.SUPPORTED
     assert "impossible" in claim.evidence and "copyright" not in claim.evidence.lower()
 
@@ -214,28 +222,40 @@ def test_the_splitter_does_not_break_on_enumerators_and_abbreviations():
     def spans(text):
         return [text[a:b].strip() for a, b in gv._split_sentences(text)]
 
-    assert spans("Ghose v. Mugneeram Bangur applies here.") == ["Ghose v. Mugneeram Bangur applies here."]
+    assert spans("Ghose v. Mugneeram Bangur applies here.") == [
+        "Ghose v. Mugneeram Bangur applies here."
+    ]
     assert spans("B. General procedure applies.") == ["B. General procedure applies."]
 
-    assert spans("The Act, 1956. The court decides.") == ["The Act, 1956.", "The court decides."]
+    assert spans("The Act, 1956. The court decides.") == [
+        "The Act, 1956.",
+        "The court decides.",
+    ]
 
 
 def _adjudicate(answer, reply_status, corrected="REWRITTEN."):
     async def llm(prompt):
-        return json.dumps([{"index": 1, "status": reply_status, "corrected": corrected}])
+        return json.dumps(
+            [{"index": 1, "status": reply_status, "corrected": corrected}]
+        )
 
-    return asyncio.run(gv.ground_and_correct(answer, StubRag(), set(SECTIONS), CONTEXT, llm))
+    return asyncio.run(
+        gv.ground_and_correct(answer, StubRag(), set(SECTIONS), CONTEXT, llm)
+    )
 
 
 def test_a_sentence_the_deterministic_evidence_condemned_is_rewritten():
-    answer = "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
-    text, report = _adjudicate(answer, gv.UNGROUNDED, "The retrieved text sets no ten-year period.")
+    answer = (
+        "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    )
+    text, report = _adjudicate(
+        answer, gv.UNGROUNDED, "The retrieved text sets no ten-year period."
+    )
     assert "ten-year period" in text and report.sentences[0].outcome == "corrected"
     assert report.confirmed_flagged
 
 
 def test_an_llm_only_objection_flags_but_never_rewrites():
-
 
     answer = "Article 21 requires the State to follow a fair procedure before depriving anyone of liberty."
     text, report = _adjudicate(answer, gv.CONTRADICTED, "This is wrong.")
@@ -256,13 +276,24 @@ def test_review_only_claims_ask_for_a_verdict_not_a_rewrite():
     async def llm(prompt):
         prompts.append(prompt)
         marks = re.findall(r"REWRITE: (yes|no)", prompt)
-        return json.dumps([
-            {"index": i, "status": gv.UNGROUNDED, "corrected": "The retrieved text sets no ten-year period."}
-            if mark == "yes" else {"index": i, "status": gv.CONTRADICTED, "corrected": ""}
-            for i, mark in enumerate(marks, 1)
-        ])
+        return json.dumps(
+            [
+                (
+                    {
+                        "index": i,
+                        "status": gv.UNGROUNDED,
+                        "corrected": "The retrieved text sets no ten-year period.",
+                    }
+                    if mark == "yes"
+                    else {"index": i, "status": gv.CONTRADICTED, "corrected": ""}
+                )
+                for i, mark in enumerate(marks, 1)
+            ]
+        )
 
-    text, report = asyncio.run(gv.ground_and_correct(answer, StubRag(), set(SECTIONS), CONTEXT, llm))
+    text, report = asyncio.run(
+        gv.ground_and_correct(answer, StubRag(), set(SECTIONS), CONTEXT, llm)
+    )
     review, condemned = report.claim_sentences[0], report.claim_sentences[1]
     assert "REWRITE: no" in prompts[0] and "REWRITE: yes" in prompts[0]
     assert review.status == gv.CONTRADICTED and review.outcome == "unchanged"
@@ -270,11 +301,16 @@ def test_review_only_claims_ask_for_a_verdict_not_a_rewrite():
 
 
 def test_a_condemned_claim_with_an_empty_rewrite_keeps_its_text_and_reason():
-    answer = "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    answer = (
+        "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    )
     before = assess(answer).sentences[0].reason
     text, report = _adjudicate(answer, gv.UNGROUNDED, "")
     assert text == answer
-    assert report.sentences[0].status == gv.UNGROUNDED and report.sentences[0].reason == before
+    assert (
+        report.sentences[0].status == gv.UNGROUNDED
+        and report.sentences[0].reason == before
+    )
 
 
 def test_a_supported_verdict_never_rewrites_whatever_wording_comes_back():
@@ -290,7 +326,9 @@ def test_an_llm_only_objection_never_produces_a_footer():
 
 
 def test_a_confirmed_problem_produces_a_footer_with_an_honest_summary():
-    answer = "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    answer = (
+        "Section 13B of the Hindu Marriage Act allows a decree only after ten years."
+    )
     report = assess(answer)
     report.llm_succeeded = True
     report.sentences[0].status = gv.UNGROUNDED

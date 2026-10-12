@@ -7,7 +7,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from types import SimpleNamespace
 
 import pytest
-
 from app.tools import legal_defect_analyzer as lda
 from app.tools.document_classifier import DocumentClassification
 
@@ -17,8 +16,11 @@ def no_case_index(monkeypatch):
     """THINK output is filtered through the case-law index; stub it."""
     import app.tools.case_law_rag as clr
 
-    monkeypatch.setattr(clr, "get_case_law_rag_system",
-                        lambda: SimpleNamespace(initialized=True, find_case=lambda name: None))
+    monkeypatch.setattr(
+        clr,
+        "get_case_law_rag_system",
+        lambda: SimpleNamespace(initialized=True, find_case=lambda name: None),
+    )
 
 
 def _analyzer(outputs):
@@ -38,8 +40,12 @@ def _analyzer(outputs):
 
 def test_think_runs_once_per_document_kind(monkeypatch):
     monkeypatch.setattr(lda, "_THINK_CACHE", {})
-    analyzer, calls = _analyzer(["rent checklist. Void per Fake v. Party (2018).", "fir checklist"])
-    rent = DocumentClassification(document_type="Rent Agreement", confidence=0.9, jurisdiction_hints=["Delhi"])
+    analyzer, calls = _analyzer(
+        ["rent checklist. Void per Fake v. Party (2018).", "fir checklist"]
+    )
+    rent = DocumentClassification(
+        document_type="Rent Agreement", confidence=0.9, jurisdiction_hints=["Delhi"]
+    )
     fir = DocumentClassification(document_type="FIR", confidence=0.9)
 
     assert asyncio.run(analyzer.think(rent)) == "rent checklist."

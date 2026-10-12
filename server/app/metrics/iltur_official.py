@@ -20,7 +20,9 @@ def gold_matrix(golds: Sequence[Sequence[str]], vocab: Sequence[str]) -> np.ndar
     return m
 
 
-def score_matrix(scores: Sequence[Scores], vocab: Sequence[str], normalize: bool = True) -> np.ndarray:
+def score_matrix(
+    scores: Sequence[Scores], vocab: Sequence[str], normalize: bool = True
+) -> np.ndarray:
     """cases x labels score matrix; `normalize` divides each case by its top score, so thresholds mean "at least this fraction of the best label's evidence"."""
     index = {label: i for i, label in enumerate(vocab)}
     m = np.zeros((len(scores), len(vocab)), dtype=np.float64)
@@ -53,7 +55,9 @@ def predict_topk(scores: np.ndarray, k: int) -> np.ndarray:
     return pred
 
 
-def predict_threshold(scores: np.ndarray, thresholds, min_labels: int = 1) -> np.ndarray:
+def predict_threshold(
+    scores: np.ndarray, thresholds, min_labels: int = 1
+) -> np.ndarray:
     """Labels whose score clears their threshold; at least `min_labels` per case (every IL-TUR case has at least one statute)."""
     pred = (scores >= np.asarray(thresholds)[None, :]).astype(np.int8)
     pred[scores <= 0] = 0
@@ -64,9 +68,16 @@ def predict_threshold(scores: np.ndarray, thresholds, min_labels: int = 1) -> np
     return pred
 
 
-def fit_global_threshold(scores: np.ndarray, gold: np.ndarray, grid: Optional[Sequence[float]] = None) -> float:
+def fit_global_threshold(
+    scores: np.ndarray, gold: np.ndarray, grid: Optional[Sequence[float]] = None
+) -> float:
     grid = grid if grid is not None else np.linspace(0.02, 1.0, 50)
-    return max(grid, key=lambda t: official_macro_f1(gold, predict_threshold(scores, [t] * scores.shape[1])))
+    return max(
+        grid,
+        key=lambda t: official_macro_f1(
+            gold, predict_threshold(scores, [t] * scores.shape[1])
+        ),
+    )
 
 
 def fit_label_thresholds(

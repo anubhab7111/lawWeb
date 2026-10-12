@@ -40,7 +40,9 @@ def _format_case_law(cases, max_chars: int = 4000, per_case_chars: int = 1200) -
 
 def _format_passage(p, max_chars: int = 900) -> str:
     when = p.citation or str(p.year)
-    return f"• **{p.case_title}** ({when}) — Supreme Court of India\n{p.text[:max_chars]}"
+    return (
+        f"• **{p.case_title}** ({when}) — Supreme Court of India\n{p.text[:max_chars]}"
+    )
 
 
 _RESERVED_LANDMARKS = 2
@@ -53,10 +55,19 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
     from app.tools.unified_rerank import Candidate, rerank
 
     candidates = [
-        Candidate("case_law", c.case_id, rerank_source(c), header=rerank_header(c), payload=c)
+        Candidate(
+            "case_law", c.case_id, rerank_source(c), header=rerank_header(c), payload=c
+        )
         for c in cases
     ] + [
-        Candidate("judgment", p.chunk_id, p.text, header=p.case_title, payload=p, group=p.doc_id)
+        Candidate(
+            "judgment",
+            p.chunk_id,
+            p.text,
+            header=p.case_title,
+            payload=p,
+            group=p.doc_id,
+        )
         for p in passages
     ]
     reranker = await _get_shared_reranker()
@@ -65,12 +76,17 @@ async def _reranked_case_law_text(query, cases, passages, max_chars: int = 5000)
         predict = lambda pairs: cached_predict(reranker, pairs)  # noqa: E731
         ranked = await loop.run_in_executor(
             None,
-            lambda: rerank(query, candidates, predict, top_k=6, min_relative=0.15,
-                           per_source_cap={"judgment": 4, "case_law": 3}),
+            lambda: rerank(
+                query,
+                candidates,
+                predict,
+                top_k=6,
+                min_relative=0.15,
+                per_source_cap={"judgment": 4, "case_law": 3},
+            ),
         )
     else:
         ranked = candidates[:6]
-
 
     reserved = [c for c in candidates if c.source == "case_law"][:_RESERVED_LANDMARKS]
     for c in reserved:
@@ -203,7 +219,10 @@ async def invoke_crime_sections(
 ) -> ToolInvocationResult:
     """Fetch IPC/BNS sections + punishments for a described crime."""
     try:
-        from app.tools.criminal_rag import extract_crime_features, get_criminal_rag_system
+        from app.tools.criminal_rag import (
+            extract_crime_features,
+            get_criminal_rag_system,
+        )
 
         rag_system = get_criminal_rag_system()
         await rag_system.initialize()
@@ -251,7 +270,9 @@ async def invoke_crime_sections(
         import traceback
 
         traceback.print_exc()
-        return ToolInvocationResult(name="crime_sections", succeeded=False, context_text="")
+        return ToolInvocationResult(
+            name="crime_sections", succeeded=False, context_text=""
+        )
 
 
 async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
@@ -260,7 +281,9 @@ async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
 
         result = await explore_bare_act(query, explain=False)
         if not result.matches:
-            return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
+            return ToolInvocationResult(
+                name="bare_act_lookup", succeeded=False, context_text=""
+            )
 
         text = _budget_context(result.matches)
         return ToolInvocationResult(
@@ -268,7 +291,9 @@ async def invoke_bare_act_lookup(query: str) -> ToolInvocationResult:
         )
     except Exception as e:
         logger.warning(f"Bare act lookup error: {e}")
-        return ToolInvocationResult(name="bare_act_lookup", succeeded=False, context_text="")
+        return ToolInvocationResult(
+            name="bare_act_lookup", succeeded=False, context_text=""
+        )
 
 
 INTENT_TOOL_MAP: Dict[str, List[str]] = {
@@ -278,6 +303,7 @@ INTENT_TOOL_MAP: Dict[str, List[str]] = {
     "find_lawyer": ["lawyer_recommender"],
     "non_legal": [],
 }
+
 
 def select_tools(intent: str, query: str) -> List[str]:
     """Return the deterministic tool policy for one request."""

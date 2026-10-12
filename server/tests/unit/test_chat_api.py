@@ -3,11 +3,10 @@
 import json
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.chatbot import ChatBusyError
 from app.config import get_settings
 from app.deps import rate_limit
+from fastapi.testclient import TestClient
 
 
 class FakeBot:
@@ -22,8 +21,13 @@ class FakeBot:
     async def chat(self, message, session_id, **kwargs):
         if self.chat_exc:
             raise self.chat_exc
-        return {"response": "ok", "response_en": "ok", "query_en": message,
-                "language": "en", "intent": "general_query"}
+        return {
+            "response": "ok",
+            "response_en": "ok",
+            "query_en": message,
+            "language": "en",
+            "intent": "general_query",
+        }
 
     async def stream_chat(self, message, session_id, **kwargs):
         self.stream_calls = getattr(self, "stream_calls", []) + [(message, kwargs)]
@@ -66,19 +70,27 @@ def test_rate_limit_can_be_disabled(client_for, monkeypatch):
     monkeypatch.setenv("CHAT_RATE_LIMIT_PER_MINUTE", "0")
     get_settings.cache_clear()
     client = client_for(FakeBot())
-    assert all(client.post("/api/chat", json={"message": "hi"}).status_code == 200
-               for _ in range(5))
+    assert all(
+        client.post("/api/chat", json={"message": "hi"}).status_code == 200
+        for _ in range(5)
+    )
 
 
 def test_busy_chatbot_returns_503_not_500(client_for):
-    client = client_for(FakeBot(chat_exc=ChatBusyError("The assistant is busy right now.")))
+    client = client_for(
+        FakeBot(chat_exc=ChatBusyError("The assistant is busy right now."))
+    )
     resp = client.post("/api/chat", json={"message": "hello"})
     assert resp.status_code == 503
     assert "busy" in resp.json()["detail"]
 
 
 def _sse(resp):
-    return [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
+    return [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
 
 
 def test_stream_relays_progress_events_and_done(client_for):
@@ -88,20 +100,37 @@ def test_stream_relays_progress_events_and_done(client_for):
         {"type": "reset"},
         {"type": "token", "content": "Final"},
         {"type": "replace", "content": "Final answer"},
-        {"type": "done", "session_id": "s", "intent": "general_query",
-         "response": "Final answer", "response_en": "Final answer",
-         "query_en": "q", "language": "en", "trace": {"routing": {"intent": "general_query"}}},
+        {
+            "type": "done",
+            "session_id": "s",
+            "intent": "general_query",
+            "response": "Final answer",
+            "response_en": "Final answer",
+            "query_en": "q",
+            "language": "en",
+            "trace": {"routing": {"intent": "general_query"}},
+        },
     ]
-    resp = client_for(FakeBot(events=events)).post("/api/chat/stream", json={"message": "q"})
+    resp = client_for(FakeBot(events=events)).post(
+        "/api/chat/stream", json={"message": "q"}
+    )
     assert resp.status_code == 200
     got = _sse(resp)
-    assert [e["type"] for e in got] == ["status", "token", "reset", "token", "replace", "done"]
+    assert [e["type"] for e in got] == [
+        "status",
+        "token",
+        "reset",
+        "token",
+        "replace",
+        "done",
+    ]
     assert got[-1]["trace"]["routing"]["intent"] == "general_query"
 
 
 def test_stream_busy_becomes_an_error_event_with_a_useful_message(client_for):
-    resp = client_for(FakeBot(stream_exc=ChatBusyError("The assistant is busy right now."))
-                      ).post("/api/chat/stream", json={"message": "q"})
+    resp = client_for(
+        FakeBot(stream_exc=ChatBusyError("The assistant is busy right now."))
+    ).post("/api/chat/stream", json={"message": "q"})
     got = _sse(resp)
     assert got == [{"type": "error", "content": "The assistant is busy right now."}]
 
@@ -111,13 +140,22 @@ def test_validate_document_stream_sends_the_document_with_validation_intent(clie
         {"type": "status", "stage": "classify", "label": "Reading the document…"},
         {"type": "token", "content": "## 📄 Document Classification"},
         {"type": "replace", "content": "Full report"},
-        {"type": "done", "session_id": "s", "intent": "document_analysis",
-         "response": "Full report", "response_en": "Full report", "query_en": "q", "language": "en"},
+        {
+            "type": "done",
+            "session_id": "s",
+            "intent": "document_analysis",
+            "response": "Full report",
+            "response_en": "Full report",
+            "query_en": "q",
+            "language": "en",
+        },
     ]
     bot = FakeBot(events=events)
     text = "This rent agreement is made between the landlord and the tenant."
-    resp = client_for(bot).post("/api/chat/validate-document/stream",
-                                data={"document_text": text, "message": "Is this valid?"})
+    resp = client_for(bot).post(
+        "/api/chat/validate-document/stream",
+        data={"document_text": text, "message": "Is this valid?"},
+    )
     assert resp.status_code == 200
     assert [e["type"] for e in _sse(resp)] == ["status", "token", "replace", "done"]
     message, kwargs = bot.stream_calls[0]
@@ -127,18 +165,27 @@ def test_validate_document_stream_sends_the_document_with_validation_intent(clie
 
 def test_document_stream_can_leave_the_intent_to_the_message(client_for):
     bot = FakeBot(events=[])
-    client_for(bot).post("/api/chat/validate-document/stream",
-                         data={"document_text": "A notice under section 106.", "message": "Summarise this",
-                               "force_validation": "false"})
+    client_for(bot).post(
+        "/api/chat/validate-document/stream",
+        data={
+            "document_text": "A notice under section 106.",
+            "message": "Summarise this",
+            "force_validation": "false",
+        },
+    )
     assert bot.stream_calls[0][0] == "Summarise this"
 
 
 def test_validate_document_stream_rejects_an_empty_document(client_for):
-    resp = client_for(FakeBot()).post("/api/chat/validate-document/stream", data={"document_text": " "})
+    resp = client_for(FakeBot()).post(
+        "/api/chat/validate-document/stream", data={"document_text": " "}
+    )
     assert resp.status_code == 422
 
 
-def test_app_lifespan_initialises_the_checkpointer_and_registers_the_cleanup_job(monkeypatch):
+def test_app_lifespan_initialises_the_checkpointer_and_registers_the_cleanup_job(
+    monkeypatch,
+):
     """Boot the real lifespan (warmup stubbed: it loads GPU models) against the scratch database."""
     from app import checkpointing, main
     from app.scheduler import get_scheduler

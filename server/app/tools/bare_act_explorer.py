@@ -6,12 +6,11 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from cachetools import TTLCache
-
 from app.config import get_settings
 from app.tools.base_legal_rag import LegalChunk
 from app.tools.case_law_rag import CaseRecord, get_case_law_rag_system
 from app.tools.unified_legal_rag import get_unified_rag_system
+from cachetools import TTLCache
 
 _SECTION_QUERY_RE = re.compile(
     r"^\s*(?:section|sec\.?|§|article|art\.?)\s+(\d{1,4}[A-Za-z]{0,3})\s*$",
@@ -49,7 +48,6 @@ async def explore_bare_act(
 
     if section is not None:
         matches = rag.find_section(act_hint, section, max_parts=5)
-
 
         distinct_acts = {c.act_name for c in matches}
         result = BareActResult(

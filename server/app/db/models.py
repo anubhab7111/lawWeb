@@ -7,8 +7,9 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, DateTime, Numeric, Text, func
+from sqlalchemy import Column, DateTime
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy import Numeric, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, SQLModel
 
@@ -48,7 +49,6 @@ class Lawyer(SQLModel, table=True):
     education: str
     languages: List[str] = Field(sa_column=Column(ARRAY(Text)))
     availability: str
-
 
     bio_embedding: Optional[List[float]] = Field(
         default=None, sa_column=Column(Vector(1024), nullable=True)
@@ -159,7 +159,9 @@ class SavedCase(SQLModel, table=True):
             "year": self.year,
             "title": self.title,
             "status": self.status,
-            "lastSyncedAt": self.last_synced_at.isoformat() if self.last_synced_at else None,
+            "lastSyncedAt": (
+                self.last_synced_at.isoformat() if self.last_synced_at else None
+            ),
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -248,8 +250,9 @@ class NotificationPreference(SQLModel, table=True):
     push_enabled: bool = Field(default=False)
     fcm_token: Optional[str] = None
 
-
-    type_overrides: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB))
+    type_overrides: Dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSONB)
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -272,15 +275,20 @@ class Notification(SQLModel, table=True):
     body: str
     related_case_id: Optional[str] = Field(default=None, foreign_key="saved_cases.id")
 
-
-    related_case_event_id: Optional[str] = Field(default=None, foreign_key="case_events.id")
+    related_case_event_id: Optional[str] = Field(
+        default=None, foreign_key="case_events.id"
+    )
     channel: str
     status: str = Field(default="pending")
     scheduled_for: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True))
     )
-    sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    read_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    sent_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True))
+    )
+    read_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True))
+    )
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -297,7 +305,9 @@ class Notification(SQLModel, table=True):
             "relatedCaseEventId": self.related_case_event_id,
             "channel": self.channel,
             "status": self.status,
-            "scheduledFor": self.scheduled_for.isoformat() if self.scheduled_for else None,
+            "scheduledFor": (
+                self.scheduled_for.isoformat() if self.scheduled_for else None
+            ),
             "sentAt": self.sent_at.isoformat() if self.sent_at else None,
             "readAt": self.read_at.isoformat() if self.read_at else None,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
@@ -345,7 +355,9 @@ class VaultDocument(SQLModel, table=True):
     )
     updated_at: Optional[datetime] = Field(
         default=None,
-        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+        sa_column=Column(
+            DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        ),
     )
 
     def to_dict(self) -> dict:
@@ -404,7 +416,6 @@ class MessageRole(str, enum.Enum):
 class ChatSession(SQLModel, table=True):
     __tablename__ = "chat_sessions"
 
-
     id: str = Field(primary_key=True)
     user_id: str = Field(foreign_key="users.id")
     title: Optional[str] = None
@@ -434,11 +445,9 @@ class ChatMessage(SQLModel, table=True):
     session_id: str = Field(foreign_key="chat_sessions.id")
     role: MessageRole = Field(sa_column=Column(SAEnum(MessageRole, name="MessageRole")))
 
-
     content: str
     language: str = Field(default="en")
     content_display: Optional[str] = Field(default=None)
-
 
     trace: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
     created_at: Optional[datetime] = Field(
@@ -452,8 +461,6 @@ class ChatMessage(SQLModel, table=True):
             "sessionId": self.session_id,
             "role": self.role.value if self.role else None,
             "trace": self.trace,
-
-
             "content": self.content_display or self.content,
             "language": self.language,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
@@ -484,10 +491,14 @@ class CalendarEvent(SQLModel, table=True):
     title: str
     event_type: str
     start_at: datetime = Field(sa_column=Column(DateTime(timezone=True)))
-    end_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    end_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True))
+    )
     related_case_id: Optional[str] = Field(default=None, foreign_key="saved_cases.id")
     related_booking_id: Optional[str] = Field(default=None, foreign_key="bookings.id")
-    related_case_event_id: Optional[str] = Field(default=None, foreign_key="case_events.id")
+    related_case_event_id: Optional[str] = Field(
+        default=None, foreign_key="case_events.id"
+    )
     google_calendar_event_id: Optional[str] = None
     outlook_event_id: Optional[str] = None
     created_at: Optional[datetime] = Field(

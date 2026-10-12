@@ -1,6 +1,10 @@
 from app.tools.document_classifier import DocumentClassifier
-from app.tools.statutory_validator import CHECKLIST_REGISTRY, StatutoryValidator, format_score
 from app.tools.indian_law_rag import DOCUMENT_LAW_MAP
+from app.tools.statutory_validator import (
+    CHECKLIST_REGISTRY,
+    StatutoryValidator,
+    format_score,
+)
 
 BAIL = (
     "IN THE COURT OF SESSIONS JUDGE. Bail application under Section 439 CrPC. FIR No. 12/2025, "

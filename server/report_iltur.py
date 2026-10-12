@@ -18,7 +18,6 @@ from dotenv import load_dotenv
 load_dotenv(_SERVER_DIR / ".env")
 
 import numpy as np  # noqa: E402
-
 from app.ingest.paths import corpus_path  # noqa: E402
 from app.metrics import iltur_official as io  # noqa: E402
 from app.metrics.iltur_loader import label_names  # noqa: E402
@@ -30,9 +29,13 @@ REFERENCE = {"LeSICiN (SOTA)": 28.08, "InLegalBERT": 26.23, "GPT-4 0-shot": 23.9
 def matrices(system, vocab, dev_ids, test_ids):
     dev = load_scores(system, "dev")
     test = load_scores(system, "test")
-    missing = [i for i in dev_ids if i not in dev] + [i for i in test_ids if i not in test]
+    missing = [i for i in dev_ids if i not in dev] + [
+        i for i in test_ids if i not in test
+    ]
     if missing:
-        raise SystemExit(f"{system}: {len(missing)} cases unscored (e.g. {missing[:3]}); run score_iltur.py first")
+        raise SystemExit(
+            f"{system}: {len(missing)} cases unscored (e.g. {missing[:3]}); run score_iltur.py first"
+        )
     return (
         io.score_matrix([dev[i] for i in dev_ids], vocab),
         io.score_matrix([test[i] for i in test_ids], vocab),
@@ -45,7 +48,9 @@ def show(name, results):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("systems", nargs="+")
     parser.add_argument("--fuse", action="store_true")
     args = parser.parse_args()
@@ -55,12 +60,16 @@ def main() -> None:
     dev_ids, test_ids = sorted(dev_gold_d), sorted(test_gold_d)
     dev_gold = io.gold_matrix([dev_gold_d[i] for i in dev_ids], vocab)
     test_gold = io.gold_matrix([test_gold_d[i] for i in test_ids], vocab)
-    print(f"dev {len(dev_ids)} cases, test {len(test_ids)} cases, {len(vocab)} labels\n")
+    print(
+        f"dev {len(dev_ids)} cases, test {len(test_ids)} cases, {len(vocab)} labels\n"
+    )
 
     mats, report = {}, {"systems": {}}
     for system in args.systems:
         mats[system] = matrices(system, vocab, dev_ids, test_ids)
-        results = io.evaluate_rules(*mats[system][:1], dev_gold, mats[system][1], test_gold)
+        results = io.evaluate_rules(
+            *mats[system][:1], dev_gold, mats[system][1], test_gold
+        )
         report["systems"][system] = results
         show(system, results)
 
@@ -71,7 +80,10 @@ def main() -> None:
             w = (1.0, *weights)
             dev_s = sum(wi * mats[s][0] for wi, s in zip(w, args.systems))
             t = io.fit_global_threshold(dev_s / max(dev_s.max(), 1e-9), dev_gold)
-            f1 = io.official_macro_f1(dev_gold, io.predict_threshold(dev_s / max(dev_s.max(), 1e-9), [t] * len(vocab)))
+            f1 = io.official_macro_f1(
+                dev_gold,
+                io.predict_threshold(dev_s / max(dev_s.max(), 1e-9), [t] * len(vocab)),
+            )
             if best is None or f1 > best[0]:
                 best = (f1, w)
         w = best[1]
@@ -83,8 +95,15 @@ def main() -> None:
         print(f"\n  fusion weights (dev-fitted): {dict(zip(args.systems, w))}")
         show("fused", results)
 
-    print("\n  published (full test):", ", ".join(f"{k} {v}" for k, v in REFERENCE.items()))
-    out = corpus_path("builds", "eval", f"official_{'_'.join(args.systems)}_{datetime.now():%Y%m%d_%H%M%S}.json")
+    print(
+        "\n  published (full test):",
+        ", ".join(f"{k} {v}" for k, v in REFERENCE.items()),
+    )
+    out = corpus_path(
+        "builds",
+        "eval",
+        f"official_{'_'.join(args.systems)}_{datetime.now():%Y%m%d_%H%M%S}.json",
+    )
     out.write_text(json.dumps(report, indent=1, default=float))
     print(f"  saved {out}")
 

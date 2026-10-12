@@ -1,8 +1,8 @@
 """Indian Law RAG Tool (Layer 2 — Tool 3: retrieve_indian_law_context) RAG-based retrieval of Indian legal context for document validation."""
 
 import re
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -70,8 +70,7 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
             "defective affidavit not on proper stamp paper",
             "affidavit without notary attestation validity",
         ],
-        "key_precedents": [
-        ],
+        "key_precedents": [],
     },
     "Sale Deed": {
         "acts": [
@@ -158,8 +157,7 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
             "lease agreement more than 11 months stamp duty",
             "unregistered lease agreement eviction",
         ],
-        "key_precedents": [
-        ],
+        "key_precedents": [],
     },
     "Agreement to Sell": {
         "acts": [
@@ -224,7 +222,11 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         "key_precedents": [],
     },
     "Partnership Deed": {
-        "acts": ["Indian Partnership Act, 1932", "Indian Stamp Act, 1899", "Indian Registration Act, 1908"],
+        "acts": [
+            "Indian Partnership Act, 1932",
+            "Indian Stamp Act, 1899",
+            "Indian Registration Act, 1908",
+        ],
         "key_sections": [
             "Section 4 Partnership Act — Definition of partnership",
             "Section 13 Partnership Act — Mutual rights and liabilities of partners",
@@ -235,7 +237,10 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         "key_precedents": [],
     },
     "Bail Application": {
-        "acts": ["Code of Criminal Procedure, 1973 (CrPC)", "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)"],
+        "acts": [
+            "Code of Criminal Procedure, 1973 (CrPC)",
+            "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)",
+        ],
         "key_sections": [
             "Section 437 CrPC / Section 480 BNSS — Bail in non-bailable cases by a Magistrate",
             "Section 438 CrPC / Section 482 BNSS — Anticipatory bail",
@@ -249,17 +254,25 @@ DOCUMENT_LAW_MAP: Dict[str, Dict[str, Any]] = {
         ],
     },
     "Complaint (CrPC)": {
-        "acts": ["Code of Criminal Procedure, 1973 (CrPC)", "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)"],
+        "acts": [
+            "Code of Criminal Procedure, 1973 (CrPC)",
+            "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)",
+        ],
         "key_sections": [
             "Section 200 CrPC / Section 223 BNSS — Examination of complainant",
             "Section 156(3) CrPC / Section 175(3) BNSS — Magistrate's order to investigate",
             "Section 190 CrPC / Section 210 BNSS — Cognizance of offences",
         ],
-        "search_queries": ["private complaint before magistrate Section 200 CrPC requirements"],
+        "search_queries": [
+            "private complaint before magistrate Section 200 CrPC requirements"
+        ],
         "key_precedents": [],
     },
     "Chargesheet": {
-        "acts": ["Code of Criminal Procedure, 1973 (CrPC)", "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)"],
+        "acts": [
+            "Code of Criminal Procedure, 1973 (CrPC)",
+            "Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)",
+        ],
         "key_sections": [
             "Section 173 CrPC / Section 193 BNSS — Report of police officer on completion of investigation",
             "Section 197 CrPC / Section 218 BNSS — Prosecution of public servants",
@@ -318,23 +331,19 @@ class IndianLawRAGTool:
         """Retrieve Indian law context relevant to the document validation findings."""
         context = IndianLawContext(document_type=document_type)
 
-
         law_info = self.law_map.get(document_type, {})
         context.applicable_acts = law_info.get("acts", [])
         context.applicable_sections = law_info.get("key_sections", [])
         context.precedent_notes = await self._verified_precedents(law_info)
-
 
         if jurisdiction_hints:
             context.state_specific_notes = self._get_state_notes(
                 document_type, jurisdiction_hints
             )
 
-
         if self.crime_rag and document_text:
             rag_refs = await self._search_rag_context(document_type, document_text)
             context.references.extend(rag_refs)
-
 
         static_refs = self._build_static_references(
             document_type, missing_elements, non_compliance
@@ -352,11 +361,14 @@ class IndianLawRAGTool:
             if not rag.initialized and not await rag.initialize():
                 return []
             return [
-                entry for entry in law_info.get("key_precedents", [])
+                entry
+                for entry in law_info.get("key_precedents", [])
                 if rag.find_case(entry.split(" — ")[0])
             ]
         except Exception as e:
-            print(f"[IndianLawRAG] case-law lookup failed ({e}) — no precedents listed.")
+            print(
+                f"[IndianLawRAG] case-law lookup failed ({e}) — no precedents listed."
+            )
             return []
 
     def _get_state_notes(
@@ -365,12 +377,10 @@ class IndianLawRAGTool:
         """Generate state-specific notes based on jurisdiction."""
         notes = []
 
-
         states_found = []
         for hint in jurisdiction_hints:
             if hint.startswith("State: "):
                 states_found.append(hint.replace("State: ", "").lower())
-
 
         stamp_duty_notes: Dict[str, Dict[str, str]] = {
             "delhi": {

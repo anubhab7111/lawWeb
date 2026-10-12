@@ -2,10 +2,9 @@
 
 from functools import lru_cache
 
+from app.db.engine import get_engine
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-from app.db.engine import get_engine
 
 
 @lru_cache()

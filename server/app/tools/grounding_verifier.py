@@ -74,7 +74,6 @@ class SentenceGrounding:
     needs_llm: bool = False
     outcome: str = "unchanged"
 
-
     det_status: str = SUPPORTED
 
 
@@ -82,7 +81,6 @@ class SentenceGrounding:
 class GroundingReport:
     sentences: List[SentenceGrounding]
     citation_report: VerificationReport
-
 
     llm_succeeded: bool = False
 
@@ -113,7 +111,24 @@ _WORD_RE = re.compile(r"\b[a-z]{4,}\b")
 
 
 _ABBREVIATIONS = frozenset(
-    {"v", "vs", "no", "nos", "sec", "art", "dr", "mr", "mrs", "ms", "cf", "viz", "eg", "ie", "s", "ss"}
+    {
+        "v",
+        "vs",
+        "no",
+        "nos",
+        "sec",
+        "art",
+        "dr",
+        "mr",
+        "mrs",
+        "ms",
+        "cf",
+        "viz",
+        "eg",
+        "ie",
+        "s",
+        "ss",
+    }
 )
 
 
@@ -142,7 +157,9 @@ def _split_sentences(text: str) -> List[Tuple[int, int]]:
             j = i + 1
             while j < n and text[j] in ".!?":
                 j += 1
-            if (j >= n or text[j].isspace()) and (ch != "." or j - i > 1 or _period_is_boundary(text, i)):
+            if (j >= n or text[j].isspace()) and (
+                ch != "." or j - i > 1 or _period_is_boundary(text, i)
+            ):
                 spans.append((start, j))
                 i = j
                 start = j
@@ -198,12 +215,22 @@ def _verbatim_fraction(claim: str, context_text: str) -> float:
 
 def _trigger_set(text: str) -> set:
     t = text.lower()
-    return {trig for trig in CONTRADICTION_TRIGGERS if re.search(r"\b" + re.escape(trig) + r"\b", t)}
+    return {
+        trig
+        for trig in CONTRADICTION_TRIGGERS
+        if re.search(r"\b" + re.escape(trig) + r"\b", t)
+    }
 
 
 _EVIDENCE_QUALIFIER_MARKERS = CONTRADICTION_TRIGGERS + (
-    "nothing herein", "nothing contained", "save as", "saving clause",
-    "without prejudice", "other than", "excepting", "in the absence of",
+    "nothing herein",
+    "nothing contained",
+    "save as",
+    "saving clause",
+    "without prejudice",
+    "other than",
+    "excepting",
+    "in the absence of",
 )
 
 
@@ -218,8 +245,15 @@ def _has_high_risk(text: str) -> bool:
 
 
 _ABSOLUTE_MARKERS = (
-    "always", "never", "absolute", "absolutely", "under any circumstances",
-    "in all cases", "without exception", "unconditional", "unconditionally",
+    "always",
+    "never",
+    "absolute",
+    "absolutely",
+    "under any circumstances",
+    "in all cases",
+    "without exception",
+    "unconditional",
+    "unconditionally",
 )
 
 
@@ -232,7 +266,7 @@ def _has_absolute(text: str) -> bool:
     t = text.lower()
     for m in _ABSOLUTE_MARKERS:
         for match in re.finditer(r"\b" + re.escape(m) + r"\b", t):
-            if not _NEGATION_LOOKBACK.search(t[:match.start()]):
+            if not _NEGATION_LOOKBACK.search(t[: match.start()]):
                 return True
     return False
 
@@ -244,8 +278,9 @@ def _contradiction_reason(claim: str, evidence: str) -> Optional[str]:
     claim_trig = _trigger_set(claim)
     evidence_trig = _trigger_set(evidence)
 
-
-    invented = claim_trig if claim_trig and not _has_qualifier_language(evidence) else set()
+    invented = (
+        claim_trig if claim_trig and not _has_qualifier_language(evidence) else set()
+    )
     dropped = evidence_trig - claim_trig
     if invented:
         return (
@@ -261,16 +296,43 @@ def _contradiction_reason(claim: str, evidence: str) -> Optional[str]:
 
 
 _NUMBER_WORDS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
-    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
-    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
-    "seventy": 70, "eighty": 80, "ninety": 90,
-    "hundred": 100, "thousand": 1000,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+    "hundred": 100,
+    "thousand": 1000,
 }
 _UNITS = r"(?:years?|months?|weeks?|days?|hours?|rupees?|lakhs?|crores?|per\s?cent|percent|%)"
 _QUANTITY_RE = re.compile(
-    r"(?:(?:rs\.?|₹)\s?(?P<cur>\d[\d,]*)|(?P<num>\d[\d,]*|" + "|".join(sorted(_NUMBER_WORDS, key=len, reverse=True)) + r")[\s-]+(?P<unit>" + _UNITS + r"))",
+    r"(?:(?:rs\.?|₹)\s?(?P<cur>\d[\d,]*)|(?P<num>\d[\d,]*|"
+    + "|".join(sorted(_NUMBER_WORDS, key=len, reverse=True))
+    + r")[\s-]+(?P<unit>"
+    + _UNITS
+    + r"))",
     re.IGNORECASE,
 )
 
@@ -281,8 +343,14 @@ def _quantities(text: str) -> set:
     for m in _QUANTITY_RE.finditer(text):
         raw = (m.group("cur") or m.group("num")).lower().replace(",", "")
         value = _NUMBER_WORDS.get(raw, raw)
-        unit = "rs" if m.group("cur") else re.sub(r"s$", "", m.group("unit").lower().replace(" ", ""))
-        unit = {"percent": "%", "rupee": "rs", "lakh": "lakh", "crore": "crore"}.get(unit, unit)
+        unit = (
+            "rs"
+            if m.group("cur")
+            else re.sub(r"s$", "", m.group("unit").lower().replace(" ", ""))
+        )
+        unit = {"percent": "%", "rupee": "rs", "lakh": "lakh", "crore": "crore"}.get(
+            unit, unit
+        )
         found.add((str(value), unit))
     return found
 
@@ -297,12 +365,16 @@ def _unsupported_quantity(claim: str, passages: List[str]) -> Optional[str]:
         available |= _quantities(p)
     missing = sorted(f"{v} {u}" for v, u in claimed - available)
     if missing:
-        return f"claim states {', '.join(missing)}, which the retrieved provisions do not"
+        return (
+            f"claim states {', '.join(missing)}, which the retrieved provisions do not"
+        )
     return None
 
 
 def _classify_overlap(overlap: float, is_high_risk: bool) -> str:
-    supported_cut = _HIGH_RISK_SUPPORTED_THRESHOLD if is_high_risk else _SUPPORTED_THRESHOLD
+    supported_cut = (
+        _HIGH_RISK_SUPPORTED_THRESHOLD if is_high_risk else _SUPPORTED_THRESHOLD
+    )
     if overlap >= supported_cut:
         return SUPPORTED
     if overlap >= _PARTIAL_THRESHOLD:
@@ -318,8 +390,6 @@ _HEDGE_RE = re.compile(
     r"(?:context|provisions?) (?:does not|do not|lacks?|doesn't) |"
     r"(?:does not|do not|doesn't) (?:specify|define|address|mention|cover|provide)|"
     r"not (?:specified|defined|covered|addressed) in|"
-
-
     r"\bno (?:provisions?|case law|explanations?|sections?|articles?|references?)\b"
     r".{0,60}?\b(?:mention|address|cover|specify|define|state)s?\b)",
     re.IGNORECASE,
@@ -385,7 +455,6 @@ def assess_grounding(
     context_texts = [t for _, t in context_passages]
     context_blob = "\n".join(context_texts)
 
-
     case_law_texts = [t for sec, t in context_passages if not sec]
 
     sentences: List[SentenceGrounding] = []
@@ -403,17 +472,23 @@ def assess_grounding(
 
         cited: List[str] = []
         for occ in occs:
-            hits = rag.find_section(occ.act_hint, occ.section, max_parts=2) if occ.act_hint else []
+            hits = (
+                rag.find_section(occ.act_hint, occ.section, max_parts=2)
+                if occ.act_hint
+                else []
+            )
             if hits:
                 cited.extend(h.text for h in hits)
             else:
-                cited.extend(t for sec, t in context_passages if sec == occ.section.upper())
+                cited.extend(
+                    t for sec, t in context_passages if sec == occ.section.upper()
+                )
         citations = [occ.raw for occ in occs]
 
-
-        candidates = list(dict.fromkeys((cited + case_law_texts) if occs else context_texts))
+        candidates = list(
+            dict.fromkeys((cited + case_law_texts) if occs else context_texts)
+        )
         if len(cited) > 1:
-
 
             candidates = ["\n".join(cited)] + candidates
 
@@ -430,23 +505,21 @@ def assess_grounding(
             evidence = _best_window(stripped, best)
             verbatim_frac = _verbatim_fraction(stripped, context_blob)
 
-
             if verbatim_frac >= _VERBATIM_FRACTION:
                 overlap = max(overlap, 1.0)
             status = _classify_overlap(overlap, high_risk)
             reason = f"~{overlap:.0%} term overlap with the retrieved evidence"
 
-
             contradiction = (
-                _contradiction_reason(stripped, best) if overlap >= _PARTIAL_THRESHOLD else None
+                _contradiction_reason(stripped, best)
+                if overlap >= _PARTIAL_THRESHOLD
+                else None
             ) or _unsupported_quantity(stripped, candidates)
             if contradiction:
                 status, reason = CONTRADICTED, contradiction
             elif occs and not cited and status != SUPPORTED:
 
-
                 reason = "the cited provision is not among the retrieved provisions"
-
 
         needs_llm = bool(candidates) and (
             (high_risk and status == PARTIALLY_SUPPORTED)
@@ -523,9 +596,13 @@ def _may_rewrite(s: SentenceGrounding) -> bool:
 def _build_claims_block(sentences: List[SentenceGrounding]) -> str:
     lines = []
     for i, s in enumerate(sentences, 1):
-        evidence = (s.evidence.strip() or "(no retrieved evidence available)")[:_MAX_EVIDENCE_CHARS]
+        evidence = (s.evidence.strip() or "(no retrieved evidence available)")[
+            :_MAX_EVIDENCE_CHARS
+        ]
         rewrite = "yes" if _may_rewrite(s) else "no"
-        lines.append(f'{i}. CLAIM: "{s.text.strip()}"\n   EVIDENCE: "{evidence}"\n   REWRITE: {rewrite}')
+        lines.append(
+            f'{i}. CLAIM: "{s.text.strip()}"\n   EVIDENCE: "{evidence}"\n   REWRITE: {rewrite}'
+        )
     return "\n\n".join(lines)
 
 
@@ -595,7 +672,9 @@ def _reassemble(original_span: str, corrected_sentence: str) -> str:
     if not body:
         return original_span
     stripped_original = original_span.strip()
-    if not body.endswith((".", "!", "?")) and stripped_original.endswith((".", "!", "?")):
+    if not body.endswith((".", "!", "?")) and stripped_original.endswith(
+        (".", "!", "?")
+    ):
         body += "."
     return f"{lead}{body}{trail}"
 
@@ -616,7 +695,10 @@ async def ground_and_correct(
             for s in report.sentences
             if s.is_claim
             and (
-                (s.status != SUPPORTED and (s.status in (CONTRADICTED, UNGROUNDED) or s.is_high_risk))
+                (
+                    s.status != SUPPORTED
+                    and (s.status in (CONTRADICTED, UNGROUNDED) or s.is_high_risk)
+                )
                 or s.needs_llm
             )
         ),
@@ -652,9 +734,10 @@ async def ground_and_correct(
             continue
         if not _may_rewrite(s):
 
-
             s.status = new_status
-            s.reason = "the fact-check could not confirm this against the retrieved provisions"
+            s.reason = (
+                "the fact-check could not confirm this against the retrieved provisions"
+            )
             continue
         replacement = _reassemble(original_span, corrected_sentence)
         new_text = new_text[: s.start] + replacement + new_text[s.end :]
@@ -670,10 +753,10 @@ def grounding_footer(report: GroundingReport) -> str:
     corrected = [s for s in claims if s.outcome == "corrected"]
     confirmed = [s for s in report.confirmed_flagged if s.outcome != "corrected"]
     advisory = [
-        s for s in claims
+        s
+        for s in claims
         if s.status != SUPPORTED and s.outcome != "corrected" and s not in confirmed
     ]
-
 
     if not corrected and not confirmed:
         return ""
@@ -694,7 +777,7 @@ def grounding_footer(report: GroundingReport) -> str:
         cite = f" ({', '.join(s.citations)})" if s.citations else ""
         lines.append(
             f"- {s.status.replace('_', ' ').title()}{cite}: {s.reason}. "
-            f"\"{s.text.strip()[:140]}\""
+            f'"{s.text.strip()[:140]}"'
         )
     if advisory:
         lines.append(

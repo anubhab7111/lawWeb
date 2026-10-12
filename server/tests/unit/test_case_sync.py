@@ -1,12 +1,11 @@
 import asyncio
 import uuid
 
-from sqlmodel import Session, select
-
 from app.db.engine import get_engine
 from app.db.init_db import init_db
 from app.db.models import CaseAiSummary, CaseEvent, SavedCase, User
 from app.tools import case_sync
+from sqlmodel import Session, select
 
 
 def test_resync_is_idempotent_and_summarises_orders(monkeypatch):
@@ -34,6 +33,20 @@ def test_resync_is_idempotent_and_summarises_orders(monkeypatch):
         assert {e.event_type for e in first} == {"filing", "order", "hearing"}
         assert second == []
         assert len(summaries) == 1
-        assert len(s.exec(select(CaseEvent).where(CaseEvent.saved_case_id == case.id)).all()) == 3
-        assert len(s.exec(select(CaseAiSummary).where(CaseAiSummary.saved_case_id == case.id)).all()) == 1
+        assert (
+            len(
+                s.exec(
+                    select(CaseEvent).where(CaseEvent.saved_case_id == case.id)
+                ).all()
+            )
+            == 3
+        )
+        assert (
+            len(
+                s.exec(
+                    select(CaseAiSummary).where(CaseAiSummary.saved_case_id == case.id)
+                ).all()
+            )
+            == 1
+        )
         assert case.last_synced_at is not None

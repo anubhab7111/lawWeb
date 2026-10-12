@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
-
 from app.ingest.judgment_chunker import (
     PIPELINE_VERSION,
     ChunkValidationError,
@@ -39,9 +38,20 @@ def load_metadata(year: int) -> Dict[str, Dict]:
     path = sc_root() / "metadata" / f"year={year}.parquet"
     if not path.exists():
         return {}
-    cols = ["path", "title", "judge", "citation", "decision_date", "disposal_nature", "case_id"]
+    cols = [
+        "path",
+        "title",
+        "judge",
+        "citation",
+        "decision_date",
+        "disposal_nature",
+        "case_id",
+    ]
     df = pd.read_parquet(path, columns=cols)
-    return {Path(str(row["path"])).stem.removesuffix("_EN"): row for row in df.to_dict("records")}
+    return {
+        Path(str(row["path"])).stem.removesuffix("_EN"): row
+        for row in df.to_dict("records")
+    }
 
 
 def _gz_write(path: Path, text: str) -> None:
@@ -60,13 +70,34 @@ def process_pdf(args: tuple) -> Dict:
     try:
         pages = extract_pages(str(pdf_path))
     except (subprocess.SubprocessError, OSError) as e:
-        return {**row, "status": "quarantined", "reason": f"pdftotext failed: {type(e).__name__}", "chunks": []}
+        return {
+            **row,
+            "status": "quarantined",
+            "reason": f"pdftotext failed: {type(e).__name__}",
+            "chunks": [],
+        }
     raw = plain_text(pages)
 
     quality = text_quality(raw, pages=max(len(pages), 1))
-    row.update({k: quality[k] for k in ("chars", "pages", "chars_per_page", "alpha_ratio", "garbled_ratio")})
+    row.update(
+        {
+            k: quality[k]
+            for k in (
+                "chars",
+                "pages",
+                "chars_per_page",
+                "alpha_ratio",
+                "garbled_ratio",
+            )
+        }
+    )
     if not quality["ok"]:
-        return {**row, "status": "quarantined", "reason": quality["reason"], "chunks": []}
+        return {
+            **row,
+            "status": "quarantined",
+            "reason": quality["reason"],
+            "chunks": [],
+        }
 
     _gz_write(root / "text" / f"year={year}" / f"{stem}.txt.gz", raw)
     clean = "\n\n".join(pages_to_paragraphs(pages))
@@ -81,19 +112,32 @@ def process_pdf(args: tuple) -> Dict:
         except ChunkValidationError as e:
             invalid.append({"chunk_id": chunk["chunk_id"], "reason": str(e)})
     if not chunks:
-        return {**row, "status": "quarantined", "reason": "no valid chunks", "chunks": [], "invalid": invalid}
+        return {
+            **row,
+            "status": "quarantined",
+            "reason": "no valid chunks",
+            "chunks": [],
+            "invalid": invalid,
+        }
     return {**row, "status": "ok", "reason": None, "chunks": chunks, "invalid": invalid}
 
 
 def process_year(year: int, workers: int, force: bool = False) -> Optional[Dict]:
     root = sc_root()
     done = root / "chunks" / f"year={year}" / "_DONE.json"
-    if done.exists() and not force and json.loads(done.read_text()).get("pipeline_version") == PIPELINE_VERSION:
+    if (
+        done.exists()
+        and not force
+        and json.loads(done.read_text()).get("pipeline_version") == PIPELINE_VERSION
+    ):
         return None
 
     pdfs = sorted((root / "pdf" / f"year={year}").glob("*.pdf"))
     meta = load_metadata(year)
-    jobs = [(str(p), year, meta.get(p.stem.removesuffix("_EN"), {}), str(root)) for p in pdfs]
+    jobs = [
+        (str(p), year, meta.get(p.stem.removesuffix("_EN"), {}), str(root))
+        for p in pdfs
+    ]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(process_pdf, jobs, chunksize=4))
 
@@ -114,7 +158,9 @@ def process_year(year: int, workers: int, force: bool = False) -> Optional[Dict]
         if r["status"] == "quarantined":
             q = corpus_path("quarantine", "extract", "sc", f"year={year}")
             q.mkdir(parents=True, exist_ok=True)
-            (q / f"{r['stem']}.reason.json").write_text(json.dumps({k: r[k] for k in r if k != "chunks"}, default=str))
+            (q / f"{r['stem']}.reason.json").write_text(
+                json.dumps({k: r[k] for k in r if k != "chunks"}, default=str)
+            )
 
     out = root / "chunks" / f"year={year}"
     out.mkdir(parents=True, exist_ok=True)
@@ -124,7 +170,12 @@ def process_year(year: int, workers: int, force: bool = False) -> Optional[Dict]
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
     tmp.rename(out / "chunks.jsonl.gz")
 
-    table = pd.DataFrame([{k: v for k, v in r.items() if k not in ("chunks", "invalid")} for r in results])
+    table = pd.DataFrame(
+        [
+            {k: v for k, v in r.items() if k not in ("chunks", "invalid")}
+            for r in results
+        ]
+    )
     text_dir = root / "text" / f"year={year}"
     text_dir.mkdir(parents=True, exist_ok=True)
     table.to_parquet(text_dir / "_extraction.parquet", index=False)
@@ -136,7 +187,9 @@ def process_year(year: int, workers: int, force: bool = False) -> Optional[Dict]
         "pipeline_version": PIPELINE_VERSION,
         "pdfs": len(pdfs),
         "ok": n_ok,
-        "quarantined": Counter(r["reason"] for r in results if r["status"] == "quarantined"),
+        "quarantined": Counter(
+            r["reason"] for r in results if r["status"] == "quarantined"
+        ),
         "duplicates": sum(r["status"] == "duplicate" for r in results),
         "chunks": len(all_chunks),
         "invalid_chunks": n_invalid,
@@ -177,16 +230,18 @@ def dedupe_across_years(years: List[int]) -> Dict:
         for year in folders:
             if year != keep:
                 drops.setdefault(year, set()).add(stem)
-                ledger.append({"doc_id": f"sc-{stem}", "kept_year": keep, "dropped_year": year})
+                ledger.append(
+                    {"doc_id": f"sc-{stem}", "kept_year": keep, "dropped_year": year}
+                )
 
     for year, stems in drops.items():
         doc_ids = {f"sc-{s}" for s in stems}
         chunk_dir = root / "chunks" / f"year={year}"
         kept = 0
         tmp = chunk_dir / "chunks.jsonl.gz.tmp"
-        with gzip.open(chunk_dir / "chunks.jsonl.gz", "rt", encoding="utf-8") as src, gzip.open(
-            tmp, "wt", encoding="utf-8"
-        ) as dst:
+        with gzip.open(
+            chunk_dir / "chunks.jsonl.gz", "rt", encoding="utf-8"
+        ) as src, gzip.open(tmp, "wt", encoding="utf-8") as dst:
             for line in src:
                 if json.loads(line)["doc_id"] not in doc_ids:
                     dst.write(line)
@@ -197,10 +252,15 @@ def dedupe_across_years(years: List[int]) -> Dict:
         mask = df["stem"].isin(stems)
         df.loc[mask, "status"] = "duplicate"
         df.loc[mask, "reason"] = "cross-year duplicate"
-        df.to_parquet(root / "text" / f"year={year}" / "_extraction.parquet", index=False)
+        df.to_parquet(
+            root / "text" / f"year={year}" / "_extraction.parquet", index=False
+        )
         done = chunk_dir / "_DONE.json"
         summary = json.loads(done.read_text())
-        summary.update(chunks=kept, cross_year_duplicates=summary.get("cross_year_duplicates", 0) + len(stems))
+        summary.update(
+            chunks=kept,
+            cross_year_duplicates=summary.get("cross_year_duplicates", 0) + len(stems),
+        )
         done.write_text(json.dumps(summary, indent=1))
 
     if ledger:
@@ -249,13 +309,17 @@ def qa_report(years: List[int], samples: int = 20) -> Dict:
     (qa / f"judgments_sc_{stamp}.json").write_text(json.dumps(report, indent=1))
     with open(qa / f"spotcheck_sc_{stamp}.md", "w") as f:
         for c in reservoir:
-            f.write(f"### {c['chunk_id']} — {c['case_title']} ({c['year']}) [{c['role']}] {c['sections_cited']}\n\n{c['text']}\n\n")
+            f.write(
+                f"### {c['chunk_id']} — {c['case_title']} ({c['year']}) [{c['role']}] {c['sections_cited']}\n\n{c['text']}\n\n"
+            )
     report["spotcheck"] = str(qa / f"spotcheck_sc_{stamp}.md")
     return report
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--years", type=int, nargs="*")
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--force", action="store_true")
@@ -263,7 +327,9 @@ def main() -> None:
 
     root = sc_root()
     years = args.years or sorted(
-        int(p.name.split("=")[1]) for p in (root / "pdf").glob("year=*") if any(p.glob("*.pdf"))
+        int(p.name.split("=")[1])
+        for p in (root / "pdf").glob("year=*")
+        if any(p.glob("*.pdf"))
     )
     started = time.time()
     for year in years:
@@ -278,7 +344,9 @@ def main() -> None:
             f"({time.time() - started:.0f}s)"
         )
     dedup = dedupe_across_years(years)
-    print(f"[judgments] cross-year duplicates dropped: {dedup['dropped_docs']} (years rewritten: {len(dedup['years_rewritten'])})")
+    print(
+        f"[judgments] cross-year duplicates dropped: {dedup['dropped_docs']} (years rewritten: {len(dedup['years_rewritten'])})"
+    )
     report = qa_report(years)
     print("[judgments] QA:", json.dumps(report, indent=1))
 

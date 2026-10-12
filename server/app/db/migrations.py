@@ -30,7 +30,9 @@ def ensure_us_seed_lawyers_removed(engine: Engine) -> None:
 
 def ensure_booking_idempotency_key(engine: Engine) -> None:
     with engine.begin() as conn:
-        conn.exec_driver_sql("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS idempotency_key TEXT;")
+        conn.exec_driver_sql(
+            "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS idempotency_key TEXT;"
+        )
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS bookings_idempotency_key_key "
             "ON bookings(idempotency_key) WHERE idempotency_key IS NOT NULL;"
@@ -39,8 +41,7 @@ def ensure_booking_idempotency_key(engine: Engine) -> None:
 
 def ensure_similar_case_searches_table(engine: Engine) -> None:
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS similar_case_searches (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -49,15 +50,13 @@ def ensure_similar_case_searches_table(engine: Engine) -> None:
                 results JSONB NOT NULL,
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
 
 
 def ensure_case_tables(engine: Engine) -> None:
     """My Cases: saved_cases + case_events + case_notes + case_ai_summaries."""
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS saved_cases (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -70,14 +69,12 @@ def ensure_case_tables(engine: Engine) -> None:
                 last_synced_at TIMESTAMPTZ(6),
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS saved_cases_user_id_cnr_key "
             "ON saved_cases(user_id, cnr) WHERE cnr IS NOT NULL;"
         )
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS case_events (
                 id TEXT PRIMARY KEY,
                 saved_case_id TEXT NOT NULL REFERENCES saved_cases(id) ON DELETE CASCADE,
@@ -89,14 +86,12 @@ def ensure_case_tables(engine: Engine) -> None:
                 raw_payload JSONB NOT NULL DEFAULT '{}',
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS case_events_saved_case_id_event_date_idx "
             "ON case_events(saved_case_id, event_date);"
         )
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS case_notes (
                 id TEXT PRIMARY KEY,
                 saved_case_id TEXT NOT NULL REFERENCES saved_cases(id) ON DELETE CASCADE,
@@ -104,10 +99,8 @@ def ensure_case_tables(engine: Engine) -> None:
                 note_text TEXT NOT NULL,
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
-        conn.exec_driver_sql(
-            """
+            """)
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS case_ai_summaries (
                 id TEXT PRIMARY KEY,
                 saved_case_id TEXT NOT NULL REFERENCES saved_cases(id) ON DELETE CASCADE,
@@ -115,14 +108,12 @@ def ensure_case_tables(engine: Engine) -> None:
                 source_event_id TEXT REFERENCES case_events(id) ON DELETE SET NULL,
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
 
 
 def ensure_notification_tables(engine: Engine) -> None:
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS notification_preferences (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -131,10 +122,8 @@ def ensure_notification_tables(engine: Engine) -> None:
                 fcm_token TEXT,
                 type_overrides JSONB NOT NULL DEFAULT '{}'
             );
-            """
-        )
-        conn.exec_driver_sql(
-            """
+            """)
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS notifications (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -150,8 +139,7 @@ def ensure_notification_tables(engine: Engine) -> None:
                 read_at TIMESTAMPTZ(6),
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS notifications_user_id_created_at_idx "
             "ON notifications(user_id, created_at);"
@@ -172,21 +160,18 @@ def ensure_sms_columns_dropped(engine: Engine) -> None:
 def ensure_duplicate_case_events_removed(engine: Engine) -> None:
     """The mock provider used to re-insert its events on every sync; keep the oldest row of each (case, type, title) group."""
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             DELETE FROM case_events a USING case_events b
             WHERE a.saved_case_id = b.saved_case_id
               AND a.event_type = b.event_type
               AND a.title IS NOT DISTINCT FROM b.title
               AND (a.created_at, a.id) > (b.created_at, b.id);
-            """
-        )
+            """)
 
 
 def ensure_cause_list_cache_table(engine: Engine) -> None:
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS cause_list_cache (
                 id TEXT PRIMARY KEY,
                 court TEXT NOT NULL,
@@ -194,8 +179,7 @@ def ensure_cause_list_cache_table(engine: Engine) -> None:
                 fetched_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 entries JSONB NOT NULL DEFAULT '[]'
             );
-            """
-        )
+            """)
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS cause_list_cache_court_list_date_key "
             "ON cause_list_cache(court, list_date);"
@@ -204,8 +188,7 @@ def ensure_cause_list_cache_table(engine: Engine) -> None:
 
 def ensure_vault_tables(engine: Engine) -> None:
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS vault_documents (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -220,10 +203,8 @@ def ensure_vault_tables(engine: Engine) -> None:
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
-        conn.exec_driver_sql(
-            """
+            """)
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS vault_document_embeddings (
                 id TEXT PRIMARY KEY,
                 vault_document_id TEXT NOT NULL REFERENCES vault_documents(id) ON DELETE CASCADE,
@@ -231,10 +212,8 @@ def ensure_vault_tables(engine: Engine) -> None:
                 chunk_text TEXT NOT NULL,
                 embedding vector(1024) NOT NULL
             );
-            """
-        )
-        conn.exec_driver_sql(
-            """
+            """)
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS vault_document_permissions (
                 id TEXT PRIMARY KEY,
                 vault_document_id TEXT NOT NULL REFERENCES vault_documents(id) ON DELETE CASCADE,
@@ -242,8 +221,7 @@ def ensure_vault_tables(engine: Engine) -> None:
                 permission TEXT NOT NULL DEFAULT 'view',
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
 
 
 def ensure_chat_tables(engine: Engine) -> None:
@@ -254,8 +232,7 @@ def ensure_chat_tables(engine: Engine) -> None:
             "CREATE TYPE \"MessageRole\" AS ENUM ('user', 'assistant', 'system'); "
             "EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
         )
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS chat_sessions (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -263,14 +240,12 @@ def ensure_chat_tables(engine: Engine) -> None:
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS chat_sessions_user_id_updated_at_idx "
             "ON chat_sessions(user_id, updated_at DESC);"
         )
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS chat_messages (
                 id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
@@ -278,8 +253,7 @@ def ensure_chat_tables(engine: Engine) -> None:
                 content TEXT NOT NULL,
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS chat_messages_session_id_created_at_idx "
             "ON chat_messages(session_id, created_at);"
@@ -308,8 +282,7 @@ def ensure_chat_messages_trace_column(engine: Engine) -> None:
 
 def ensure_calendar_events_table(engine: Engine) -> None:
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS calendar_events (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -324,8 +297,7 @@ def ensure_calendar_events_table(engine: Engine) -> None:
                 outlook_event_id TEXT,
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """
-        )
+            """)
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS calendar_events_user_id_start_at_idx "
             "ON calendar_events(user_id, start_at);"
@@ -334,8 +306,7 @@ def ensure_calendar_events_table(engine: Engine) -> None:
 
 def ensure_calendar_connections_table(engine: Engine) -> None:
     with engine.begin() as conn:
-        conn.exec_driver_sql(
-            """
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS calendar_connections (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -345,8 +316,7 @@ def ensure_calendar_connections_table(engine: Engine) -> None:
                 created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (user_id, provider)
             );
-            """
-        )
+            """)
 
 
 def ensure_calendar_events_related_case_event_column(engine: Engine) -> None:

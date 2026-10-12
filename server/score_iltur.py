@@ -20,7 +20,6 @@ load_dotenv(_SERVER_DIR / ".env")
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-
 from app.ingest.iltur_export import lsi_dir  # noqa: E402
 from app.ingest.paths import corpus_path  # noqa: E402
 from app.ingest.thermal import ThermalGuard  # noqa: E402
@@ -36,7 +35,9 @@ def shard_dir(system: str, split: str) -> Path:
 
 
 def load_split(split: str) -> pd.DataFrame:
-    df = pd.read_parquet(lsi_dir() / f"{split}.parquet", columns=["id", "sentences", "label_ids"])
+    df = pd.read_parquet(
+        lsi_dir() / f"{split}.parquet", columns=["id", "sentences", "label_ids"]
+    )
     df["id"] = df["id"].astype(str)
     return df
 
@@ -66,7 +67,9 @@ class PrecedentScorer:
         names = label_names()
         id_to_names = {}
         for s in ("train", "dev"):
-            for r in pd.read_parquet(lsi_dir() / f"{s}.parquet", columns=["id", "label_ids"]).itertuples():
+            for r in pd.read_parquet(
+                lsi_dir() / f"{s}.parquet", columns=["id", "label_ids"]
+            ).itertuples():
                 id_to_names[str(r.id)] = [names[i] for i in r.label_ids]
 
         self.case_labels = [id_to_names[cid] for cid in self.index.case_ids]
@@ -74,24 +77,35 @@ class PrecedentScorer:
         self.mask_self = split != "test"
         self.always_masked = set()
         if memory == "train":
-            dev_ids = pd.read_parquet(lsi_dir() / "dev.parquet", columns=["id"])["id"].astype(str)
+            dev_ids = pd.read_parquet(lsi_dir() / "dev.parquet", columns=["id"])[
+                "id"
+            ].astype(str)
             self.always_masked = {self.lookup[c] for c in dev_ids if c in self.lookup}
 
-        self.overlap = {cid: {self.lookup[o] for o in others if o in self.lookup} for cid, others in (overlap or {}).items()}
+        self.overlap = {
+            cid: {self.lookup[o] for o in others if o in self.lookup}
+            for cid, others in (overlap or {}).items()
+        }
         emb = _make_bge_embeddings(device)
         emb.client.max_seq_length = 256
         if device == "cuda":
             emb.client.half()
         self.emb = emb
 
-    def score(self, rows: pd.DataFrame, k: int = pr.NEIGHBORS, power: float = pr.VOTE_POWER) -> Dict[str, Dict[str, float]]:
+    def score(
+        self, rows: pd.DataFrame, k: int = pr.NEIGHBORS, power: float = pr.VOTE_POWER
+    ) -> Dict[str, Dict[str, float]]:
         windows, owner = [], []
         for i, sentences in enumerate(rows["sentences"]):
-            w = fact_windows(list(sentences), window=4, stride=3, max_windows=pr.QUERY_WINDOWS)
+            w = fact_windows(
+                list(sentences), window=4, stride=3, max_windows=pr.QUERY_WINDOWS
+            )
             windows.extend(w)
             owner.extend([i] * len(w))
         vecs = pr.encode_texts(self.emb, windows, batch_size=128)
-        extra = (k if self.mask_self else 0) + (3 * k if self.always_masked or self.overlap else 0)
+        extra = (k if self.mask_self else 0) + (
+            3 * k if self.always_masked or self.overlap else 0
+        )
         sims, cases = self.index.search(vecs, k, extra=extra)
         owner = np.asarray(owner)
         out = {}
@@ -100,7 +114,13 @@ class PrecedentScorer:
             exclude = set(self.always_masked) | self.overlap.get(cid, set())
             if self.mask_self and cid in self.lookup:
                 exclude.add(self.lookup[cid])
-            out[cid] = pr.vote_labels(sims[sel], cases[sel], self.case_labels, exclude or None, power) if sel.any() else {}
+            out[cid] = (
+                pr.vote_labels(
+                    sims[sel], cases[sel], self.case_labels, exclude or None, power
+                )
+                if sel.any()
+                else {}
+            )
         return out
 
 
@@ -113,10 +133,20 @@ class JudgmentScorer:
 
         self.index = get_judgment_index()
         self.index.load()
-        report = corpus_path("builds", "decontam", "sc_flagged.json" if split == "test" else f"sc_flagged_{split}.json")
-        self.masked = set(json.loads(report.read_text())["flagged_docs"]) if report.exists() else set()
+        report = corpus_path(
+            "builds",
+            "decontam",
+            "sc_flagged.json" if split == "test" else f"sc_flagged_{split}.json",
+        )
+        self.masked = (
+            set(json.loads(report.read_text())["flagged_docs"])
+            if report.exists()
+            else set()
+        )
         if split in ("test", "dev") and not report.exists():
-            raise SystemExit(f"{report} missing: run app.ingest.decontaminate --split {split} first")
+            raise SystemExit(
+                f"{report} missing: run app.ingest.decontaminate --split {split} first"
+            )
         self.vocab = set(label_names())
         self.k, self.power = k, power
         emb = _make_bge_embeddings(device)
@@ -128,22 +158,38 @@ class JudgmentScorer:
     def score(self, rows: pd.DataFrame) -> Dict[str, Dict[str, float]]:
         out = {}
         for cid, sentences in zip(rows["id"], rows["sentences"]):
-            windows = fact_windows(list(sentences), window=4, stride=3, max_windows=pr.QUERY_WINDOWS)
+            windows = fact_windows(
+                list(sentences), window=4, stride=3, max_windows=pr.QUERY_WINDOWS
+            )
             if not windows:
                 out[cid] = {}
                 continue
             votes = self.index.section_votes(
-                pr.encode_texts(self.emb, windows, batch_size=64), k=self.k, power=self.power,
-                normalize=False, exclude_docs=self.masked,
+                pr.encode_texts(self.emb, windows, batch_size=64),
+                k=self.k,
+                power=self.power,
+                normalize=False,
+                exclude_docs=self.masked,
             )
-            out[cid] = {f"Section {n}": v for n, v in votes.items() if f"Section {n}" in self.vocab}
+            out[cid] = {
+                f"Section {n}": v
+                for n, v in votes.items()
+                if f"Section {n}" in self.vocab
+            }
         return out
 
 
 class RerankerScorer:
     """Fine-tuned cross-encoder over the top candidates of other systems."""
 
-    def __init__(self, split: str, device: str, model: str, sources=("precedent", "classifier"), top: int = 12):
+    def __init__(
+        self,
+        split: str,
+        device: str,
+        model: str,
+        sources=("precedent", "classifier"),
+        top: int = 12,
+    ):
         from app.tools.label_reranker import LabelReranker
         from app.tools.statute_classifier import clean_facts
 
@@ -155,7 +201,9 @@ class RerankerScorer:
     def candidates(self, cid: str) -> List[str]:
         out: List[str] = []
         for scores in self.sources:
-            for label, _ in sorted(scores.get(cid, {}).items(), key=lambda kv: -kv[1])[: self.top]:
+            for label, _ in sorted(scores.get(cid, {}).items(), key=lambda kv: -kv[1])[
+                : self.top
+            ]:
                 if label not in out:
                     out.append(label)
         return out
@@ -175,8 +223,15 @@ def overlap_map(split: str, fraction: float) -> Dict[str, List[str]]:
     if path.exists():
         with open(path, "rb") as f:
             return pickle.load(f)
-    memory = pd.concat([pd.read_parquet(lsi_dir() / f"{s}.parquet", columns=["id", "sentences"]) for s in ("train", "dev")])
-    index = TestShingles.from_texts({str(r.id): " ".join(r.sentences) for r in memory.itertuples()})
+    memory = pd.concat(
+        [
+            pd.read_parquet(lsi_dir() / f"{s}.parquet", columns=["id", "sentences"])
+            for s in ("train", "dev")
+        ]
+    )
+    index = TestShingles.from_texts(
+        {str(r.id): " ".join(r.sentences) for r in memory.itertuples()}
+    )
     out = {}
     for r in load_split(split).itertuples():
         toks = tokenize(" ".join(r.sentences))
@@ -191,7 +246,9 @@ def overlap_map(split: str, fraction: float) -> Dict[str, List[str]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("system", choices=["precedent", "judgments", "reranker"])
     parser.add_argument("--reranker-model", help="reranker: fine-tuned model dir")
     parser.add_argument("--split", choices=["train", "dev", "test"], required=True)
@@ -211,15 +268,26 @@ def main() -> None:
         df = df.head(args.limit)
     out_dir = shard_dir(system, args.split)
     out_dir.mkdir(parents=True, exist_ok=True)
-    overlap = overlap_map(args.split, args.exclude_overlap) if args.exclude_overlap else None
+    overlap = (
+        overlap_map(args.split, args.exclude_overlap) if args.exclude_overlap else None
+    )
     if overlap is not None:
-        print(f"[{system}/{args.split}] {len(overlap)} cases have near-duplicate indexed cases (masked)", flush=True)
+        print(
+            f"[{system}/{args.split}] {len(overlap)} cases have near-duplicate indexed cases (masked)",
+            flush=True,
+        )
     if args.system == "judgments":
         scorer = JudgmentScorer(args.split, args.device)
     elif args.system == "reranker":
-        scorer = RerankerScorer(args.split, args.device, args.reranker_model or corpus_path("builds", "reranker", "v1"))
+        scorer = RerankerScorer(
+            args.split,
+            args.device,
+            args.reranker_model or corpus_path("builds", "reranker", "v1"),
+        )
     else:
-        scorer = PrecedentScorer(args.split, args.device, memory=args.memory, overlap=overlap)
+        scorer = PrecedentScorer(
+            args.split, args.device, memory=args.memory, overlap=overlap
+        )
 
     guard = ThermalGuard()
     started = time.time()
@@ -235,7 +303,10 @@ def main() -> None:
             pickle.dump(scores, f)
         tmp.rename(path)
         guard.step()
-        print(f"[{system}/{args.split}] shard {s + 1}/{n_shards} ({time.time() - started:.0f}s)", flush=True)
+        print(
+            f"[{system}/{args.split}] shard {s + 1}/{n_shards} ({time.time() - started:.0f}s)",
+            flush=True,
+        )
     print(f"[{system}/{args.split}] done: {len(load_scores(system, args.split))} cases")
 
 

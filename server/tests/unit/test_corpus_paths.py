@@ -2,7 +2,6 @@ import asyncio
 import pickle
 
 import pytest
-
 from app.config import get_settings
 from app.ingest import paths
 from app.tools.unified_legal_rag import UnifiedLegalRAGSystem

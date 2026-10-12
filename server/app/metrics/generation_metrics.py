@@ -55,7 +55,6 @@ def _keyword_faithfulness(answer: str, context: str) -> float:
     answer_lower = answer.lower()
     context_lower = context.lower()
 
-
     grounding_phrases = [
         "according to",
         "as per",
@@ -73,7 +72,6 @@ def _keyword_faithfulness(answer: str, context: str) -> float:
     ]
     grounding_hits = sum(1 for p in grounding_phrases if p in answer_lower)
 
-
     hallucination_signals = [
         "section 243b",
         "negligence act, 1872",
@@ -82,12 +80,10 @@ def _keyword_faithfulness(answer: str, context: str) -> float:
     ]
     hallucination_hits = sum(1 for p in hallucination_signals if p in answer_lower)
 
-
     answer_words = set(re.findall(r"\b[a-z]{5,}\b", answer_lower))
     context_words = set(re.findall(r"\b[a-z]{5,}\b", context_lower))
     overlap = len(answer_words & context_words)
     overlap_ratio = min(overlap / max(len(answer_words), 1), 1.0)
-
 
     base = overlap_ratio * 0.7
 
@@ -107,7 +103,6 @@ def _keyword_answer_relevance(query: str, answer: str) -> float:
     query_lower = query.lower()
     answer_lower = answer.lower()
 
-
     query_terms = set(re.findall(r"\b[a-z]{4,}\b", query_lower))
     if not query_terms:
         return 0.5
@@ -116,9 +111,7 @@ def _keyword_answer_relevance(query: str, answer: str) -> float:
     matched = query_terms & answer_terms
     term_coverage = len(matched) / len(query_terms)
 
-
     length_score = min(len(answer) / 500, 1.0)
-
 
     directness_phrases = [
         "yes",

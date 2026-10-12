@@ -16,7 +16,9 @@ class ObjectStorage(ABC):
     def upload_object(self, key: str, data: bytes, content_type: str) -> None: ...
 
     @abstractmethod
-    def get_download_url(self, key: str, document_id: str, expires_in: int = 3600) -> str: ...
+    def get_download_url(
+        self, key: str, document_id: str, expires_in: int = 3600
+    ) -> str: ...
 
     @abstractmethod
     def delete_object(self, key: str) -> None: ...
@@ -42,9 +44,13 @@ class R2ObjectStorage(ObjectStorage):
         )
 
     def upload_object(self, key: str, data: bytes, content_type: str) -> None:
-        self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
+        self._client.put_object(
+            Bucket=self._bucket, Key=key, Body=data, ContentType=content_type
+        )
 
-    def get_download_url(self, key: str, document_id: str, expires_in: int = 3600) -> str:
+    def get_download_url(
+        self, key: str, document_id: str, expires_in: int = 3600
+    ) -> str:
         return self._client.generate_presigned_url(
             "get_object",
             Params={"Bucket": self._bucket, "Key": key},
@@ -67,7 +73,6 @@ class LocalDiskObjectStorage(ObjectStorage):
 
     def _path(self, key: str) -> Path:
 
-
         base = LOCAL_VAULT_DIR.resolve()
         path = (base / key).resolve()
         if not path.is_relative_to(base):
@@ -79,8 +84,9 @@ class LocalDiskObjectStorage(ObjectStorage):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
-    def get_download_url(self, key: str, document_id: str, expires_in: int = 3600) -> str:
-
+    def get_download_url(
+        self, key: str, document_id: str, expires_in: int = 3600
+    ) -> str:
 
         return f"/api/vault/documents/local-download/{document_id}"
 
@@ -94,7 +100,13 @@ class LocalDiskObjectStorage(ObjectStorage):
 @lru_cache()
 def get_object_storage() -> ObjectStorage:
     settings = get_settings()
-    if settings.r2_endpoint_url and settings.r2_access_key_id and settings.r2_secret_access_key:
+    if (
+        settings.r2_endpoint_url
+        and settings.r2_access_key_id
+        and settings.r2_secret_access_key
+    ):
         return R2ObjectStorage()
-    print("[ObjectStorage] R2 not configured — using local-disk fallback for the Vault.")
+    print(
+        "[ObjectStorage] R2 not configured — using local-disk fallback for the Vault."
+    )
     return LocalDiskObjectStorage()

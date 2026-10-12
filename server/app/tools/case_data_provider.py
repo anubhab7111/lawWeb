@@ -84,7 +84,9 @@ class MockCaseDataProvider(CaseDataProvider):
         rng = random.Random(cnr)
         return CaseRecord(
             cnr=cnr,
-            court=rng.choice(["Delhi High Court", "Bombay High Court", "District Court, Pune"]),
+            court=rng.choice(
+                ["Delhi High Court", "Bombay High Court", "District Court, Pune"]
+            ),
             case_number=f"CRL.{rng.randint(100, 999)}/{2024}",
             year=2024,
             title=f"State vs. Respondent ({cnr[-4:]})",
@@ -141,11 +143,19 @@ class MockCaseDataProvider(CaseDataProvider):
         ]
         if filters:
             if filters.advocate:
-                entries = [e for e in entries if filters.advocate.lower() in e.advocate.lower()]
+                entries = [
+                    e for e in entries if filters.advocate.lower() in e.advocate.lower()
+                ]
             if filters.judge:
-                entries = [e for e in entries if filters.judge.lower() in e.judge.lower()]
+                entries = [
+                    e for e in entries if filters.judge.lower() in e.judge.lower()
+                ]
             if filters.case_number:
-                entries = [e for e in entries if filters.case_number.lower() in e.case_number.lower()]
+                entries = [
+                    e
+                    for e in entries
+                    if filters.case_number.lower() in e.case_number.lower()
+                ]
         return entries
 
 
@@ -156,6 +166,7 @@ def get_case_data_provider() -> CaseDataProvider:
     if provider == "mock":
         return MockCaseDataProvider()
 
-
-    print(f"[CaseData] Unknown CASE_DATA_PROVIDER '{settings.case_data_provider}' — falling back to mock")
+    print(
+        f"[CaseData] Unknown CASE_DATA_PROVIDER '{settings.case_data_provider}' — falling back to mock"
+    )
     return MockCaseDataProvider()

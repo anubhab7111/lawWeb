@@ -1,10 +1,9 @@
 """Document extraction and analysis module."""
 
+import asyncio
 import io
 import os
 from typing import Optional, Tuple
-import asyncio
-
 
 try:
     import pytesseract
@@ -89,11 +88,9 @@ class DocumentExtractor:
             else:
                 print(f"OCR not available: {message}")
 
-
     async def extract_text(self, file_bytes: bytes, filename: str) -> Tuple[str, str]:
         """Extract text from a document file or image."""
         extension = self._get_extension(filename)
-
 
         if extension in self.SUPPORTED_IMAGE_EXTENSIONS:
             if self._ocr_available:
@@ -106,7 +103,6 @@ class DocumentExtractor:
 
         if extension == ".pdf":
             text = await self._extract_pdf_async(file_bytes)
-
 
             if len(text.strip()) < 100 and self._ocr_available:
                 try:
@@ -133,7 +129,6 @@ class DocumentExtractor:
         else:
             raise ValueError(f"Unsupported file type: {extension}")
 
-
     async def _extract_from_image(self, image_bytes: bytes, filename: str = "") -> str:
         """Extract text from an image file using OCR."""
         loop = asyncio.get_event_loop()
@@ -146,10 +141,8 @@ class DocumentExtractor:
         try:
             image = Image.open(io.BytesIO(image_bytes))
 
-
             if image.mode not in ("RGB", "L"):
                 image = image.convert("RGB")
-
 
             if (
                 image.size[0] > self.MAX_IMAGE_SIZE[0]
@@ -215,7 +208,6 @@ class DocumentExtractor:
         except Exception as e:
             raise ValueError(f"Failed to extract text from PDF images: {str(e)}")
 
-
     async def _extract_pdf_async(self, file_bytes: bytes) -> str:
         """Extract text from PDF asynchronously."""
         loop = asyncio.get_event_loop()
@@ -224,7 +216,6 @@ class DocumentExtractor:
     def _extract_pdf_sync(self, file_bytes: bytes) -> str:
         """Extract text from PDF synchronously."""
         file_stream = io.BytesIO(file_bytes)
-
 
         if HAS_PDFPLUMBER:
             try:
@@ -242,7 +233,6 @@ class DocumentExtractor:
                 return "\n\n".join(text_parts)
             except Exception:
                 file_stream.seek(0)
-
 
         if HAS_PYPDF:
             try:
@@ -286,7 +276,6 @@ class DocumentExtractor:
             if para.text.strip():
                 paragraphs.append(para.text)
 
-
         for table in doc.tables:
             for row in table.rows:
                 row_text = " | ".join(
@@ -296,7 +285,6 @@ class DocumentExtractor:
                     paragraphs.append(row_text)
 
         return "\n\n".join(paragraphs)
-
 
     def _get_extension(self, filename: str) -> str:
         """Get lowercase file extension."""

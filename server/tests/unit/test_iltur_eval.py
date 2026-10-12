@@ -2,13 +2,13 @@ from app.metrics.iltur_eval import (
     aggregate,
     average_precision,
     bootstrap_ci,
-    macro_f1,
-    ndcg_at_k,
-    popularity_ranking,
     case_metrics,
     clean_fact_sentence,
     fact_windows,
     label_coverage,
+    macro_f1,
+    ndcg_at_k,
+    popularity_ranking,
     rrf_fuse,
 )
 from app.metrics.iltur_loader import decode_labels
@@ -85,6 +85,9 @@ def test_macro_f1_punishes_only_predicting_popular_labels():
 
 
 def test_popularity_ranking_and_bootstrap_ci():
-    assert popularity_ranking([["34", "302"], ["34"], ["302", "34"], ["420"]])[:2] == ["34", "302"]
+    assert popularity_ranking([["34", "302"], ["34"], ["302", "34"], ["420"]])[:2] == [
+        "34",
+        "302",
+    ]
     lo, hi = bootstrap_ci([1.0] * 50 + [0.0] * 50)
     assert lo < 0.5 < hi and hi - lo < 0.25

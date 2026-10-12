@@ -20,18 +20,25 @@ from dotenv import load_dotenv
 load_dotenv(_SERVER_DIR / ".env")
 
 from app.ingest.paths import corpus_available, corpus_path  # noqa: E402
-from app.metrics.iltur_eval import (  # noqa: E402
+from app.metrics.iltur_eval import bootstrap_ci  # noqa: E402
+from app.metrics.iltur_eval import (
     aggregate,
-    bootstrap_ci,
     case_metrics,
     label_coverage,
     macro_f1,
     popularity_ranking,
     rrf_fuse,
 )
-from app.metrics.iltur_loader import decode_labels, label_names, sample_iltur_cases  # noqa: E402
+from app.metrics.iltur_loader import label_names  # noqa: E402
+from app.metrics.iltur_loader import (
+    decode_labels,
+    sample_iltur_cases,
+)
 from app.tools.fact_statutes import rank_sections_from_facts  # noqa: E402
-from app.tools.precedent_rag import get_precedent_index, retrieve_precedent_sections  # noqa: E402
+from app.tools.precedent_rag import get_precedent_index  # noqa: E402
+from app.tools.precedent_rag import (
+    retrieve_precedent_sections,
+)
 from app.tools.unified_legal_rag import get_unified_rag_system  # noqa: E402
 
 KS = (1, 3, 5, 10)
@@ -41,7 +48,9 @@ SAVED_DEPTH = 30
 def is_numbered_act(act_name: str) -> bool:
     """IPC or CrPC: the Acts whose section numbers IL-TUR labels can denote."""
     name = act_name.lower()
-    return ("penal code" in name or "criminal procedure" in name) and "bharatiya" not in name
+    return (
+        "penal code" in name or "criminal procedure" in name
+    ) and "bharatiya" not in name
 
 
 def section_key(section_number: str) -> str:
@@ -64,30 +73,50 @@ async def rank_statutes(sentences):
 async def rank_precedent(row, sentences, args):
     exclude = None if args.split == "test" else [str(row["id"])]
     voted = await retrieve_precedent_sections(
-        sentences, k=args.precedent_k, power=args.precedent_power, exclude_case_ids=exclude
+        sentences,
+        k=args.precedent_k,
+        power=args.precedent_power,
+        exclude_case_ids=exclude,
     )
     return [section for section, _score in voted]
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("--split", choices=["test", "dev"], default="test")
     parser.add_argument("--sample-size", type=int, default=300)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--precedent-k", type=int, default=20, help="neighbour windows per query window")
-    parser.add_argument("--precedent-power", type=float, default=8.0, help="similarity exponent for votes")
     parser.add_argument(
-        "--fusion-weights", type=float, nargs=2, default=[0.25, 1.0],
-        metavar=("STATUTE", "PRECEDENT"), help="weights for the fused ranking",
+        "--precedent-k", type=int, default=20, help="neighbour windows per query window"
     )
-    parser.add_argument("--skip-statutes", action="store_true", help="precedent only (fast; for tuning)")
+    parser.add_argument(
+        "--precedent-power",
+        type=float,
+        default=8.0,
+        help="similarity exponent for votes",
+    )
+    parser.add_argument(
+        "--fusion-weights",
+        type=float,
+        nargs=2,
+        default=[0.25, 1.0],
+        metavar=("STATUTE", "PRECEDENT"),
+        help="weights for the fused ranking",
+    )
+    parser.add_argument(
+        "--skip-statutes", action="store_true", help="precedent only (fast; for tuning)"
+    )
     parser.add_argument("--tag", default="run")
     args = parser.parse_args()
 
     use_precedent = get_precedent_index().available
     if not use_precedent:
         print("[precedent] index not built — evaluating statutes only")
-    popularity = popularity_ranking(get_precedent_index().load_labels()) if use_precedent else []
+    popularity = (
+        popularity_ranking(get_precedent_index().load_labels()) if use_precedent else []
+    )
     use_statutes = not args.skip_statutes
     if not use_statutes and not use_precedent:
         sys.exit("nothing to evaluate")
@@ -99,9 +128,13 @@ async def main() -> None:
         if not await rag.initialize():
             sys.exit("FATAL: unified RAG failed to initialize")
         indexed_numbers = [
-            section_key(c.section_number) for c in rag._chunks.values() if is_numbered_act(c.act_name)
+            section_key(c.section_number)
+            for c in rag._chunks.values()
+            if is_numbered_act(c.act_name)
         ]
-        coverage = label_coverage(decode_labels(list(range(len(names))), names), indexed_numbers)
+        coverage = label_coverage(
+            decode_labels(list(range(len(names))), names), indexed_numbers
+        )
         print(
             f"[coverage] {coverage['covered']}/{coverage['labels']} IL-TUR label sections "
             f"resolvable in the index; missing: {coverage['missing']}"
@@ -138,12 +171,15 @@ async def main() -> None:
             per_system.setdefault(system, []).append(metrics)
             entry[system] = {"top10": ranked[:10], **metrics}
             all_ranked.setdefault(system, []).append(ranked)
-        entry["saved_rankings"] = {s: r[:SAVED_DEPTH] for s, r in ranks.items() if s != "fused"}
+        entry["saved_rankings"] = {
+            s: r[:SAVED_DEPTH] for s, r in ranks.items() if s != "fused"
+        }
         details.append(entry)
 
         if i % 10 == 0 or i == len(rows):
             progress = " ".join(
-                f"{s}={sum(c['hit@5'] for c in m) / i:.3f}" for s, m in per_system.items()
+                f"{s}={sum(c['hit@5'] for c in m) / i:.3f}"
+                for s, m in per_system.items()
             )
             print(f"[{i}/{len(rows)}] {time.time() - started:.0f}s  hit@5: {progress}")
 
@@ -167,7 +203,9 @@ async def main() -> None:
     print("\n" + "=" * 72)
     print(f" IL-TUR retrieval ({args.tag}) — {args.split} n={n} seed={args.seed}")
     print("=" * 72)
-    print(f"  {'system':<11}hit@1   hit@5 [95% CI]      hit@10  MRR [95% CI]        nDCG@5  MAP    macroF1@5")
+    print(
+        f"  {'system':<11}hit@1   hit@5 [95% CI]      hit@10  MRR [95% CI]        nDCG@5  MAP    macroF1@5"
+    )
     for system, agg in summary.items():
         h, m = agg["hit@5_ci"], agg["mrr_ci"]
         print(

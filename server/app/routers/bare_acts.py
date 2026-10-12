@@ -1,9 +1,8 @@
 """Bare Act Explorer — public (no auth), read-only reference lookup over the existing unified statute + case-law RAG stack (app/tools/bare_act_explorer.py)."""
 
-from fastapi import APIRouter, Query
-
 from app.tools.bare_act_explorer import explore_bare_act
 from app.tools.unified_legal_rag import get_unified_rag_system
+from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/api/bare-acts", tags=["bare-acts"])
 
@@ -54,7 +53,10 @@ async def list_acts():
 @router.get("/search")
 async def search(
     q: str = Query(..., min_length=1, max_length=300),
-    act: str = Query(default="", description="Optional act-name hint to disambiguate a bare section number"),
+    act: str = Query(
+        default="",
+        description="Optional act-name hint to disambiguate a bare section number",
+    ),
 ):
     result = await explore_bare_act(q, act_hint=act)
     return _serialize(result)

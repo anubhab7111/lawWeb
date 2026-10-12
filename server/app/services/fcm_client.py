@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-
 from app.config import get_settings
 
 _SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
@@ -45,7 +44,9 @@ def _access_token() -> str:
     return creds.token
 
 
-def send_push(fcm_token: str, title: str, body: str, link: Optional[str] = None) -> bool:
+def send_push(
+    fcm_token: str, title: str, body: str, link: Optional[str] = None
+) -> bool:
     """Send one notification."""
     if not push_configured() or not fcm_token:
         return False

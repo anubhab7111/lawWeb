@@ -40,7 +40,6 @@ def _normalized_act_key(stem: str) -> str:
 class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
     """Unified legal RAG: one index over all bare_acts domains + prose corpora, with per-chunk `domains` metadata enabling optional query-time filtering."""
 
-
     DOMAIN_CODES: Dict[str, str] = {
         "civil": "CIV",
         "commercial": "CML",
@@ -63,7 +62,6 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
         "guides": "GDE",
     }
 
-
     PROSE_DIRS = ("notifications", "explanatory", "mappings", "rules", "guides")
 
     def __init__(self, data_dir: Optional[str] = None):
@@ -77,9 +75,7 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
     @property
     def pdf_subdir(self) -> str:
 
-
         return ""
-
 
     def _collect_pdf_sources(self) -> List[Tuple[Path, str, List[str]]]:
         """Walk all domain subdirectories plus the prose corpora, dedupe PDFs that appear in several places (by content hash, then by normalized act name — including one filename being a..."""
@@ -90,13 +86,11 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
                 continue
             located.append((pdf, rel.parts[0]))
 
-
         for domain in self.PROSE_DIRS:
             prose_dir = self._statutes_dir / domain
             if prose_dir.exists():
                 for pdf in sorted(prose_dir.rglob("*.pdf")):
                     located.append((pdf, domain))
-
 
         by_key: Dict[str, List[Tuple[Path, str]]] = {}
         hash_to_key: Dict[str, str] = {}
@@ -105,7 +99,6 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             key = hash_to_key.get(digest) or _normalized_act_key(pdf.stem)
             hash_to_key[digest] = key
             by_key.setdefault(key, []).append((pdf, domain))
-
 
         keys = sorted(by_key, key=len)
         merged_into: Dict[str, str] = {}
@@ -125,7 +118,6 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
             if len(entries) == 1:
                 best_path, best_domain = entries[0]
             else:
-
 
                 best_path, best_domain = max(
                     entries, key=lambda e: self._text_quality(e[0])
@@ -192,7 +184,6 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
         code = self.DOMAIN_CODES.get(domain, domain[:3].upper())
         prefix = re.sub(r"[^A-Z0-9]", "", title.upper())
 
-
         return [
             LegalChunk(
                 chunk_id=f"{code}_{prefix}_{n}",
@@ -216,7 +207,6 @@ class UnifiedLegalRAGSystem(BaseLegalRAGSystem):
                         file_fingerprint(pdf)
                     )
         return fingerprint
-
 
     def _preprocess_query(self, query: str) -> str:
         """Aggregate the specialized domains' vocabulary expansions."""

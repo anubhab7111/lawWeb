@@ -55,10 +55,7 @@ async def _get_model() -> Optional[Any]:
 
             loop = asyncio.get_event_loop()
 
-
-            _model = await loop.run_in_executor(
-                None, lambda: fasttext.load_model(path)
-            )
+            _model = await loop.run_in_executor(None, lambda: fasttext.load_model(path))
             logger.info("Loaded fastText language detector from %s", path)
         except Exception as exc:  # noqa: BLE001 — must never propagate
             _load_failed = True
@@ -87,28 +84,35 @@ async def detect_language(text: str) -> LanguageResult:
 
         sample = " ".join(stripped.split())
 
-
         predictions = model.f.predict(sample, 1, 0.0, "strict")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("fastText prediction failed (%s); defaulting to %s", exc, default_lang)
+        logger.warning(
+            "fastText prediction failed (%s); defaulting to %s", exc, default_lang
+        )
         return _default_result()
 
     if not predictions:
         return _default_result()
-
 
     confidence, label = predictions[0]
     iso = label.replace("__label__", "")
     confidence = float(confidence)
 
     if iso == default_lang:
-        return LanguageResult(language=default_lang, confidence=confidence, is_reliable=False)
+        return LanguageResult(
+            language=default_lang, confidence=confidence, is_reliable=False
+        )
 
     if confidence < settings.lang_detect_min_confidence:
         logger.debug(
             "Low-confidence detection %s (%.2f < %.2f); defaulting to %s",
-            iso, confidence, settings.lang_detect_min_confidence, default_lang,
+            iso,
+            confidence,
+            settings.lang_detect_min_confidence,
+            default_lang,
         )
-        return LanguageResult(language=default_lang, confidence=confidence, is_reliable=False)
+        return LanguageResult(
+            language=default_lang, confidence=confidence, is_reliable=False
+        )
 
     return LanguageResult(language=iso, confidence=confidence, is_reliable=True)

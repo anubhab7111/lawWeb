@@ -6,14 +6,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.concurrency import run_in_threadpool
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
-
 from app.chatbot import ChatBusyError, get_chatbot
 from app.config import get_settings
 from app.db.engine import get_engine, get_session
@@ -23,12 +15,18 @@ from app.deps.rate_limit import chat_rate_limit
 from app.deps.uploads import read_upload_within_limit
 from app.tools.crime_reporter import CRIME_TYPES
 from app.tools.document_extractor import get_document_extractor
-from app.tools.lawyer_recommender import (
-    list_specializations,
-    recommend_lawyers as recommend_lawyers_core,
-)
+from app.tools.lawyer_recommender import list_specializations
+from app.tools.lawyer_recommender import recommend_lawyers as recommend_lawyers_core
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
 
 def _memory_key(user: Optional[User], session_id: str) -> str:
     """Key for the chatbot's in-memory conversation cache."""
@@ -127,7 +125,9 @@ class HealthResponse(BaseModel):
     version: str
 
 
-def _resolve_session_id_sync(session: Session, user: Optional[User], session_id: str) -> str:
+def _resolve_session_id_sync(
+    session: Session, user: Optional[User], session_id: str
+) -> str:
     """If session_id belongs to a different account, mint a fresh one instead of reusing it."""
     if user is None:
         return session_id
@@ -172,24 +172,22 @@ def _persist_turn_sync(
     if chat_session is not None and chat_session.user_id != user.id:
         return
 
-
     title_source = user_message_display or user_message
 
     if chat_session is None:
-        chat_session = ChatSession(id=session_id, user_id=user.id, title=title_source[:80])
+        chat_session = ChatSession(
+            id=session_id, user_id=user.id, title=title_source[:80]
+        )
         session.add(chat_session)
         try:
 
-
             session.flush()
         except IntegrityError:
-
 
             session.rollback()
             chat_session = session.get(ChatSession, session_id)
             if chat_session is None or chat_session.user_id != user.id:
                 return
-
 
     user_turn_at = datetime.now(timezone.utc)
     session.add(
@@ -209,7 +207,6 @@ def _persist_turn_sync(
             content=assistant_message,
             language=language,
             content_display=assistant_message_display,
-
             trace=jsonable_encoder(trace) if trace else None,
             created_at=user_turn_at + timedelta(microseconds=1),
         )
@@ -282,7 +279,9 @@ async def chat(
         session_id = await _resolve_session_id(session, user, session_id)
 
         await _seed_from_db_if_needed(session, chatbot, user, session_id)
-        result = await chatbot.chat(message=request.message, session_id=_memory_key(user, session_id))
+        result = await chatbot.chat(
+            message=request.message, session_id=_memory_key(user, session_id)
+        )
         await _persist_chat_result(session, user, session_id, request.message, result)
 
         return ChatResponse(
@@ -311,10 +310,13 @@ def _sse_chat_response(
         try:
             chatbot = get_chatbot()
 
-
             with Session(get_engine()) as db_session:
-                resolved_session_id = await _resolve_session_id(db_session, user, session_id)
-                await _seed_from_db_if_needed(db_session, chatbot, user, resolved_session_id)
+                resolved_session_id = await _resolve_session_id(
+                    db_session, user, session_id
+                )
+                await _seed_from_db_if_needed(
+                    db_session, chatbot, user, resolved_session_id
+                )
 
             async for event in chatbot.stream_chat(
                 message=message,
@@ -324,7 +326,6 @@ def _sse_chat_response(
             ):
                 if "session_id" in event:
                     event["session_id"] = resolved_session_id
-
 
                 if event.get("type") in ("done", "stopped"):
                     language = event.get("language", "en")
@@ -365,7 +366,9 @@ async def chat_stream(
     user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Streaming chat endpoint using Server-Sent Events."""
-    return _sse_chat_response(user, request.session_id or str(uuid.uuid4()), request.message)
+    return _sse_chat_response(
+        user, request.session_id or str(uuid.uuid4()), request.message
+    )
 
 
 class StopStreamRequest(BaseModel):
@@ -382,14 +385,15 @@ def stop_stream(
     chat_session = session.get(ChatSession, request.session_id)
     if chat_session is not None and (user is None or chat_session.user_id != user.id):
 
-
         return {"stopped": False}
 
     stopped = get_chatbot().stop_stream(_memory_key(user, request.session_id))
     return {"stopped": stopped}
 
 
-@router.post("/upload", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
+@router.post(
+    "/upload", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)]
+)
 async def chat_with_document(
     file: UploadFile = File(
         ..., description="Document file (PDF, DOCX, TXT, JPG, PNG)"
@@ -406,10 +410,8 @@ async def chat_with_document(
     settings = get_settings()
     max_size = settings.max_document_size_mb * 1024 * 1024
 
-
     try:
         file_bytes = await read_upload_within_limit(file, max_size)
-
 
         extractor = get_document_extractor()
         document_text, doc_type = await extractor.extract_text(
@@ -421,7 +423,6 @@ async def chat_with_document(
                 status_code=422,
                 detail="Could not extract text from the file. Please ensure it contains readable text or is a clear image.",
             )
-
 
         chatbot = get_chatbot()
         session_id = session_id or str(uuid.uuid4())
@@ -454,7 +455,11 @@ async def chat_with_document(
         raise _server_error("Document processing error", e)
 
 
-@router.post("/analyze-document", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
+@router.post(
+    "/analyze-document",
+    response_model=ChatResponse,
+    dependencies=[Depends(chat_rate_limit)],
+)
 async def analyze_document_text(
     request: DocumentAnalysisRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -488,7 +493,11 @@ async def analyze_document_text(
         raise _server_error("Analysis error", e)
 
 
-@router.post("/validate-document", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
+@router.post(
+    "/validate-document",
+    response_model=ChatResponse,
+    dependencies=[Depends(chat_rate_limit)],
+)
 async def validate_document_text(
     request: DocumentValidationRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -528,7 +537,9 @@ async def validate_document_stream(
     file: Optional[UploadFile] = File(
         default=None, description="Document file (PDF, DOCX, TXT, JPG, PNG)"
     ),
-    document_text: Optional[str] = Form(default=None, description="Document text, if no file"),
+    document_text: Optional[str] = Form(
+        default=None, description="Document text, if no file"
+    ),
     message: str = Form(
         default="Please validate this document for statutory compliance",
         description="User message",
@@ -551,8 +562,9 @@ async def validate_document_stream(
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
     if not document_text or len(document_text.strip()) < 10:
-        raise HTTPException(status_code=422, detail="Could not extract text from the document.")
-
+        raise HTTPException(
+            status_code=422, detail="Could not extract text from the document."
+        )
 
     validation_message = (
         message
@@ -568,7 +580,11 @@ async def validate_document_stream(
     )
 
 
-@router.post("/validate-document/upload", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
+@router.post(
+    "/validate-document/upload",
+    response_model=ChatResponse,
+    dependencies=[Depends(chat_rate_limit)],
+)
 async def validate_document_upload(
     file: UploadFile = File(
         ..., description="Document file (PDF, DOCX, TXT, JPG, PNG)"
@@ -599,7 +615,6 @@ async def validate_document_upload(
                 detail="Could not extract text from the file.",
             )
 
-
         validation_message = (
             message
             if "validate" in message.lower()
@@ -617,7 +632,9 @@ async def validate_document_upload(
             document_content=document_text,
             document_type=doc_type,
         )
-        await _persist_chat_result(session, user, session_id, validation_message, result)
+        await _persist_chat_result(
+            session, user, session_id, validation_message, result
+        )
 
         return ChatResponse(
             response=result["response"],
@@ -637,7 +654,11 @@ async def validate_document_upload(
         raise _server_error("Document validation error", e)
 
 
-@router.post("/crime-report", response_model=ChatResponse, dependencies=[Depends(chat_rate_limit)])
+@router.post(
+    "/crime-report",
+    response_model=ChatResponse,
+    dependencies=[Depends(chat_rate_limit)],
+)
 async def get_crime_report_guidance(
     request: CrimeReportRequest,
     user: Optional[User] = Depends(get_current_user_optional),
@@ -735,8 +756,9 @@ async def clear_session(
     """Clear a chat session's history (the conversation checkpoint always; DB rows too if the session is owned by the requesting user)."""
     try:
         chat_session = await run_in_threadpool(session.get, ChatSession, session_id)
-        if chat_session is not None and (user is None or chat_session.user_id != user.id):
-
+        if chat_session is not None and (
+            user is None or chat_session.user_id != user.id
+        ):
 
             return {"message": f"Session {session_id} cleared"}
 
@@ -781,7 +803,6 @@ async def get_session_history(
             if not rows and (user is None or chat_session.user_id != user.id):
                 return {"session_id": session_id, "messages": [], "count": 0}
 
-
             messages = [
                 {
                     "role": r.role.value,
@@ -791,7 +812,11 @@ async def get_session_history(
                 }
                 for r in rows
             ]
-            return {"session_id": session_id, "messages": messages, "count": len(messages)}
+            return {
+                "session_id": session_id,
+                "messages": messages,
+                "count": len(messages),
+            }
 
         chatbot = get_chatbot()
         history = await chatbot.get_session_history(_memory_key(user, session_id))

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from app.text_match import any_word
 from typing import List, Optional
 
+from app.text_match import any_word
 from app.tools.base_legal_rag import BaseLegalRAGSystem, LegalContext
 
 
@@ -18,7 +18,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
     @property
     def pdf_subdir(self) -> str:
         return "civil"
-
 
     async def initialize(self) -> bool:
         from app.tools.unified_legal_rag import get_unified_rag_system
@@ -55,7 +54,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
         """Expand civil law queries with domain vocabulary."""
         q = query.lower()
         terms: List[str] = []
-
 
         if any_word(q, ["breach", "breached", "default", "non-performance"]):
             terms.extend(["breach of contract", "damages", "Section 73", "Section 74"])
@@ -97,7 +95,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                 ]
             )
 
-
         if any_word(q, ["lease", "rent", "tenant", "landlord", "eviction"]):
             terms.extend(
                 ["lease", "Section 105 Transfer of Property Act", "tenancy", "eviction"]
@@ -108,7 +105,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
             )
         if any_word(q, ["mortgage", "hypothecation", "charge on property"]):
             terms.extend(["mortgage", "Section 58", "Transfer of Property Act"])
-
 
         if any_word(q, ["cheque", "bounce", "dishonour", "138", "ni act"]):
             terms.extend(
@@ -123,7 +119,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                 ["promissory note", "bill of exchange", "Negotiable Instruments Act"]
             )
 
-
         if any_word(q, ["suit", "plaint", "civil court", "limitation"]):
             terms.extend(
                 ["code of civil procedure", "limitation period", "Limitation Act"]
@@ -131,16 +126,14 @@ class CivilRAGSystem(BaseLegalRAGSystem):
         if any_word(q, ["injunction", "stay order"]):
             terms.extend(["temporary injunction", "Order 39 CPC"])
 
-
-        if any_word(q, ["rti", "right to information", "public authority", "disclosure"]
+        if any_word(
+            q, ["rti", "right to information", "public authority", "disclosure"]
         ):
             terms.extend(
                 ["right to information", "RTI Act", "public authority", "Section 6"]
             )
 
-
-        if any_word(q, ["ai", "artificial intelligence", "algorithm", "automated"]
-        ):
+        if any_word(q, ["ai", "artificial intelligence", "algorithm", "automated"]):
             if any_word(q, ["liable", "liability", "loss", "damage"]):
                 terms.extend(
                     [
@@ -151,7 +144,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                     ]
                 )
 
-
         if any_word(q, ["financial loss", "economic loss", "monetary loss"]):
             terms.extend(
                 [
@@ -160,7 +152,6 @@ class CivilRAGSystem(BaseLegalRAGSystem):
                     "Section 73 Contract Act",
                 ]
             )
-
 
         if any_word(q, ["cryptocurrency", "crypto", "bitcoin", "blockchain"]):
             terms.extend(

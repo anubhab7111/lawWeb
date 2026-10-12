@@ -33,15 +33,25 @@ def main() -> None:
     thresholds = io.fit_label_thresholds(scores, gold, fallback=t, shrink=0.3)
 
     SERVING_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(corpus_path("builds", "classifier", args.tag, "best.pt"), SERVING_DIR / "model.pt")
-    (SERVING_DIR / "meta.json").write_text(json.dumps({
-        "base_model": BASE_MODEL,
-        "labels": vocab,
-        "thresholds": [float(x) for x in thresholds],
-        "global_threshold": float(t),
-        "source": f"train_lsi_classifier.py tag {args.tag}; thresholds fitted on IL-TUR lsi dev (raw probabilities)",
-    }, indent=1))
-    print(f"[export] {SERVING_DIR}: global threshold {t:.2f}, per-label thresholds fitted")
+    shutil.copy2(
+        corpus_path("builds", "classifier", args.tag, "best.pt"),
+        SERVING_DIR / "model.pt",
+    )
+    (SERVING_DIR / "meta.json").write_text(
+        json.dumps(
+            {
+                "base_model": BASE_MODEL,
+                "labels": vocab,
+                "thresholds": [float(x) for x in thresholds],
+                "global_threshold": float(t),
+                "source": f"train_lsi_classifier.py tag {args.tag}; thresholds fitted on IL-TUR lsi dev (raw probabilities)",
+            },
+            indent=1,
+        )
+    )
+    print(
+        f"[export] {SERVING_DIR}: global threshold {t:.2f}, per-label thresholds fitted"
+    )
 
 
 if __name__ == "__main__":

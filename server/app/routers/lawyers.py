@@ -2,15 +2,14 @@
 
 from typing import Optional
 
+from app.db.engine import get_session
+from app.db.models import Lawyer
+from app.tools.lawyer_recommender import recommend_lawyers as recommend_lawyers_core
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
-
-from app.db.engine import get_session
-from app.db.models import Lawyer
-from app.tools.lawyer_recommender import recommend_lawyers as recommend_lawyers_core
 
 router = APIRouter(prefix="/api/lawyers", tags=["lawyers"])
 
@@ -50,15 +49,24 @@ def list_lawyers(
 
     total = session.exec(select(func.count()).select_from(stmt.subquery())).one()
     rows = session.exec(
-        stmt.order_by(Lawyer.rating.desc(), Lawyer.id).offset((page - 1) * pageSize).limit(pageSize)
+        stmt.order_by(Lawyer.rating.desc(), Lawyer.id)
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
     ).all()
-    return {"items": [l.to_dict() for l in rows], "total": total, "page": page, "pageSize": pageSize}
+    return {
+        "items": [l.to_dict() for l in rows],
+        "total": total,
+        "page": page,
+        "pageSize": pageSize,
+    }
 
 
 @router.get("/filters")
 def lawyer_filters(session: Session = Depends(get_session)):
     """Values for the directory's filter dropdowns."""
-    specialties = session.exec(select(Lawyer.specialty).distinct().order_by(Lawyer.specialty)).all()
+    specialties = session.exec(
+        select(Lawyer.specialty).distinct().order_by(Lawyer.specialty)
+    ).all()
     locations = session.exec(select(Lawyer.location).distinct()).all()
     states = sorted({loc.split(", ", 1)[1] for loc in locations if ", " in loc})
     return {"specialties": specialties, "states": states}
@@ -73,7 +81,9 @@ def get_lawyer(lawyer_id: str, session: Session = Depends(get_session)):
 
 
 @router.post("/recommend")
-async def recommend_lawyers(body: RecommendRequest, session: Session = Depends(get_session)):
+async def recommend_lawyers(
+    body: RecommendRequest, session: Session = Depends(get_session)
+):
     lawyers = await recommend_lawyers_core(
         session,
         problem_description=body.problemDescription,

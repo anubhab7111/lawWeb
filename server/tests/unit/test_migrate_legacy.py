@@ -22,10 +22,15 @@ def test_migrate_preserves_relative_paths_and_verifies(tmp_path):
     dst.mkdir()
     result = migrate(src, dst)
     assert result["files"] == 3 and not result["failures"]
-    assert (dst / "statutes" / "bare_acts" / "criminal" / "IPC.pdf").read_bytes() == b"%PDF ipc"
+    assert (
+        dst / "statutes" / "bare_acts" / "criminal" / "IPC.pdf"
+    ).read_bytes() == b"%PDF ipc"
     assert (dst / "statutes" / "mappings" / "table.pdf").exists()
     assert (dst / "case_law" / "curated" / "kesavananda.json").exists()
-    rows = [json.loads(line) for line in (dst / "manifest" / "legacy_migration.jsonl").open()]
+    rows = [
+        json.loads(line)
+        for line in (dst / "manifest" / "legacy_migration.jsonl").open()
+    ]
     assert all(r["verified"] and len(r["sha256"]) == 64 for r in rows)
     assert (src / "bare_acts" / "criminal" / "IPC.pdf").exists()
 

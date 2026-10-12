@@ -7,7 +7,6 @@ class GroundTruthEntry(TypedDict):
     query: str
     relevant_ipc_sections: List[str]
 
-
     relevant_sections: NotRequired[List[str]]
     relevant_keywords: List[str]
     expected_acts: List[str]
@@ -16,7 +15,6 @@ class GroundTruthEntry(TypedDict):
 
 
 GROUND_TRUTH: List[GroundTruthEntry] = [
-
     {
         "query": (
             "Can Parliament pass a law restricting social media speech citing "
@@ -52,7 +50,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "constitutional",
     },
-
     {
         "query": (
             "Is the Right to Privacy absolute in India? Under what circumstances "
@@ -88,7 +85,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "constitutional",
     },
-
     {
         "query": (
             "Can a State government refuse to implement a Central law? "
@@ -125,7 +121,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "constitutional",
     },
-
     {
         "query": "How does the \u201cbasic structure doctrine\u201d limit constitutional amendments?",
         "relevant_ipc_sections": [],
@@ -156,7 +151,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "constitutional",
     },
-
     {
         "query": "Can an FIR be quashed by the High Court? On what grounds?",
         "relevant_ipc_sections": [],
@@ -188,7 +182,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "criminal_procedure",
     },
-
     {
         "query": "Is anticipatory bail available for economic offences?",
         "relevant_ipc_sections": ["420", "406", "409", "467", "468", "471"],
@@ -223,7 +216,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "criminal",
     },
-
     {
         "query": "Can a criminal case proceed if the complainant withdraws?",
         "relevant_ipc_sections": [],
@@ -255,7 +247,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "criminal_procedure",
     },
-
     {
         "query": (
             "Does marital rape constitute an offence in India? "
@@ -292,7 +283,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "criminal",
     },
-
     {
         "query": (
             "Can cryptocurrency transactions attract criminal liability "
@@ -331,7 +321,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "technology_law",
     },
-
     {
         "query": (
             "If someone's private photos are shared online without consent, "
@@ -370,7 +359,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "technology_law",
     },
-
     {
         "query": (
             "Who is liable if an AI system causes financial loss — "
@@ -410,7 +398,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "technology_law",
     },
-
     {
         "query": "Are WhatsApp chats admissible as evidence in Indian courts?",
         "relevant_ipc_sections": [],
@@ -443,7 +430,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "evidence_law",
     },
-
     {
         "query": (
             "Is a contract enforceable if signed under economic pressure "
@@ -480,7 +466,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "contract_law",
     },
-
     {
         "query": "Can an oral agreement be legally binding in India?",
         "relevant_ipc_sections": [],
@@ -515,7 +500,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "contract_law",
     },
-
     {
         "query": "What happens if one party breaches a contract but claims \u201cforce majeure\u201d?",
         "relevant_ipc_sections": [],
@@ -549,7 +533,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "contract_law",
     },
-
     {
         "query": "Is a non-compete clause valid after employment ends?",
         "relevant_ipc_sections": [],
@@ -582,7 +565,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "contract_law",
     },
-
     {
         "query": "Can ancestral property be sold without consent of all legal heirs?",
         "relevant_ipc_sections": [],
@@ -615,7 +597,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
         ),
         "domain": "property_law",
     },
-
     {
         "query": "What legal rights does a live-in partner have over shared property?",
         "relevant_ipc_sections": [],
@@ -655,7 +636,6 @@ GROUND_TRUTH: List[GroundTruthEntry] = [
 
 
 _ORIGINAL_RELEVANT_SECTIONS = {
-
     "Can Parliament pass a law restricting social media speech": ["19"],
     "Is the Right to Privacy absolute in India": ["21"],
     "Can a State government refuse to implement a Central law": [
@@ -664,7 +644,6 @@ _ORIGINAL_RELEVANT_SECTIONS = {
         "365",
     ],
     "How does the “basic structure doctrine” limit": ["368", "13"],
-
     "Can an FIR be quashed by the High Court": ["482", "528", "226"],
     "Is anticipatory bail available for economic offences": [
         "438",
@@ -687,7 +666,6 @@ _ORIGINAL_RELEVANT_SECTIONS = {
         "64",
         "67",
     ],
-
     "Can cryptocurrency transactions attract criminal liability": [
         "420",
         "406",
@@ -715,10 +693,7 @@ _ORIGINAL_RELEVANT_SECTIONS = {
         "85",
         "86",
     ],
-
-
     "Are WhatsApp chats admissible as evidence": ["65B", "63", "62"],
-
     "Is a contract enforceable if signed under economic pressure": [
         "16",
         "19A",
@@ -726,7 +701,6 @@ _ORIGINAL_RELEVANT_SECTIONS = {
     "Can an oral agreement be legally binding": ["10"],
     "What happens if one party breaches a contract but claims": ["56"],
     "Is a non-compete clause valid after employment ends": ["27"],
-
     "Can ancestral property be sold without consent": ["6"],
     "What legal rights does a live-in partner have": ["17", "20", "125"],
 }

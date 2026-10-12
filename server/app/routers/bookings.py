@@ -8,17 +8,16 @@ from functools import lru_cache
 from typing import Optional
 
 import braintree
-from fastapi import APIRouter, Depends, Header
-from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
-
 from app.config import get_settings
 from app.db.engine import get_session
 from app.db.models import Booking, BookingStatus, CalendarEvent, Lawyer, User
 from app.deps.auth import get_current_user
 from app.deps.errors import MessageHTTPException
+from fastapi import APIRouter, Depends, Header
+from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
@@ -64,7 +63,9 @@ _IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def _error(status_code: int, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"status": "error", "message": message})
+    return JSONResponse(
+        status_code=status_code, content={"status": "error", "message": message}
+    )
 
 
 def _parse_slot(
@@ -80,7 +81,11 @@ def _parse_slot(
     if day < datetime.now(_IST).date():
         return None, None, "Appointment date must not be in the past"
     if time_str not in _SLOT_TIMES:
-        return None, None, "Appointment time must be a half-hour slot between 09:00 and 18:00"
+        return (
+            None,
+            None,
+            "Appointment time must be a half-hour slot between 09:00 and 18:00",
+        )
     return day, time_str, None
 
 
@@ -95,14 +100,14 @@ def checkout(
     if idempotency_key:
         prior = session.exec(
             select(Booking).where(
-                Booking.idempotency_key == idempotency_key, Booking.user_id == current_user.id
+                Booking.idempotency_key == idempotency_key,
+                Booking.user_id == current_user.id,
             )
         ).first()
         if prior is not None:
             if prior.status == BookingStatus.confirmed:
                 return {"status": "success", "transactionId": prior.transaction_id}
             return _error(409, "This payment is already being processed")
-
 
     if not body.amount or not body.paymentMethodNonce or not body.lawyerId:
         return _error(400, "Missing required checkout fields")
@@ -117,12 +122,10 @@ def checkout(
     if lawyer is None:
         return _error(400, "Lawyer not found")
 
-
     fee = math.floor(lawyer.hourly_rate * 0.05 + 0.5)
     expected_total = Decimal(lawyer.hourly_rate + fee)
     if amount != expected_total:
         return _error(400, "Amount does not match the lawyer's rate")
-
 
     taken = session.exec(
         select(Booking.id).where(
@@ -161,7 +164,6 @@ def checkout(
             session.add(row)
             session.commit()
 
-
     try:
         result = get_gateway().transaction.sale(
             {
@@ -185,7 +187,6 @@ def checkout(
             status_code=400, content={"status": "error", "message": result.message}
         )
 
-
     transaction_id = result.transaction.id
     try:
         booking = session.get(Booking, booking_id)
@@ -194,7 +195,6 @@ def checkout(
         session.add(booking)
         session.commit()
         print(f"✅ Success: Payment settled for User {current_user.id}")
-
 
         try:
             start_at = datetime.fromisoformat(
@@ -213,12 +213,13 @@ def checkout(
             session.commit()
         except Exception as e:
             session.rollback()
-            print(f"[Calendar] failed to auto-create event for booking {booking_id}: {e}")
+            print(
+                f"[Calendar] failed to auto-create event for booking {booking_id}: {e}"
+            )
 
         return {"status": "success", "transactionId": transaction_id}
     except Exception as e:
         session.rollback()
-
 
         print(
             f"⚠️ RECONCILIATION NEEDED: charged transaction {transaction_id} "

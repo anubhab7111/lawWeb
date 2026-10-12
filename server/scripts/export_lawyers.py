@@ -10,10 +10,9 @@ _SERVER_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(_SERVER_DIR))
 os.chdir(_SERVER_DIR)
 
-from sqlmodel import Session, select
-
 from app.db.engine import get_engine
 from app.db.models import Lawyer
+from sqlmodel import Session, select
 
 _STATE_CITIES = {
     "Maharashtra": "Aurangabad,Satara,Nanded,Jalna,Kolhapur,Panvel,Ichalkaranji,Nagpur,Mumbai,Bhiwandi,Ulhasnagar,Akola,Pune,Amravati,Jalgaon,Solapur,Parbhani,Ahmednagar,Pimpri-Chinchwad,Kalyan-Dombivli,Latur,Dhule,Navi Mumbai,Vasai-Virar,Mira-Bhayandar,Bhusawal,Chandrapur,Thane,Nashik,Malegaon,Sangli-Miraj & Kupwad",
@@ -45,7 +44,9 @@ _STATE_CITIES = {
     "Mizoram": "Aizawl",
     "Uttarakhand": "Haridwar,Dehradun",
 }
-CITY_TO_STATE = {c.strip(): st for st, cities in _STATE_CITIES.items() for c in cities.split(",")}
+CITY_TO_STATE = {
+    c.strip(): st for st, cities in _STATE_CITIES.items() for c in cities.split(",")
+}
 
 
 def fixed_location(location: str) -> str:
@@ -57,7 +58,9 @@ def fixed_location(location: str) -> str:
 def main() -> None:
     with Session(get_engine()) as session:
         rows = session.exec(
-            select(Lawyer).where(Lawyer.id.not_in(["1", "2", "3", "4", "5"])).order_by(Lawyer.id)
+            select(Lawyer)
+            .where(Lawyer.id.not_in(["1", "2", "3", "4", "5"]))
+            .order_by(Lawyer.id)
         ).all()
         out = []
         unmapped = set()
@@ -68,8 +71,12 @@ def main() -> None:
                 unmapped.add(d["location"])
             out.append(d)
     path = _SERVER_DIR / "app" / "data" / "lawyers.json"
-    path.write_text(json.dumps(out, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"Exported {len(out)} lawyers to {path}; {len(unmapped)} cities left without a state: {sorted(unmapped)}")
+    path.write_text(
+        json.dumps(out, indent=1, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(
+        f"Exported {len(out)} lawyers to {path}; {len(unmapped)} cities left without a state: {sorted(unmapped)}"
+    )
 
 
 if __name__ == "__main__":

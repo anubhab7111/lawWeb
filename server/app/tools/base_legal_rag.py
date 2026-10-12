@@ -14,8 +14,8 @@ from app.ingest.paths import statutes_dir
 
 try:
     from langchain_community.document_loaders import PyPDFLoader
-    from langchain_community.vectorstores import FAISS
     from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+    from langchain_community.vectorstores import FAISS
     from langchain_core.documents import Document
 
     HAS_RAG_DEPS = True
@@ -37,7 +37,6 @@ class LegalChunk:
     source_file: str
     score: float = 0.0
     has_punishment: bool = False
-
 
     domains: List[str] = field(default_factory=list)
 
@@ -106,8 +105,6 @@ _SCHEDULE_HEADING_RE = re.compile(
 
 _NOISE_RE = re.compile(
     r"w\.e\.f\.|subs\s*\.?\s*by|\bins\s*\.?\s*by\b|\brep\.\s*by\b|omitted by|schedule"
-
-
     r"|amendment of section|of the principal act|shall be inserted"
     r"|shall be substituted",
     re.IGNORECASE,
@@ -146,7 +143,8 @@ def blend_rerank_order(
     rerank_rank = {cid: r for r, (cid, _s) in enumerate(by_rerank)}
     fused_rank = {cid: r for r, cid in enumerate(fused_order)}
     blended = {
-        cid: weight / (_BLEND_K + rerank_rank[cid]) + (1 - weight) / (_BLEND_K + fused_rank.get(cid, len(fused_order)))
+        cid: weight / (_BLEND_K + rerank_rank[cid])
+        + (1 - weight) / (_BLEND_K + fused_rank.get(cid, len(fused_order)))
         for cid, _s in scored
     }
     return sorted(scored, key=lambda pair: blended[pair[0]], reverse=True)
@@ -164,11 +162,7 @@ def _make_bge_embeddings(device: str) -> Any:
     return HuggingFaceBgeEmbeddings(
         model_name=settings.embedding_model,
         model_kwargs={"device": device},
-
-
         query_instruction=settings.embedding_query_instruction,
-
-
         encode_kwargs={"normalize_embeddings": True, "batch_size": 16},
     )
 
@@ -189,7 +183,6 @@ async def _get_shared_embeddings() -> Any:
             device = get_settings().embeddings_device
             if device not in ("cuda", "cpu"):
 
-
                 device = "cpu"
                 try:
                     import torch
@@ -197,7 +190,6 @@ async def _get_shared_embeddings() -> Any:
                     if torch.cuda.is_available():
                         free_bytes, _total_bytes = torch.cuda.mem_get_info()
                         reserve_bytes = get_settings().ollama_vram_reserve_gb * 1024**3
-
 
                         embeddings_headroom_bytes = 2.0 * 1024**3
                         if free_bytes > reserve_bytes + embeddings_headroom_bytes:
@@ -230,11 +222,15 @@ _RERANK_CACHE_MAX = 4096
 _PAIR_CACHE: Dict[Tuple[str, str], float] = {}
 
 
-def cached_predict(reranker: Any, pairs: List[Tuple[str, str]], batch_size: int = 16) -> List[float]:
+def cached_predict(
+    reranker: Any, pairs: List[Tuple[str, str]], batch_size: int = 16
+) -> List[float]:
     scores = {p: _PAIR_CACHE[p] for p in pairs if p in _PAIR_CACHE}
     todo = [p for p in dict.fromkeys(pairs) if p not in scores]
     if todo:
-        scores.update(zip(todo, (float(s) for s in reranker.predict(todo, batch_size=batch_size))))
+        scores.update(
+            zip(todo, (float(s) for s in reranker.predict(todo, batch_size=batch_size)))
+        )
         if len(_PAIR_CACHE) > _RERANK_CACHE_MAX:
             _PAIR_CACHE.clear()
         _PAIR_CACHE.update(scores)
@@ -250,13 +246,11 @@ async def _get_shared_reranker() -> Optional[Any]:
         if _shared_reranker is not None or _shared_reranker_failed:
             return _shared_reranker
         try:
-            from sentence_transformers import CrossEncoder
-
             from app.config import get_settings
+            from sentence_transformers import CrossEncoder
 
             device = get_settings().reranker_device
             if device not in ("cuda", "cpu"):
-
 
                 device = "cpu"
                 try:
@@ -273,10 +267,16 @@ async def _get_shared_reranker() -> Optional[Any]:
                 except ImportError:
                     pass
                 except Exception as e:
-                    print(f"[rag] CUDA availability check failed ({e}) — reranker on CPU.")
+                    print(
+                        f"[rag] CUDA availability check failed ({e}) — reranker on CPU."
+                    )
 
             settings = get_settings()
-            model_name = settings.reranker_model_gpu if device == "cuda" else settings.reranker_model
+            model_name = (
+                settings.reranker_model_gpu
+                if device == "cuda"
+                else settings.reranker_model
+            )
             loop = asyncio.get_event_loop()
             try:
                 _shared_reranker = await loop.run_in_executor(
@@ -321,18 +321,26 @@ def _split_word_count(text: str, vocab: set) -> int:
     n = 0
     for a, b in zip(toks, toks[1:]):
         joined = (a + b).lower()
-        if len(joined) >= 6 and joined in vocab and (a.lower() not in vocab or b.lower() not in vocab):
+        if (
+            len(joined) >= 6
+            and joined in vocab
+            and (a.lower() not in vocab or b.lower() not in vocab)
+        ):
             n += 1
     return n
 
 
-def _choose_extraction(plain: str, layout: Optional[str], parse) -> Tuple[str, List["LegalChunk"]]:
+def _choose_extraction(
+    plain: str, layout: Optional[str], parse
+) -> Tuple[str, List["LegalChunk"]]:
     """Prefer layout-mode text only when it parses to exactly the same sections and has fewer split words: layout mode fixes kerning splits but loses or invents section headers in..."""
     plain_chunks = parse(plain)
     if not layout:
         return plain, plain_chunks
     layout_chunks = parse(layout)
-    if {c.section_number for c in layout_chunks} != {c.section_number for c in plain_chunks}:
+    if {c.section_number for c in layout_chunks} != {
+        c.section_number for c in plain_chunks
+    }:
         return plain, plain_chunks
     counts: Dict[str, int] = {}
     for w in _WORD_RE.findall(plain + "\n" + layout):
@@ -370,7 +378,6 @@ def _split_long_text(text: str, max_chars: int = 2000, overlap: int = 200) -> Li
         end = min(start + max_chars, len(text))
         if end < len(text):
 
-
             window = text[start:end]
             cut = max(window.rfind(". "), window.rfind("; "))
             if cut < int(max_chars * 0.6):
@@ -388,8 +395,22 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;:])\s+(?=[A-Z0-9(])")
 
 
 _ABBR = {
-    "rs", "s", "ss", "art", "arts", "no", "u/s", "mr", "dr", "cr",
-    "govt", "ors", "anr", "v", "sec", "secs",
+    "rs",
+    "s",
+    "ss",
+    "art",
+    "arts",
+    "no",
+    "u/s",
+    "mr",
+    "dr",
+    "cr",
+    "govt",
+    "ors",
+    "anr",
+    "v",
+    "sec",
+    "secs",
 }
 
 
@@ -406,7 +427,9 @@ def _split_into_sentences(text: str) -> List[str]:
             continue
         if parts:
             prev_words = parts[-1].split()
-            last_word = re.sub(r"[^a-z/]", "", prev_words[-1].lower()) if prev_words else ""
+            last_word = (
+                re.sub(r"[^a-z/]", "", prev_words[-1].lower()) if prev_words else ""
+            )
             if last_word in _ABBR or _BARE_SECTION_NUM_RE.match(prev_words[-1]):
                 parts[-1] = parts[-1] + " " + part
                 continue
@@ -423,7 +446,11 @@ _FUNCTION_WORDS = frozenset(
 
 def _content_words(text: str) -> set:
     """6-letter stems of a text's content words (crude, suffix-insensitive)."""
-    return {w[:6] for w in re.findall(r"[a-z]{3,}", text.lower()) if w not in _FUNCTION_WORDS}
+    return {
+        w[:6]
+        for w in re.findall(r"[a-z]{3,}", text.lower())
+        if w not in _FUNCTION_WORDS
+    }
 
 
 async def compress_chunks_for_context(
@@ -442,7 +469,6 @@ async def compress_chunks_for_context(
         if len(sentences) <= max_sentences:
             continue
 
-
         candidates = sorted(
             range(1, len(sentences)),
             key=lambda j: -len(query_words & _content_words(sentences[j])),
@@ -460,7 +486,9 @@ async def compress_chunks_for_context(
             None, lambda: reranker.predict(pairs, batch_size=16)
         )
     except Exception as e:
-        print(f"[compress_chunks_for_context] Sentence rerank failed ({e}) — using full chunks.")
+        print(
+            f"[compress_chunks_for_context] Sentence rerank failed ({e}) — using full chunks."
+        )
         return chunks
 
     scores_by_chunk: Dict[int, Dict[int, float]] = {}
@@ -475,8 +503,9 @@ async def compress_chunks_for_context(
         sentences = per_chunk_sentences[i]
         scores = scores_by_chunk[i]
 
-
-        fill = sorted(scores, key=lambda j: scores[j], reverse=True)[: max_sentences - 1]
+        fill = sorted(scores, key=lambda j: scores[j], reverse=True)[
+            : max_sentences - 1
+        ]
         top_idx = [0] + fill
         keep = sorted(top_idx)
         out.append(replace(chunk, text=" ".join(sentences[j] for j in keep)))
@@ -485,7 +514,6 @@ async def compress_chunks_for_context(
 
 class BaseLegalRAGSystem(ABC):
     """Abstract base for domain-specific legal RAG systems."""
-
 
     @property
     @abstractmethod
@@ -499,9 +527,7 @@ class BaseLegalRAGSystem(ABC):
         """Subdirectory under app/data/bare_acts/ holding this domain's PDFs."""
         ...
 
-
     def __init__(self, data_dir: Optional[str] = None):
-
 
         self.data_dir = Path(data_dir or "app/data")
         self._statutes_dir = Path(data_dir) if data_dir else statutes_dir()
@@ -518,7 +544,6 @@ class BaseLegalRAGSystem(ABC):
         self._chunks: Dict[str, LegalChunk] = {}
         self._bm25: Optional[Any] = None
         self._bm25_ids: List[str] = []
-
 
     async def initialize(self) -> bool:
         """Initialize (or resume from cache) this domain's vector store."""
@@ -659,10 +684,8 @@ class BaseLegalRAGSystem(ABC):
             raw = md.get("domains") or md.get("domain") or ""
             return [d for d in raw.split(",") if d]
 
-
         search_kwargs: Dict[str, Any] = {"k": candidate_pool}
         if domain_set or act_set:
-
 
             search_kwargs["fetch_k"] = candidate_pool * (60 if act_set else 5)
             search_kwargs["filter"] = lambda md: (
@@ -684,7 +707,6 @@ class BaseLegalRAGSystem(ABC):
                 dense_rank[cid] = rank
 
                 dense_score[cid] = max(0.0, 1.0 - (float(distance) / 2.0))
-
 
         sparse_rank: Dict[str, int] = {}
         if self._bm25 is not None:
@@ -709,7 +731,6 @@ class BaseLegalRAGSystem(ABC):
                     sparse_rank[cid] = rank
                     rank += 1
 
-
         fused: Dict[str, float] = {}
         for cid, rank in dense_rank.items():
             fused[cid] = fused.get(cid, 0.0) + 1.0 / (60 + rank)
@@ -731,28 +752,33 @@ class BaseLegalRAGSystem(ABC):
         if not candidates:
             return []
 
-
         RERANK_GARBAGE_FLOOR = 1e-4
         scored: List[Tuple[str, float]] = []
         reranker = await _get_shared_reranker() if use_reranker else None
         if reranker is not None:
             try:
 
-
-                todo = [cid for cid in candidates if (rerank_query, cid) not in _RERANK_CACHE]
+                todo = [
+                    cid
+                    for cid in candidates
+                    if (rerank_query, cid) not in _RERANK_CACHE
+                ]
                 if todo:
-                    pairs = [(rerank_query, _rerank_text(self._chunks[cid])) for cid in todo]
+                    pairs = [
+                        (rerank_query, _rerank_text(self._chunks[cid])) for cid in todo
+                    ]
                     logits = await loop.run_in_executor(
                         None, lambda: reranker.predict(pairs, batch_size=16)
                     )
                     fresh = [float(s) for s in logits]
 
-
                     if any(s < 0.0 or s > 1.0 for s in fresh):
                         fresh = [_sigmoid(s) for s in fresh]
                     if len(_RERANK_CACHE) > _RERANK_CACHE_MAX:
                         _RERANK_CACHE.clear()
-                    _RERANK_CACHE.update({(rerank_query, cid): s for cid, s in zip(todo, fresh)})
+                    _RERANK_CACHE.update(
+                        {(rerank_query, cid): s for cid, s in zip(todo, fresh)}
+                    )
                 raw = [_RERANK_CACHE[(rerank_query, cid)] for cid in candidates]
                 top = max(raw) if raw else 0.0
                 if top >= RERANK_GARBAGE_FLOOR:
@@ -761,13 +787,14 @@ class BaseLegalRAGSystem(ABC):
                         for cid, prob in zip(candidates, raw)
                         if prob >= RERANK_GARBAGE_FLOOR
                     ]
-                    scored = blend_rerank_order(scored, candidates, get_settings_blend())
+                    scored = blend_rerank_order(
+                        scored, candidates, get_settings_blend()
+                    )
 
             except Exception as e:
                 print(f"[{self.domain_name}] Rerank failed ({e}) — using fused order.")
                 scored = []
         if not scored:
-
 
             scored = [(cid, dense_score.get(cid, 0.35)) for cid in candidates]
 
@@ -777,7 +804,6 @@ class BaseLegalRAGSystem(ABC):
             if score < min_score:
                 continue
             cached = self._chunks[cid]
-
 
             section_key = (cached.act_name, cached.section_number)
             if section_key in seen_sections:
@@ -840,7 +866,6 @@ class BaseLegalRAGSystem(ABC):
         self._bm25 = BM25Okapi(corpus)
         print(f"[{self.domain_name}] BM25 index built over {len(corpus)} chunks.")
 
-
     def _preprocess_query(self, query: str) -> str:
         """Optionally expand the query with domain-specific vocabulary."""
         return query
@@ -852,10 +877,8 @@ class BaseLegalRAGSystem(ABC):
         chunks: List[LegalChunk] = []
         act_name = _infer_act_name(source_file)
 
-
         boundary = _schedule_boundary(full_text)
         search_text = full_text[:boundary] if boundary else full_text
-
 
         header_pattern = re.compile(
             r"\n\s*(?:\d+\*?\[)?(\d{1,3}[A-Z]{0,2})\.\s*([^.\n\u2014]{3,}?)(?:[.\u2014]|(?=\n))\s*",
@@ -898,7 +921,6 @@ class BaseLegalRAGSystem(ABC):
 
             punishment = _extract_punishment(raw)
 
-
             prefix = re.sub(r"[^A-Z0-9]", "", act_name.upper())
             chunk_id = f"{self.domain_name.upper()[:3]}_{prefix}_{sec_num}"
 
@@ -917,7 +939,6 @@ class BaseLegalRAGSystem(ABC):
 
         return chunks
 
-
     async def _should_rebuild(self) -> bool:
         """True if the index is absent, stale, or the source PDFs changed."""
         if not self._faiss_dir.exists() or not self._meta_path.exists():
@@ -933,13 +954,11 @@ class BaseLegalRAGSystem(ABC):
         if stored_fingerprint is None:
             return True
 
-
         from app.config import get_settings
 
         if meta.get("embedding_model") != get_settings().embedding_model:
             return True
         if not any(self._bare_acts_dir.rglob("*.pdf")):
-
 
             print(
                 f"[{self.domain_name}] Source PDFs unavailable ({self._bare_acts_dir}) "
@@ -992,7 +1011,9 @@ class BaseLegalRAGSystem(ABC):
                 pages = PyPDFLoader(str(pdf_path)).load()
                 plain = "\n".join(p.page_content for p in pages)
                 try:
-                    layout_pages = PyPDFLoader(str(pdf_path), extraction_mode="layout").load()
+                    layout_pages = PyPDFLoader(
+                        str(pdf_path), extraction_mode="layout"
+                    ).load()
                     layout = "\n".join(
                         line.strip()
                         for p in layout_pages
@@ -1008,7 +1029,9 @@ class BaseLegalRAGSystem(ABC):
                 for c in parsed:
                     c.domains = list(domains)
                 mode = "layout" if full_text is layout else "plain"
-                print(f"  {pdf_path.name}: {len(pages)} pages → {len(parsed)} chunks ({mode})")
+                print(
+                    f"  {pdf_path.name}: {len(pages)} pages → {len(parsed)} chunks ({mode})"
+                )
                 all_chunks.extend(parsed)
             except Exception as e:
                 print(f"  ERROR loading {pdf_path.name}: {e}")
@@ -1016,7 +1039,6 @@ class BaseLegalRAGSystem(ABC):
         if not all_chunks:
             print(f"[{self.domain_name}] No chunks parsed — aborting build.")
             return
-
 
         self._chunks = {}
         best_score: Dict[str, tuple] = {}
@@ -1165,7 +1187,10 @@ class BaseLegalRAGSystem(ABC):
         """sections.json from a different build than the FAISS files (e.g."""
         if self.vector_store is None:
             return
-        doc_ids = {d.metadata.get("chunk_id") for d in self.vector_store.docstore._dict.values()}
+        doc_ids = {
+            d.metadata.get("chunk_id")
+            for d in self.vector_store.docstore._dict.values()
+        }
         missing = len(doc_ids - self._chunks.keys())
         if missing:
             print(

@@ -46,9 +46,21 @@ def _words(text: str) -> int:
 def split_sections(paragraphs: List[str]) -> Dict[str, List[str]]:
     """Separate a judgment's paragraphs into header, headnote and body."""
     limit = min(len(paragraphs), 45)
-    delivered = next((i for i in range(limit) if _DELIVERED_BY.search(paragraphs[i]) and _words(paragraphs[i]) < 40), None)
-    jurisdiction = next((i for i in range(limit) if _JURISDICTION.match(paragraphs[i])), None)
-    bench = next((i for i in range(min(len(paragraphs), 15)) if _BENCH.search(paragraphs[i])), None)
+    delivered = next(
+        (
+            i
+            for i in range(limit)
+            if _DELIVERED_BY.search(paragraphs[i]) and _words(paragraphs[i]) < 40
+        ),
+        None,
+    )
+    jurisdiction = next(
+        (i for i in range(limit) if _JURISDICTION.match(paragraphs[i])), None
+    )
+    bench = next(
+        (i for i in range(min(len(paragraphs), 15)) if _BENCH.search(paragraphs[i])),
+        None,
+    )
 
     if jurisdiction is not None:
         headnote_end = jurisdiction
@@ -62,14 +74,19 @@ def split_sections(paragraphs: List[str]) -> Dict[str, List[str]]:
     else:
         body_start = jurisdiction + 1
         while body_start < min(len(paragraphs), jurisdiction + 12) and (
-            _words(paragraphs[body_start]) < 40 and _COUNSEL.search(paragraphs[body_start])
+            _words(paragraphs[body_start]) < 40
+            and _COUNSEL.search(paragraphs[body_start])
         ):
             body_start += 1
 
     headnote_start = (bench + 1) if bench is not None and bench < headnote_end else 0
     header = list(paragraphs[:headnote_start])
     headnote = [p for p in paragraphs[headnote_start:headnote_end] if _words(p) >= 8]
-    return {"header": header, "headnote": headnote, "body": list(paragraphs[body_start:])}
+    return {
+        "header": header,
+        "headnote": headnote,
+        "body": list(paragraphs[body_start:]),
+    }
 
 
 def _split_long(paragraph: str) -> List[str]:
@@ -118,7 +135,6 @@ def _pack(paragraphs: List[str]) -> List[tuple]:
     if text:
         chunks.append((text, first, last))
 
-
     if len(chunks) > 1 and _words(chunks[-1][0]) < MIN_CHUNK_WORDS * 2:
         prev = chunks[-2]
         chunks[-2:] = [(f"{prev[0]}\n\n{chunks[-1][0]}", prev[1], chunks[-1][2])]
@@ -135,7 +151,9 @@ def validate_chunk(chunk: Dict) -> None:
         raise ChunkValidationError("control characters in text")
     n = _words(chunk["text"])
     if not MIN_CHUNK_WORDS <= n <= MAX_CHUNK_WORDS:
-        raise ChunkValidationError(f"{n} words outside [{MIN_CHUNK_WORDS}, {MAX_CHUNK_WORDS}]")
+        raise ChunkValidationError(
+            f"{n} words outside [{MIN_CHUNK_WORDS}, {MAX_CHUNK_WORDS}]"
+        )
 
 
 def chunk_judgment(

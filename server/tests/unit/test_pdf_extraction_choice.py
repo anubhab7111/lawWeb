@@ -11,7 +11,9 @@ BODY = "The Magistrate may order the arrest. The Magistrate shall record reasons
 
 
 def _parse(text):
-    return [SimpleNamespace(section_number=n) for n in re.findall(r"^(\d+)\. ", text, re.M)]
+    return [
+        SimpleNamespace(section_number=n) for n in re.findall(r"^(\d+)\. ", text, re.M)
+    ]
 
 
 def test_split_words_counted_against_vocabulary():

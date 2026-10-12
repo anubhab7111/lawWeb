@@ -8,9 +8,8 @@ from typing import Dict, List, Optional
 from urllib.parse import urlencode
 
 import httpx
-from cryptography.fernet import Fernet
-
 from app.config import get_settings
+from cryptography.fernet import Fernet
 
 
 @dataclass(frozen=True)
@@ -71,9 +70,12 @@ def redirect_uri(provider: str) -> str:
 
 def _fernet() -> Fernet:
     settings = get_settings()
-    key = settings.token_enc_key or hashlib.sha256(
-        (settings.jwt_secret or "dev_secret_key_123").encode()
-    ).hexdigest()
+    key = (
+        settings.token_enc_key
+        or hashlib.sha256(
+            (settings.jwt_secret or "dev_secret_key_123").encode()
+        ).hexdigest()
+    )
     return Fernet(base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest()))
 
 
@@ -108,7 +110,9 @@ def _token_request(provider: str, data: dict) -> dict:
         timeout=15,
     )
     if response.status_code != 200:
-        raise CalendarProviderError(f"{provider} token request failed ({response.status_code})")
+        raise CalendarProviderError(
+            f"{provider} token request failed ({response.status_code})"
+        )
     return response.json()
 
 
@@ -116,7 +120,11 @@ def exchange_code(provider: str, code: str) -> str:
     """Trade the authorization code for a refresh token."""
     payload = _token_request(
         provider,
-        {"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri(provider)},
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri(provider),
+        },
     )
     refresh = payload.get("refresh_token")
     if not refresh:
@@ -125,7 +133,9 @@ def exchange_code(provider: str, code: str) -> str:
 
 
 def access_token(provider: str, refresh_token: str) -> str:
-    return _token_request(provider, {"grant_type": "refresh_token", "refresh_token": refresh_token})["access_token"]
+    return _token_request(
+        provider, {"grant_type": "refresh_token", "refresh_token": refresh_token}
+    )["access_token"]
 
 
 def _iso_utc(dt: datetime) -> str:
@@ -162,12 +172,22 @@ def push_event(
     if existing_id and response.status_code == 404:
         return push_event(provider, token, title, start_at, end_at, None)
     if response.status_code not in (200, 201):
-        raise CalendarProviderError(f"{provider} event push failed ({response.status_code})")
+        raise CalendarProviderError(
+            f"{provider} event push failed ({response.status_code})"
+        )
     return response.json()["id"]
 
 
 def delete_event(provider: str, token: str, event_id: str) -> None:
-    url = f"{_GOOGLE_EVENTS}/{event_id}" if provider == "google" else f"{_GRAPH_EVENTS}/{event_id}"
-    response = httpx.delete(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+    url = (
+        f"{_GOOGLE_EVENTS}/{event_id}"
+        if provider == "google"
+        else f"{_GRAPH_EVENTS}/{event_id}"
+    )
+    response = httpx.delete(
+        url, headers={"Authorization": f"Bearer {token}"}, timeout=15
+    )
     if response.status_code not in (200, 204, 404, 410):
-        raise CalendarProviderError(f"{provider} event delete failed ({response.status_code})")
+        raise CalendarProviderError(
+            f"{provider} event delete failed ({response.status_code})"
+        )

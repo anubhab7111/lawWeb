@@ -33,7 +33,6 @@ async def preprocess_query(text: str) -> tuple[str, LanguageResult]:
     src_tag = to_indictrans2_tag(tgt_iso)
     if src_tag is None:
 
-
         logger.info("Unsupported language %s; skipping translation", tgt_iso)
         return text, LanguageResult(tgt_iso, lang.confidence, False)
 

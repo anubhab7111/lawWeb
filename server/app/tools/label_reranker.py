@@ -28,12 +28,17 @@ def statute_text(label: str) -> str:
     return f"{label}. {statutes().get(label, '')}"
 
 
-def fact_segments(tokenizer, text: str, max_segments: int, seg_tokens: int = FACT_TOKENS) -> List[str]:
+def fact_segments(
+    tokenizer, text: str, max_segments: int, seg_tokens: int = FACT_TOKENS
+) -> List[str]:
     """Up to max_segments token windows of the facts, spread evenly across them."""
     ids = tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
     starts = list(range(0, max(len(ids), 1), seg_tokens))
     if len(starts) > max_segments:
-        starts = [starts[round(i * (len(starts) - 1) / max(max_segments - 1, 1))] for i in range(max_segments)]
+        starts = [
+            starts[round(i * (len(starts) - 1) / max(max_segments - 1, 1))]
+            for i in range(max_segments)
+        ]
     return [tokenizer.decode(ids[s : s + seg_tokens]) for s in starts] or [text]
 
 
@@ -49,11 +54,21 @@ def encode_pairs(tokenizer, facts: Sequence[str], labels: Sequence[str]):
 
 
 class LabelReranker:
-    def __init__(self, model_dir: str, device: str = "cuda", max_segments: int = 3, batch_size: int = 64):
+    def __init__(
+        self,
+        model_dir: str,
+        device: str = "cuda",
+        max_segments: int = 3,
+        batch_size: int = 64,
+    ):
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_dir).to(device).eval()
+        self.model = (
+            AutoModelForSequenceClassification.from_pretrained(model_dir)
+            .to(device)
+            .eval()
+        )
         if device == "cuda":
             self.model.half()
         self.device = device
@@ -70,7 +85,13 @@ class LabelReranker:
         logits = []
         for i in range(0, len(pairs), self.batch_size):
             chunk = pairs[i : i + self.batch_size]
-            enc = encode_pairs(self.tokenizer, [p[0] for p in chunk], [p[1] for p in chunk]).to(self.device)
+            enc = encode_pairs(
+                self.tokenizer, [p[0] for p in chunk], [p[1] for p in chunk]
+            ).to(self.device)
             logits.append(self.model(**enc).logits.float().squeeze(-1).cpu().numpy())
-        scores = np.concatenate(logits).reshape(len(segments), len(candidates)).max(axis=0)
-        return {label: float(1 / (1 + np.exp(-s))) for label, s in zip(candidates, scores)}
+        scores = (
+            np.concatenate(logits).reshape(len(segments), len(candidates)).max(axis=0)
+        )
+        return {
+            label: float(1 / (1 + np.exp(-s))) for label, s in zip(candidates, scores)
+        }

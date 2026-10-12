@@ -5,7 +5,6 @@ from app.config import get_settings
 _settings = get_settings()
 if not _settings.jwt_secret and not _settings.debug:
 
-
     raise RuntimeError(
         "JWT_SECRET is not set. Refusing to start with a known fallback "
         "secret. Set JWT_SECRET in server/.env, or set DEBUG=true to allow "

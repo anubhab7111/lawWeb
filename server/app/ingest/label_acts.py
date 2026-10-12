@@ -27,7 +27,9 @@ def majority_act(ipc: int, crpc: int, min_share: float = 0.6) -> str:
 
 def count_citations() -> Counter:
     counts: Counter = Counter()
-    for path in sorted(corpus_path("judgments", "sc", "chunks").glob("year=*/chunks.jsonl.gz")):
+    for path in sorted(
+        corpus_path("judgments", "sc", "chunks").glob("year=*/chunks.jsonl.gz")
+    ):
         with gzip.open(path, "rt", encoding="utf-8") as f:
             for line in f:
                 for cite in json.loads(line)["sections_cited"]:
@@ -45,7 +47,10 @@ def main() -> None:
         ipc, crpc = counts[("IPC", n)], counts[("CrPC", n)]
         out[label] = {"act": majority_act(ipc, crpc), "ipc": ipc, "crpc": crpc}
     OUT.write_text(json.dumps(out, indent=0, sort_keys=True))
-    crpc_labels = sorted((l for l, v in out.items() if v["act"] == "CrPC"), key=lambda l: int(re.sub(r"\D", "", l)))
+    crpc_labels = sorted(
+        (l for l, v in out.items() if v["act"] == "CrPC"),
+        key=lambda l: int(re.sub(r"\D", "", l)),
+    )
     print(f"[label_acts] {len(out)} labels; CrPC-majority: {crpc_labels}")
 
 

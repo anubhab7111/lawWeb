@@ -22,7 +22,9 @@ class Candidate:
     segment_scores: List[float] = field(default_factory=list)
 
 
-def segments(text: str, size: int = SEGMENT_CHARS, limit: int = MAX_SEGMENTS) -> List[str]:
+def segments(
+    text: str, size: int = SEGMENT_CHARS, limit: int = MAX_SEGMENTS
+) -> List[str]:
     """Split on paragraph/sentence boundaries into <= limit pieces of ~size chars."""
     text = text.strip()
     if len(text) <= size:
@@ -30,7 +32,11 @@ def segments(text: str, size: int = SEGMENT_CHARS, limit: int = MAX_SEGMENTS) ->
     out: List[str] = []
     current = ""
     for part in text.replace("\n\n", "\n").split("\n"):
-        pieces = [part] if len(part) <= size else [part[i : i + size] for i in range(0, len(part), size)]
+        pieces = (
+            [part]
+            if len(part) <= size
+            else [part[i : i + size] for i in range(0, len(part), size)]
+        )
         for piece in pieces:
             if current and len(current) + 1 + len(piece) > size:
                 out.append(current)
