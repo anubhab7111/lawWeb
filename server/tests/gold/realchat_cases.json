@@ -1,0 +1,292 @@
+[
+ {
+  "id": "real_theft_q",
+  "turns": [
+   "What is the punishment for theft under Indian law?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "real_rape",
+  "turns": [
+   "I got raped in market, please help"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "rape"
+  ]
+ },
+ {
+  "id": "real_lost_bike",
+  "turns": [
+   "I lost my bike at the market today, what do I do?"
+  ],
+  "intent": [
+   "crime_report",
+   "general_query"
+  ]
+ },
+ {
+  "id": "real_art21",
+  "turns": [
+   "What does Article 21 guarantee?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "real_bail",
+  "turns": [
+   "What is bail under CrPC?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "real_art19",
+  "turns": [
+   "Can Parliament pass a law restricting social media speech citing public order? How would courts test its constitutionality under Article 19?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "snatch",
+  "turns": [
+   "Someone snatched my phone near the bus stop an hour ago"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "theft",
+   "robbery"
+  ]
+ },
+ {
+  "id": "threat",
+  "turns": [
+   "My neighbour keeps threatening to kill me if I don't move out of the building"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "threat"
+  ]
+ },
+ {
+  "id": "dv",
+  "turns": [
+   "my husband beats me every night when he is drunk and his mother supports him"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "domestic_violence",
+   "assault"
+  ]
+ },
+ {
+  "id": "cyber",
+  "turns": [
+   "Got a call saying my son was arrested, I paid 50000 on UPI and now the number is switched off"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "cybercrime",
+   "fraud"
+  ]
+ },
+ {
+  "id": "dowry",
+  "turns": [
+   "My in-laws are demanding 5 lakh more dowry and threatening to throw me out of the house"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "dowry",
+   "domestic_violence"
+  ]
+ },
+ {
+  "id": "shop_burglary",
+  "turns": [
+   "Someone broke into my shop at night and took the cash box"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "theft"
+  ]
+ },
+ {
+  "id": "cheated_followup",
+  "turns": [
+   "I was cheated",
+   "Yesterday in Delhi a man took 20,000 rupees from me online promising a job and then blocked me"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "fraud",
+   "cybercrime"
+  ],
+  "followup": true
+ },
+ {
+  "id": "legal_aid_followup",
+  "turns": [
+   "Is there any lawyer available for a free legal aid consultation?",
+   "I'm in Lucknow, my landlord won't return my security deposit"
+  ],
+  "intent": [
+   "find_lawyer"
+  ],
+  "followup": true
+ },
+ {
+  "id": "lawyer_bare_followup",
+  "turns": [
+   "find me a lawyer",
+   "Kolkata, it's a cheque bounce case"
+  ],
+  "intent": [
+   "find_lawyer"
+  ],
+  "followup": true
+ },
+ {
+  "id": "divorce_mumbai",
+  "turns": [
+   "Need a divorce lawyer in Mumbai"
+  ],
+  "intent": [
+   "find_lawyer"
+  ],
+  "followup": false
+ },
+ {
+  "id": "bail_bengaluru",
+  "turns": [
+   "Can you suggest a good criminal advocate in Bengaluru for my brother's bail?"
+  ],
+  "intent": [
+   "find_lawyer"
+  ],
+  "followup": false
+ },
+ {
+  "id": "evict",
+  "turns": [
+   "Can my landlord evict me without notice in Delhi?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "will_reg",
+  "turns": [
+   "Is a will valid without registration?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "hma_divorce",
+  "turns": [
+   "What are the grounds for divorce under the Hindu Marriage Act?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "salary",
+  "turns": [
+   "My employer hasn't paid my salary for 3 months, what are my options?"
+  ],
+  "intent": [
+   "general_query"
+  ]
+ },
+ {
+  "id": "recipe",
+  "turns": [
+   "what's a good recipe for paneer butter masala"
+  ],
+  "intent": [
+   "non_legal"
+  ]
+ },
+ {
+  "id": "alarm",
+  "turns": [
+   "set an alarm for 6 am"
+  ],
+  "intent": [
+   "non_legal"
+  ]
+ },
+ {
+  "id": "doc_fir",
+  "turns": [
+   "Please check whether this document is legally valid and complete."
+  ],
+  "intent": [
+   "document_analysis"
+  ],
+  "doc": "RMATION REPORT 14035\nSCRCans.\n\nLo DBk v ROY rne_8b__ 08\nSO Aol\n\nL\n\nPO Dirosand Dm0 20 20 froms Biegort 5.\n(@Adirs. Nerz MG?L_ 05 Pirpuy\n\n\u00ae)Incas ausidlita s Pl Statio, hen the s BS. ..\n\noersatunsame . Rembidaoh Blacld, i \u2014\nI .\n\n[ \u2014 S\n\u00a9Addres\u2014 ML PPU'H}]{LAJm_ YaRu Vv, Vewchs, OF)\nR S )\n(htachsepartsecfncesay) el M1,\n[ S \u2014\n\ni\nf\n3\nH\ni\ni\ni\n|\n\n|\n\n(5 TRA\u2014\n\n1. IoqesepordU e ooy .\n\n1 PR e it SAS Ol (B [ m\u2019fw\u2018 g\nan @% Lo d\n\ns s st \u2014 213/ 288 4\n\nsetseasmispacimeigioansd\u2014 8 L clfTr Qugeey\n\ntotibespbeimestption\nonpistofjurisicion. FIR e everto the Complitlaformant\n\n(i toPS..\n\nadmitctobecorety corded nd acopygiventothe Complsintoformart e of s,\n\nNQ%:\nSgntreofthoic i Clarze Pl i ih\nL TR\n\nSenatarThamb lnpressionaf\ne Complisaatformant\n\n",
+  "doc_type": "FIR"
+ },
+ {
+  "id": "doc_judgment",
+  "turns": [
+   "Please check whether this document is legally valid and complete."
+  ],
+  "intent": [
+   "document_analysis"
+  ],
+  "doc": "A\nACE PIPELINE CONTRACTS PRIV A 1E LIMIIBD\n-f\u00b7\nv.\nBHARAT PETROLEUM CORPORATION LIMIIBD\nAPRIL 4, 2007\nB\n[AK MA THUR AND TAR UN CHATTERJEE, JJ.]\nArbitration and Conciliation Act, 1996:\n\u2022\nss.11 & 34-Appointment of Arbitrator-Courts can issue mandamus to\nc\nauthorities to appoint arbitrators as per the arbitration clause-But choice\ncan go beyond the designated persons or institutions in exceptional cases\nfor reasons to be recorded or where both parties agree for common name-\nOnce a party has entered into an agreement with eyes wide open it cannot\nplead that if any person nominated in the arbitration clause is appointed as\narbitrator he will not be impartial or objective-However, if a party feels that\nD\nthe arbitrator has not acted independently or impartially, or he has suffered\nfrom any bias, it can make application under s.34 to set aside the arbitra/\n,. -t\naward on the ground that arbitrator acted with bias or malice in law or fact.\ns.11 (6)-Application under-Held: Period of limitation of thirty days\nE\ncannot be invoked under s.11 (6).\nAppellant and Respondent-Corporation had entered into a contract which\ncontained an arbitration clause in terms of which disputes between the parties\nwere to be referred to the sole arbitration of an officer of the Respondent-\nCorporation. Some differences arose between the parties on which Appellant\nrequested Respondent-Corporation to appoint an arbitrator. It is alleged that F\nno one was appointed as arbitrator, pursuant to which Appellant filed\napplication before High Court under Section 11 of the Arbitration and\nConciliation Act, 1996 demanding appointment of some retired Judge of the\nSupreme Cpurt as arbitrator on the ground that if any person nominated in\nthe arbitration clause is appointed, then it may suffer from bias or the\nG\narbitrator may not be impartial or independent in taking decision. High Court\ndismissed the application. Hence the present appeal\nDismissing the appeal, the Court\nr\nHELD: 1. A person of any nationality may be appointed as Arbitrator,\nH\n777\f-i\n778\nSUPREME COURT REPORTS\n(2007] 4 S.C.R.\n....\nA\nunless otherwise agreed between the parties. Sub-section (2) of Section 11\nsays that subject to sub-section (6), the parties are free to agree on a procedure\nfor appointing the arbitrator or arbitrators. Sub-section (3) provides that\nfailing any agreement referred to in sub-section (2), one arbitrator can be\nappointed by each party and the two arbitrators so appointed shall appoint the\nthird arbitrator who shall act as the presiding arbitrator. Sub-section (4) says\nB\nthat in case a party fails to make appointment within thirty days from the\ndate of receipt of the request to do so from the other party, or that the two\nappointed arbitrators fail to nominate the third arbitrator within thirty days\n>-\nfrom the date of their appointment, the appointment shall be made by the Chief\n\u2022\nJustice or by any person or institution designated by him. Sub-section (5)\nc\nsays failing any agreement referred to in sub-section (2), in an arbitration\nwith a sole arbitrator, ifthe parties fail to agree on the arbitrator within thirty\ndays from receipt of a request by one party from the other party to so agree\nthe appointment shall be made, upon request of a party, by the Chief Justice\nor any person or institution designated by him. Therefore, the concept of thirty\ndays is there in sub-sections (4) & (5). This is in the event the parties did not\nD\ncome to appoint arbitrator or the two nominated arbitrators fail to agree within\n..,\nthirty days for appointment of third arbitrator, application can be moved under\nSection 11(5) of the Act to the Chief Justice for appointment ofarbitrator.\n....\nBut in sub-section (6), where, the procedure has already been agreed upon by\nthe parties, as in the present case, and in that event, if a party fails to act as\nrequired under that procedure or the parties, or the two appointed arbitrators,\nE\nfail to reach an agreement expected of them under that procedure or a person,\nincluding an institution, fails to perform any function entrusted to him or it\nunder that procedure, a party may in that event, request the Chief Justice or\na person or an institution designated by him to make necessary measures,\nunless the agreement on the appointment procedure provides other means for\nF\nappointment of arbitrator. Therefore, so far as the period of thirty days is\nconcerned, it is not mentioned in Sub-section (6). The period oflimitation is\n-'\nonly provided under sub-sections ( 4) & (5) of Section 11. As such, as per the\nstatute, the period of limitation of thirty days cannot be invoked under sub-\nsection (6) of Section 11 of the Act. (Para 6] (784-D-H; 785-A-C]\nI-\nG\nGreat Eastern Shipping Co. Ltd v. Board of Trustees for the Port of\nCalcutta, [2005] 1 Arb. LR 389 and J. V. v. Union of India & Ors., [Full Bench\nle\ndecision of the Delhi High Court decided on 31.8.2006, overruled.\n......\nUnion of India v. Popular Construction Co., [2001] 8 SCC 470 and The\nState of Uttar Pradesh & Ors. v. Babu Ram Upadhya, [1961] 2 SCR 679,\nH\f779\nACE PIPELINE CONTRACTS PRIVATE LTD. v. BHARAT PETROLEUM CORPORATION \u2022,TD.\ndistinguished.\nDatar Switchgears Ltd v. Tata Finance Ltd & Anr., (2000) 8 SCC 151,\nrelied on.\nPun} Lloyd Ltd v. Petronet MHB Ltd, (2006) 2 SCC 638; BSNL & Ors.\nv. Subhash Chandra Kanchan & Anr., [2006) 8 SCC 279; Shin Satellite Public B\nCo. Ltd. v. Jain Studios Ltd, (2006] 2 SCC 628; Union of India & Anr. v. Ml\ns. V. S. Engineering (P) Ltd., [2006) 12 SCALE 144; BSNL & Ors. v. Subhash\nChandra Kanchan & Anr., (2006) 8 SCC 279 and Union of India & Anr v.\nMP. Gupta, [2004) 10 SCC 504, referred to.\n2.1. This Court is aware of the Departmental lethargy in making C\nappointment of arbitrators in terms of the arbitration clause. Therefore,\nMandamus can be issued by the Courts in exercise of powers under Section\n11(6) of the Act but the demand should be in the event of failure by the\nauthorities to appoint arbitrators within the reasonable time. Courts are not\npowerless to issue mandamus to the authorities to appoint arbitrators as far\nas possible as per the arbitration clause. But in large number of cases if it D\nis found that it would not be conducive in the interest of parties or for any\nother reasons to be recorded in writing, choice can go beyond the designated\npersons or institutions in appropriate cases. But it should normally be adhered\nto the terms of arbitration clause and appoint the arbitrator/arbitrators named\ntherein except in exceptional cases for reasons to be recorded or where both E\nparties agree for common name. [Para 13) [789-D-E]\n2.2. In the present case, the appellant's demand was to get some retired\nJudge of the Supreme Court to be appointed as arbitrator on the ground that\nif any person nominated in the arbitration clause is appointed, then it may\nsuffer from bias or the arbitrator may not be impartial or independent in F\ntaking decision. Once a party has entered into an agreement with eyes wide\nopen it cannot wriggle out of the situation that if any person of the respondent-\nBPCL is appointed as arbitrator he will not be impartial or objective. However,\nif the appellant feels that the arbitrator has not acted independently or\nimpartially, or he has suffered from any bias, it will always be open to the G\nparty to make an application under Section 34 of the Act to set aside the award\non the ground that arbitrator acted with bias or malice in law or fact. There\nis no reason to interfere with the order passed by the High Court in Arbitration\nPetition. The arbitrator has already been appointed. He should proceed in the\nmatter and decide the dispute expeditiously.\nH\n[Paras 14 and 15] (789-F-H; 790-A]\f780\nSUPREME COURT REPORTS\n[2007] 4 S.C.R.\nA\nCIVIL APPELLATE JURISDICTION: Civil Appeal No. 1783 of2007.\nFrom the Final Judgment and Order dated 18.01.2006 of the High Court\nof Delhi at New Delhi in Arbitration Petition No. 181 of 2005.\nSoli J. Sorabjee, Manish Bhatt, Mukesh Kumar, Mahima Shroff and\nB Chirag M. Shroff for the Appellant.\nSudhir Chandra, Parijat Sinha, R. Rea Sinha, Snehsish Mukherjee and\nS.C. Ghose for the Respondent.\nThe Judgment of the Court was delivered by\nc\nA.K. MA THUR, J. 1. Leave granted.\n2. This appeal is directed against the order dated 18.1.2006 passed by\nlearned Single Judge of the High Court of Delhi in Arbitration Petition No.181\nof2005 whereby learned Single Judge dismissed the application for appointment\nD\nof Arbitrator. Hence, the present appeal against the aforesaid order.\n3. Brief facts which are necessary for disposal of this appeal are that\nan application styled under Section 11(5) of the Arbitration and Conciliation\nAct, 1996 (hereinafter referred to as 'the Act') was moved by the Ace Pipeline\nContracts Private Limited, the appellant herein, for appointing a retired Judge\nE of the Supreme Court of India to adjudicate the claims and disputes between\nthe parties arising out of the contract between the parties dated I0.06.2002.\nThe said contract pertained to the laying down of a pipeline and associated\nfacilities for Section-I [Manmad in Maharashtra to M.P. Border near (Shirpur)]\nfor Mumbai-Manmad Pipeline .Extension Project of the respondent- Bharat\np\u00b7 Petroleum Corporation Limited (hereinafter referred to as 'BPCL'). The main\nissue was with regard to interpretation of Clause 91 of the contract which\npertains to appointment of arbitrator. Clause 91 of the contract reads as under:\n\"91. ARBITRATION\nAll disputes or differences whatsoever which shall at any time arise\nG\nbetween the parties hereto touching or concerning the works or the\nexecution or maintenance thereof under this Contract or the right\ntouching or concerning the works or the execution or the maintenance\neffect thereof or to the rights or liabilities of the parties or arising out\nof or in relation thereto whether during or after completion of the\nH\ncontract or whether before or after detennination foreclosure or breach\f'\nt\n78}\nACE PIPELINE CONTRACTS PRIVATE LID. v. BHARAT PETROLEUM CORPORATION LID. [A. K. MATHUR, J.]\n--;..\nof the Contract (other than those in respect of which the decision of A\nany person is by the Contract expressed to be final and binding) shall\nafter written notice by either party to the Contract to the other of them\nand to the Appointing Authority be referred for adjudication, to a sole\nArbitrator to be appointed as hereinafter provided.\na. Any dispute or difference of any nature whatsoever any claim, B\n,..\ncross-claim, counter-claim or set off of the Corporation against the\n,..,\nVendor or regarding any right, liability, act, omission or account of\nany of the parties hereto arising out of or in relation to this agreement\nshall be referred to the Sole Arbitration of the Director (Marketing) of\nthe Corporation or of some officer of the Corporation who may be\nc\nnominated by the Director (Marketing). The Vendor will not be entitled\nto raise any objection to any such Arbitrator on the ground\u00b7 that the\nArbitrator is an Officer of the Corporation or that he has dealt with\nthe matters to which the contract relates or that in the course of his\nduties as an Officer of the Corporation he had expressed views on all\nor any other matters in dispute or difference. In the event of the D\n,, ?\nArbitrator to whom the matter is originally referred being transferred\nor vaca~ing his office or being unable to act for any reason, the\nDirector (Marketing) as aforesaid at the time of such transfer, vacation\nof office or inability to act may in the discretion of the Director\n(Marketing) designate another person to act as Arbitrator in\naccordance with the terms of the agreement to the end and intent that E\n-\nthe original Arbitrator shall be entitled to continue the arbitration\nproceedings notwithstanding his transfer or vacation of office as an\nOfficer of the Corporation if the Director (Marketing) does not\ndesignate another person to act as arbitrator on such transfer, vacation\nof office or inability of original arbitrator. Such persons shall be F\nentitled to proceed with the reference from the point at which it was\nleft by his predecessor. It is also a term of this contract that no person\nother than the Director (Marketing) or a person nominated by such\nDirector (Marketing) of the Corporation as aforesaid shall act as an\nArbitrator hereunder. The award of the Arbitrator so appointed shall\nbe final conclusive and binding on all parties to the agreement subject G\nto the provisions of the Conciliation & Arbitration Act, 1996 or any\nstatutory modification or re-enactment thereof and the rules made\nr\nthereunder for the time being in force shall apply to the arbitration\nproceedings under this clause.\"\nH\f782\nSUPREME COURT REPORTS\n(2007] 4 S.C.R.\nA\nClause 91 provides that any dispute arising between the parties shall be\nsettled through arbitration and the appointing authority i.e. the Director\n(Marketing) himself or he may nominate any other person of the Corporation\nto act as an Arbitrator to resolve the disputes and the vendor will not be\nentitled to raise any objection to such arbitrator on the ground that the\nArbitrator is an officer of the Corporation or that he has dealt with the matters\nB\nto which the .contract relates or that in the course of his duties as an Officer\nof the Corporation he had expressed views on all or any other matters in\ndispute or difference. Since some differences arose between the parties with\nregard to the claim of the appellant, a letter dated 21.7.2005 was written to the\nDirector (Marketing) invoking clause 91 of the agreement and requesting him\nC\nto refer the matter to arbitration for resolving the differences. It was also\nrequested that the Director (Marketing) may accede to the request of the\nappellant for adjudication of the dispute by a former Judge of the Supreme\nCourt of India so as to remove any justifiable doubts to the independence\nor impartiality of the said Arbitrator. It was further submitted that on receiving\nthe communication, the appellant would suggest the name of the retired Judge\nD\nof the Supreme Court of India for the purpose of appointment as Arbitrator.\nIt was alleged that no one was appointed as Arbitrator, therefore, on 22.8.2005\nthe appellant filed the present application before the High Court for\nappointment of Arbitrator under Section 11(5) & (6) of the Act. It was also\npointed out that after presentation of the application on 22.8.2005, the appellant\nE\nreceived a letter of the Director (Marketing) nominating Shri P.S. Bhargava,\nExecutive Director (Quality Control Cell) of the respondent- BPCL to act as\nsole arbitrator. It was contended that the letter appointing Shri P.S.Bhargava\nas sole Arbitrator was received by the appellant subsequent to the filing of\nthe petition before the High Court on 26.8.2005. It was also pointed out that\nShri P.S.Bhargava was appointed as Arbitrator on 22.8.2005 and the same was\nF\ncommunicated and received by the appellant through courier on 26.8.2005.\nTherefore, it was submitted before the High Court that since the appointment\nof Arbitrator has been made after the filing of the petition by the appellant\nbefore the High Court, the Director (Marketing) ceased to have any right to\nappoint any Arbitrator after expiry of thirty days. Therefore, a request was\nG\nmade that any retired Judge of the Supreme Court may be appointed as\nArbitrator. This was contested by the respondent by filing a reply. It was\npointed out that the notice dated 21.7.2005 was received by the Director\n(Marketing) on 26. 7 .2005 and a request was made to the appellant to supply\ncopy of the arbitration agreement and other corresponding documents as he\nwas not aware of the procedure for appointment of the Arbitrator. The Director\nH\n(Marketing) received reply to the communication dated 12.8.2005 on 16.8.2005\f783\nACE PIPELINE CONTRACTS PRIVATE L m. v. BHARAT PETROLEUM CORPORATION L m. [A. K. MATHUR, J.J\nwhich was received in the Office on 17 .8.2005. After receiving the A\ncommunication and all the materials on 17 .8.2005, the appointing authority\nappointed Shri P.S.Bhargava as Arbitrator on 22.8.2005 and a communication\nwas sent to the appellant through courier which was received by him on\n26.8.2005. It was also pointed out after receipt of the reply to the communication\ndated 12.8.2005 on 16.8.2005, 19th, 20th & 21st August, 2005 Office remained\nclosed on account of Rakshya Bandhan and weekly holidays. The Director 13\n(Marketing) sent reply on 22.8.2005 appointing Shri P.S.Bhargava as Arbitrator.\n...\nIt was also pointed out that the whole action was done with urgency and\nthere was no delay on the part of the Administration.\n4. Learned Single Judge after examining the matter came to the conclusion C\nthat it cannot be said that the appointing authority did not act with due\ndispatch. Learned Single Judge also held that as per the terms of the agreement\nin question with re~ard to independence and objectivity of the arbitrator can\nbe examined in view of the agreement and it was observed that this question\ncan be raised before the arbitrator and even if they fail, it can be agitated\nunder Section 34 of the Act. However, learned Single Judge concluded that D\nthe situation had not arisen to invoke the provisions of Section 11 ( 6) of the\nAct at present and consequently, dismissed the petition. Aggrieved against\nthe impugned order dated 18.1.2006, the present appeal was filed.\n5. We have heard Shri Soli J. Sorabjee, learned Senior counsel for the\nE\nappellant, and Shri Sudhir Chandra, learned senior counsel for the respondent,\nand perused the records. Though the application moved by the appellant\nunder Section 11 of the Act was of course very confusing as it also mentioned\nSection 11(5) as well as Section 11(6) of the Act, in fact the application under\nSection 11(5) of the Act was not maintainable. Be that as it may, learned Single\nF\nJudge proceeded on the basis of treating this application under Section 11(6)\nof the Act. This may be bona fide error. Mr. Sorabjee, learned Senior Counsel\nfor the appellant, strenuously urged that after expiry of period of thirty days,\nthe respondent has lost the right to appoint Arbitrator under Clause 9 l of the\nagreement and in support thereof, invited our\u00b7 attention to the following\ndecisions of this Court.\nG\n(i) [200018 sec 151\n[Datar Switchgears Ltd. v. Tata Finance Ltd & Anr.,]\n[2006] 2 sec 638\n(iI)\n[Punj Lloyd Ltd. v. Petronet MHB Ltd.,]\nH\f:\n1\nSUPREME COURT REPORTS\n[2007) 4 S.C.R.\n784\n(tit) [20061 s sec 219\n,.\\--\nA\n[BSNL & Ors. v. Subash Chandra Kanchari & Anr.,]\n(iv) [2006] 2 sec 628\n[Shin Satellite Public Co.Ltd v. Jain Studios Ltd.,]\nB\n(v) (2006] 12 SCALE 144\n[Union of India & Anr. v. Mis. V.S.Engineering (P) Ltd.,]\n-\"'- .\n....\nOur attention was also invited to a Full Bench decision of the Delhi High\nCourt in J. V. v. Union of India & Ors., decided on 31.8.2006 and a decision\nc\nof the Calcutta High Court in Great Eastern Shipping Co. Ltd v. Board of\nTrustees/or the Port of Calcutta, (2005) 1 Arb. LR 389.\n6. Before we deal with each case cited above, it may be relevant to deal\nwith scope of Section 11 of the Act. A person of any JJ.ationality may be\nappointed as Arbitrator, unless otherwise agreed between the parties. Sub-\nD section (2) of Section 11 says that subject to sub-section (6), the parties are\nfree to agree on a procedure for appointing the arbitrator or arbitrators. Sub-\n...\n~\nsection (3) provides that failing any agreement referred to in sub-section (2),\none arbitrator can be appointed by each party and the two arbitrators so\nappointed shall appoint the third arbitrator who shall act as the presiding\n..\narbitrator. Sub-section (4) says that in case a party fails to make appointment\nE within thirty days from the date of receipt of the request to do so from the\nother party, or that the two appointed arbitrators fail to nominate the third\narbitrator within thirty days from the date of their appointment, the appointment\nshall be made by the Chief Justice or by any person or institution designated\nby him. Sub-section (5) says failing any agreement referred to in sub-section\nF (2), in an arbitration with a sole arbitrator, if the parties fail to agree on the\narbitrator within thirty days from receipt of a request by one party from the\n~\nother party to so agree the appointment shall be. made, upon request of a\nparty, by the Chief Justice or any person or institution designated by him.\nTherefore, the concept of thirty days is there in Sub-sections (4) & (5). This\nis in the event of the parties did not come to appoint arbitrator or the two\nG nominated arbitrators fail to agree within thirty days for appointment of third\narbitrator, application can be moved under Section 11(5) of the Act to the\nChief Justice for appointment of arbitrator. But in sub-section (6), where, the\nprocedure has already been agreed upon by the parties, as in the present\n~\ncase, and in that event, if a party fails to act as required under that procedure\nH or the parties, or the tWo appointed arbitrators, fail to reach an agreement\fr\nI\n785\nACE PIPELINE CONTRACTS PRIVATE LID. v. BHARAT PETROLEUM CORPORATION LID. [A. K. MATHUR, J.)\n\"\"\"?'\n-+.\nexpected of them under that procedure or a person, including an institution, A\nfails to perform any function entrusted to him or it under that procedure, a\n;\nparty may in that event, request the Chief Justice or a person or an institution\ndesignated by him to make necessary measures, unless the agreement on the\nappointment procedure provides other means for appointment of arbitrator.\nTherefore, so far as the period of thirty days is concerned, it is not mentioned\nin Sub-section (6). The period of limitation is only provided under sub- ~\nsections (4) & (5) of Section 11. As such, as per the statute, the period of\n_,,.\nlimitation of thirty days cannot be invoked under sub-section (6) of Section\n\u2022\u00b7\n1 I of the Act. In this context, their Lordships in Datar Switchgears Ltd\n(supra) did not permit to count 30 days as such in sub-section (6). We cannot\na\ndo any better than to reproduce paragraphs I 9, 20 & 21 of the judgment in\nthat case.\n\"19.So far as cases falling under Section I 1(6) are concerned- such as\nthe one before us no time limit has been prescribed under the Act,\nwhereas a period of 30 days has been prescribed under Section 11(4)\nand Section I 1(5) of the Act. In our view, therefore, so far as Section D\nI I ( 6) is concerned, if one party demands the opposite party to appoint\n... i\nan arbitrator and the opposite party does not make an appointment\nwithin 30 days of the demand, the right to appointment does not get\nautomatically forfeited after expiry of 30 days. If the opposite party\nmakes an appointment even after 30 days of the demand, but before\nthe frrst party has moved the court under Section 11, that would be E\nsufficient. In other words, in cases arising under Section 11(6), if the\nopposite party has not made an appointment within 30 days of demand,\nthe right to make appointment is not forfeited but continues, but an\nappointment has to be made before the former files application under\nSection 11 seeking appointment of an arbitrator. Only then the right F\nof the opposite party ceases. We do not, therefore, agree with the\nobservation in the above judgments that if the appointment is not\nmade within 30 days of demand, the right to appoint an arbitrator\nunder Section 11 ( 6) is forfeited.\n20. In the present case the respondent made the appointment before G\nthe appellant filed the application under Section 11 ( 6) though it was\nbeyond 30 days from the date of demand. In our view, the appointment\nr\nof the arbitrator by the respondent is valid and it cannot be said that\nthe right was forfeited after expiry of 30 days from the date of demand.\n21. We need not decide whether for purposes of sub-sections (4) and H\fi\n786\nSUPREME COURT REPORTS\n[2007] 4 S.C.R.\n+- '\nA\n(5) of Section, which expressly prescribe 30 days, the period of 30\ndays is mandatory or not.\"\n7. The observations made by their Lordships are very clear and Their\nLordships negatived the contention that 30 days should not be read in sub-\nsection ( 6) of Section 11 of the Act if the opposite party has not made an\nB appointment within 30 days of demand, the right to make appointment is not\nforfeited but continues. Their Lordships in paragraph 20 have also very\n--\".\ncategorically held that in the present case the respondent made the\n~\nappointment before the appellant filed the app 1 lication under section 11 ( 6),\n\"'\nthough it was beyond 30 days from the date of demand, the appointment of\nthe arbitrator by the respondent was valid and it cannot be said that the right\nc\nwas forfeited after expiry of 30 days from the date of demand. Their Lordships\nwere also very clear in their mind in paragraph 21 and observed, \"we need\nnot decide whether for purpose of sub-sections (4) and (5) of Section 11,\nwhich expressly prescribe 30 days, the period of 30 days is mandatory or not.\n\" We are only concerned with reading of 30 days within sub-section (6) of\nD Section 11. So far as the period of 30 days with regard to Section 11(6) is\nconcerned, there is no manner of doubt that their Lordships had not invoked\n-i- .\n.I.\n30 days as mandatory period under Section 11(6) and beyond that it cannot\nbe invoked by the appointing authority. Therefore, it is totally misnomer to\nread 30 days in Section 11 ( 6) of the Act, though Shri Sorabjee, learned senior\ncounsel appearing for the appellant tried to emphasize that the decision in\nE Datar has been affirmed by a three Judge Bench and therefore, 30 days\nshould be read in Section 11(6) of the Act is also not correct.\n8. In the case of Punj Lloyd Ltd. (Supra), Their Lordships only quoted\nparagraph 19 in part and not in full. Full paragraph 19 of the judgment in\nF Datar (supra) has been reproduced above. In fact subsequent observation of\ntheir Lordships, \"We do not, therefore, agree with the observation in the\nabove judgments that if the appointment is not made within 30 days of\ndemand, the right to appoint an arbitrator under Section 11(6) is forfeited\",\nthis portion of order was not reproduced. Therefore, it is not a case that the\ndecision given by two Judge Bench in Datar (supra) has been reaffirmed and\nG this is binding on us. We regret to say this is not correct. In the case of Punj\nLlyod Ltd Their Lordships only set aside the order and remitted the matter\nback to the High Court for appointment of arbitrator by the Chief Justice. But\nthe ratio laid down in Datar (supra) holds good and it is not negatived, the\n~\nperiod of 30 days cannot be read in Section 11(6) of the Act. The relevant\nportion of Punj Lloyd's case (supra) reads as under:-\nH\fACE PIPELINE CONTRACTS PRl\".ATE LTD. v. BHARAT PETROLEUM CORPORATION LTD. [A. K. MATHUR, J.J787\n~\u00b7\n\"Having heard the learned counsel for the parties, we are satisfied A\nthat the appeal deserves to be allowed. The learned counsel for the\nappellant has placed reliance on the law laid down by this Court in\nthe case of Datar Switchgears Ltd v. Tata Finance Ltd. (SCC p.158,\npara 19) wherein this Court has held as under :\n\"So far as Section 11 ( 6) is concerned, if one party demands the B\nopposite party to appoint an arbitrator and the opposite party does\nnot make an appointment within 30 days of the demand, the right to\n...,\nappointment does not get automatically forfeited after expiry of 30\ndays. If the opposite party makes an appointment even after 30 days\nof the demand, but before the first party has moved the court under\nSection 11, that would be sufficient. In other words, in cases arising C\nunder Section 11(6), ifthe opposite party has not made an appointment\nwithin 30 days of demand, the right to make appointment is not\nforfeited but continues, but an appointment has to be made before the\nformer files application under Section 11 seeking appointment of an\nD\narbitrator. Only then the right of the opposite party ceases.\"\n9. The aforesaid quotation would clearly reveal that the crucial words\nin paragraph 5 were not quoted in the aforesaid case which has been reproduced\nabove.\nE\n10. Our attention was also invited to a decision of this Court in the case\nof Union of India v. Popular Construction Co., [2001) 8 SCC 470, This was\nin relation to Section 34(3) of the Act. This is with regard to the period of\nlimitation for moving the Court under Section 34 of the Act for setting aside\nthe award i.e. the period of limitation was prescribed in Section 34 itself.\nTherefore, Section 5 of the Limitation Act was not made applicable. This is\nF\nnot the case before us in the present controversy.\nt\n11. Our attention was also invited to a decision of this Court in the case\nof The State of Uttar Pradesh & Ors. v. Babu Ram Upadhya, [f961] 2 SCR\n679, In that case, their Lordships have dealt with the interpretation of the\nstatute and they have referred to \"Statute Law\" by Craies and \"The\nInterpretation of Statutes\" by Maxwell. Their Lordships have quoted a passage G\nfrom Maxwell which reads as under:\n_r\n\"On the other hand, where the prescriptions of a statute relate to the\nperformance of a public duty and where the invalidation of acts done\nin neglect of them would work serious general inconvenience or H\f788\nSUPREME COURT REPORTS\n[2007) 4 S.C.R.\n\u00b7'r-\nA\ninjustice to persons who have no control over those entrusted with\nthe duty without promoting the essential aims of the legislature, such\nprescriptions seem to be generally understood as mere instructions\nfor the guidance and government of those on whom the duty is\nimposed, or, in other words, as directory only. The neglect of them\n\u00b7may be penal, indeed, but it does not affect the validity of the act\nB\ndone in disregard of them.\"\n--\"\nThis observation, so far as this case is concerned, has no relevance as we\n\"\"\nhave already mentioned above that the period of 30 days cannot be read in\nSub-secti<~n (6) of Section 11 of the Act as the statute does not pennit it.\nTherefore, this case does not help the case of the appellant in any manner.\nc\n12. Our attention was invited to a Full Bench decision of the High Court\nof Delhi J. V. v. Union of India & Ors., decided on 31.8.2006 and a decision\nof the Calcutta High Court in Great Eastern Shipping Co.Ltd (supra). Both\nthese decisions are in total ignorance of the law laid down by this Court in\nD Datar (supra). Therefore, they cannot hold good. We again reemphasize that\n\\..\nin paragraphs 19, 20 & 21 Their Lordships have clearly negatived the submission\n.....\nthat period of 30 days cannot be read in sub-section (6) of Section 11 of the\nAct. Our attention was also invited to a decision of this Court in Shin\nSatellite Public Co.Ltd v. Jain Studios Ltd, [2006] 2 SCC 628. This decision\nwas given by Hon'ble C.K. Thakker, J. in chambers. There also, no such view\nE has been taken by learned Judge that the period of 30 days should be read\nin sub-section (6) of Section 11 of the 'Acl. Our attention was also invited to\na decision of this Court in BSNL & Ors. v. Subash Chandi-a Kanchan & Anr.,\n[2006] 8 sec 279. There also, the\u00b7 question was whether the appellant was\nconsenting party to appointment of arbitrator or not. Appointment of arbitrator\nF was made by the High Court with the consent of parties which was\n.....\nsubsequently sought to be revoked on the ground that no instruction in that\nbehalf was given. But that contention was negatived by the Court and there\nalso, the question of appointnient of arbitrator within the period of 30 days\nwas not decided. In this connection a reference may also be made to a\ndecision of this Court in the case\u00b7 of-Union of India & Anr. v. MP.Gupta,\nG [2004] 10 SCC 504. In that case, arbitrator was appointed by the High Court\ndirectly a\u00b7Judge of the High Court because no arbi_trator was appointed by\nthe Railway Authorities as per Clause 64 of their agreement. Their Lordships\n~-\nafter considering the matter observed that the appointment of arbitrator by\nthe High Court under Section 20 of the Arbitration Act, 1940 cannot be\nupheld in view of Clause 64 of the agreement because. as per Clause 64 of\nH\f~\nJ.J789\nACE PIPEUNE CONTRACTS PRIVATE LTD. v. BHARAT PETROLEUM CORPORATION LTD. [A. K. MATHUR,\nthe agreement, two arbitrators have to be appointed who should be gazetted A\n--I\u00b7\nrailway officers. Therefore, as per the terms of the agreement their Lordships\nheld that the appointment of arbitrator by the High Court was not correct and\nset aside the order and directed the Railways to appoint arbitrators within 30\ndays. Similar issue came up before this Court in Union of India & Anr. v. Ml\u00b7.\ns. V.S. Engineering Pvt. Ltd, [2006] 12 SCALE 144. This Court after considering\nthe decision in Union of India & Anr. v. MP.Gupta, [2004] 10 SCC 504, and B\nDatar Switchgears Ltd (supra) directed that as per Clauses 63 & 64 of the\nGeneral Clauses of the Contract, only two gazetted officers of the railways\n.>\nhave to be appointed as arbitrators. However, it was observed that failure on\n.>.\nthe part of the Department to take a decision for appointment of arbitrators\nc\nwould not defeat the right of the party to approach the High Court for\nappointment of arbitrator. Direction was given to the Department for\nappointment of arbitrators within 30 days.\n\".'\n13. It may also not be out of place to mention that we are aware of the\nDepartmental lethargy in making appointment of arbitrators in terms of the\n\u00b7 arbitration clause. Therefore, mandamus can be issued by the Courts in D\nexercise of powers under Section 11 ( 6) of the Act but the demand should be\nin the event of failure by the authorities to appoint arbitrators within the\n'f\n,.J\nreasonable time. Courts are not powerless to issue mandamus to the authorities\nto appoint arbitrators as far as possible as per the arbitration clause. But in\nlarge number of cases if it is found that it would not be conducive in the\nE\ninterest of parties or for any other reasons to be recorded in writing, choice\ncan go beyond the designated persons or institutions in appropriate cases.\nBut it should normally be adhered to the terms of arbitration clause & appoint\nthe arbitratonarbitrators named therein except in exceptional cases for reasons\nto be recorded or where both parties agree for common name.\nF\n14. In the present case, in fact the appellant's demand was to get some\nretired Judge of the Supreme Court to be appointed as arbitrator on the\nground that if any person nominated in the arbitration clause is appointed,\nthen it may suffer from bias or the arbitrator may not be impartial or independent\nin taking decision. Once a party has entered into an agreement with eyes wide\nopen it cannot wriggle out of the situation that if any person of the respondent- G\nBPCL is appointed as arbitrator he will not be impartial or objective. However,\nif the appellant feels that the arbitrator has not acted independently or\nimpartially, or he has suffered from any bias, it will always be open to the\nparty to make an application under Section 34 of the Act to set aside the\n/r\naward on the ground that arbitrator acted with bias or malice in law or fact.\nH\fSUPREME COURT REPORTS\n[2007] 4 S.C.R.\n790\nA\n15. In view of our above discussion, we find no reason to interfere with\n.........\nthe order passed by the learned Single Judge of the High Court of'Delhi in\nArbitration Petition No.181 of2005. The arbitrator has already been appointed.\nHe should proceed in the matter and decide the dispute expeditiously.\n-\nConsequently, the appeal is dismissed with no order as to costs.\nI\nB B.B.B.\nAppeal dismissed.",
+  "doc_type": "Court Order / Judgment"
+ },
+ {
+  "id": "doc_rent",
+  "turns": [
+   "Please check whether this document is legally valid and complete."
+  ],
+  "intent": [
+   "document_analysis"
+  ],
+  "doc": "RENT AGREEMENT\n\nThis Rent Agreement is made at New Delhi on 1st April 2023 between Sh. Pradeep Kumar, R/o B-34, Kalkaji, New Delhi (LANDLORD) and Mr. Aditya Sharma, permanent R/o Jaipur, Rajasthan (TENANT).\n\n1. The Landlord lets out the second floor of B-34, Kalkaji, consisting of two bedrooms, drawing-dining, kitchen and two toilets, to the Tenant for residential purposes only.\n2. The tenancy shall be for 11 months commencing from 01.04.2023.\n3. The monthly rent is Rs. 28,000/- payable in advance by the 7th of each month.\n4. The Tenant has paid a security deposit of Rs. 56,000/-, refundable without interest at the time of vacating, after deduction of dues if any.\n5. Electricity and water charges shall be paid by the Tenant as per the sub-meter reading.\n6. The Tenant shall not sublet the premises or make structural changes.\n7. Either party may terminate this agreement by giving one month's notice.\n8. The rent shall be increased by 10 percent on renewal.",
+  "doc_type": "Rent Agreement"
+ },
+ {
+  "id": "dog_killed",
+  "turns": [
+   "My neighbour killed my dog by poisoning it"
+  ],
+  "intent": [
+   "crime_report"
+  ],
+  "crime": [
+   "property_damage"
+  ]
+ }
+]
