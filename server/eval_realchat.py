@@ -19,6 +19,23 @@ sys.path.insert(0, ".")
 
 CASES = Path("tests/gold/realchat_cases.json")
 OUT = Path("results")
+# The ICDAR FIR scans have no declared licence, so their OCR text is referenced by image name and read from the local cache.
+FIR_OCR = Path.home() / ".cache" / "lawweb" / "fir_icdar" / "ocr.json"
+
+
+def fir_text(image_name: str) -> str:
+    if not FIR_OCR.exists():
+        sys.exit(f"{FIR_OCR} is missing: build it with eval_doc_type.py (see tests/gold/README.md)")
+    return json.loads(FIR_OCR.read_text())[image_name]
+
+
+def load_cases() -> list:
+    cases = json.loads(CASES.read_text())
+    for c in cases:
+        ref = c.pop("doc_ref", None)
+        if ref:
+            c["doc"] = fir_text(ref["id"])
+    return cases
 
 
 def _path(label: str) -> Path:
@@ -39,7 +56,7 @@ async def run(label: str) -> None:
     done = {r["id"] for r in _rows(label)}
     bot = get_chatbot()
     OUT.mkdir(exist_ok=True)
-    for c in json.loads(CASES.read_text()):
+    for c in load_cases():
         if c["id"] in done:
             continue
         sid = f"realchat-{label}-{c['id']}-{int(time.time())}"
@@ -70,7 +87,7 @@ async def run(label: str) -> None:
 
 
 def report(labels: list) -> None:
-    cases = {c["id"]: c for c in json.loads(CASES.read_text())}
+    cases = {c["id"]: c for c in load_cases()}
     print(f"{'label':22} {'cases':>5} {'intent':>7} {'crime':>6} {'errors':>6} {'no-match':>8} {'incomplete':>10} {'total s':>8}  median s by intent")
     for label in labels:
         rows = _rows(label)

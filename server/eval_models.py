@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import statistics
 import sys
 import time
@@ -28,9 +29,9 @@ os.chdir(Path(__file__).resolve().parent)
 sys.path.insert(0, ".")
 
 from app.metrics import model_bench as mb  # noqa: E402
+from eval_realchat import fir_text, load_cases  # noqa: E402
 
 GOLD = Path("tests/gold/model_bench.jsonl")
-CASES = Path("tests/gold/realchat_cases.json")
 OUT = Path("results/model_bench")
 CALLS = Path("tests/gold/model_bench_calls.jsonl")
 FIT = OUT / "fit.json"
@@ -74,6 +75,30 @@ def load_items() -> list:
 
 def read_jsonl(path: Path) -> list:
     return [json.loads(l) for l in path.read_text().splitlines() if l.strip()] if path.exists() else []
+
+
+_FIR_MARK_RE = re.compile(r"\{\{icdar_fir:(.+?)\}\}")
+
+
+def load_calls() -> list:
+    """Captured prompts, with the unlicensed FIR text (stored as a reference) filled in from the local cache."""
+    calls = read_jsonl(CALLS)
+    for c in calls:
+        c["prompt"] = _FIR_MARK_RE.sub(lambda m: fir_text(m.group(1)), c["prompt"])
+    return calls
+
+
+def mask_fir(prompt: str) -> str:
+    """Inverse of load_calls(): swap any referenced FIR text in a captured prompt back to its reference."""
+    from app.prompts import sanitize_untrusted_document
+    from eval_realchat import CASES as cases_path
+
+    for c in json.loads(cases_path.read_text()):
+        ref = c.get("doc_ref")
+        if ref:
+            text = sanitize_untrusted_document(fir_text(ref["id"]))
+            prompt = prompt.replace(text, "{{icdar_fir:" + ref["id"] + "}}")
+    return prompt
 
 
 def append_jsonl(path: Path, row: dict) -> None:
@@ -132,7 +157,7 @@ async def _capture() -> None:
     from app import chatbot as cb
 
     _patch_chat_ollama()
-    cases = {c["id"]: c for c in json.loads(CASES.read_text())}
+    cases = {c["id"]: c for c in load_cases()}
     done = {c["item"] for c in read_jsonl(CALLS)}
     bot = None
     for item in load_items():
@@ -157,7 +182,7 @@ async def _capture() -> None:
             await bot.chat(message=item["message"], session_id=f"bench-{item['id']}-{int(time.time())}", document_content=doc)
         calls = _captured[before:]
         for c in calls:
-            append_jsonl(CALLS, c)
+            append_jsonl(CALLS, {**c, "prompt": mask_fir(c["prompt"])})
         print(f"{item['id']}: {[c['role'] for c in calls]}", flush=True)
     print("CAPTURE DONE", flush=True)
 
@@ -301,7 +326,7 @@ def screen_ids(items: list) -> set:
 def cmd_replay(args) -> None:
     items = load_items()
     wanted = screen_ids(items) if args.screen else {it["id"] for it in items}
-    calls = [c for c in read_jsonl(CALLS) if c["item"] in wanted]
+    calls = [c for c in load_calls() if c["item"] in wanted]
     fit = json.loads(FIT.read_text())
     done = {(r["model"], r["item"], r["seq"], r["run"]) for r in read_jsonl(REPLAY)}
     with httpx.Client(base_url=ollama_url(), timeout=120) as client:
@@ -352,7 +377,7 @@ def cmd_score(args) -> None:
     rag = asyncio.run(_rag())
     items = {it["id"]: it for it in load_items()}
     calls = {}
-    for c in read_jsonl(CALLS):
+    for c in load_calls():
         calls.setdefault(c["item"], []).append(c)
     fit = json.loads(FIT.read_text())
     rows = read_jsonl(REPLAY)
@@ -439,7 +464,7 @@ def cmd_score(args) -> None:
 def cmd_blind(args) -> None:
     items = load_items()
     calls = {}
-    for c in read_jsonl(CALLS):
+    for c in load_calls():
         calls.setdefault(c["item"], []).append(c)
     chosen, seen = [], {}
     for it in items:
