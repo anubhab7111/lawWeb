@@ -1,0 +1,47 @@
+{"id": "a_real_theft_q", "stratum": "A", "message": "What is the punishment for theft under Indian law?", "source": "realchat:real_theft_q"}
+{"id": "a_real_art21", "stratum": "A", "message": "What does Article 21 guarantee?", "source": "realchat:real_art21"}
+{"id": "a_real_bail", "stratum": "A", "message": "What is bail under CrPC?", "source": "realchat:real_bail"}
+{"id": "a_real_art19", "stratum": "A", "message": "Can Parliament pass a law restricting social media speech citing public order? How would courts test its constitutionality under Article 19?", "source": "realchat:real_art19"}
+{"id": "a_evict", "stratum": "A", "message": "Can my landlord evict me without notice in Delhi?", "source": "realchat:evict"}
+{"id": "a_will_reg", "stratum": "A", "message": "Is a will valid without registration?", "source": "realchat:will_reg"}
+{"id": "a_hma_divorce", "stratum": "A", "message": "What are the grounds for divorce under the Hindu Marriage Act?", "source": "realchat:hma_divorce"}
+{"id": "a_salary", "stratum": "A", "message": "My employer hasn't paid my salary for 3 months, what are my options?", "source": "realchat:salary"}
+{"id": "a_murder_bns", "stratum": "A", "message": "What is the punishment for murder under the Bharatiya Nyaya Sanhita?", "source": "new"}
+{"id": "a_cheating_bns", "stratum": "A", "message": "What is the punishment for cheating under the Bharatiya Nyaya Sanhita?", "source": "new"}
+{"id": "a_cheque", "stratum": "A", "message": "What happens if a cheque bounces? What is the punishment under the Negotiable Instruments Act?", "source": "new"}
+{"id": "a_consumer_limit", "stratum": "A", "message": "Within what time must a consumer complaint be filed under the Consumer Protection Act, 2019?", "source": "new"}
+{"id": "a_rti_time", "stratum": "A", "message": "How many days does a public authority have to reply to an RTI application?", "source": "new"}
+{"id": "a_art14", "stratum": "A", "message": "What does Article 14 of the Constitution guarantee?", "source": "new"}
+{"id": "a_anticip_bail", "stratum": "A", "message": "What is anticipatory bail and which court can grant it?", "source": "new"}
+{"id": "a_marriage_age", "stratum": "A", "message": "What is the minimum age for marriage under the Hindu Marriage Act?", "source": "new"}
+{"id": "b_bns", "stratum": "B", "message": "Explain me what is bns?", "source": "new"}
+{"id": "b_bnss", "stratum": "B", "message": "What is BNSS?", "source": "new"}
+{"id": "b_bsa", "stratum": "B", "message": "What is the full form of BSA in Indian law?", "source": "new"}
+{"id": "b_bns_force", "stratum": "B", "message": "When did the Bharatiya Nyaya Sanhita come into force?", "source": "new"}
+{"id": "b_ipc_replaced", "stratum": "B", "message": "Which law replaced the Indian Penal Code?", "source": "new"}
+{"id": "b_ipc_vs_bns", "stratum": "B", "message": "What is the difference between IPC and BNS?", "source": "new"}
+{"id": "c_consumer_fee", "stratum": "C", "message": "What is the court fee for filing a consumer complaint worth 10 lakh rupees?", "source": "new"}
+{"id": "c_min_wage", "stratum": "C", "message": "What is the current minimum wage for unskilled workers in Delhi?", "source": "new"}
+{"id": "c_stamp_duty", "stratum": "C", "message": "What is the stamp duty on a rent agreement in Maharashtra?", "source": "new"}
+{"id": "c_rti_fee", "stratum": "C", "message": "What is the fee for filing an RTI application?", "source": "new"}
+{"id": "c_tax_rate", "stratum": "C", "message": "What is the income tax rate on an income of 12 lakh rupees this year?", "source": "new"}
+{"id": "c_helmet", "stratum": "C", "message": "What is the fine for riding a motorcycle without a helmet?", "source": "new"}
+{"id": "c_passport", "stratum": "C", "message": "How many days does it take to get a passport issued in India?", "source": "new"}
+{"id": "d_real_rape", "stratum": "D", "message": "I got raped in market, please help", "source": "realchat:real_rape"}
+{"id": "d_snatch", "stratum": "D", "message": "Someone snatched my phone near the bus stop an hour ago", "source": "realchat:snatch"}
+{"id": "d_threat", "stratum": "D", "message": "My neighbour keeps threatening to kill me if I don't move out of the building", "source": "realchat:threat"}
+{"id": "d_dv", "stratum": "D", "message": "my husband beats me every night when he is drunk and his mother supports him", "source": "realchat:dv"}
+{"id": "d_cyber", "stratum": "D", "message": "Got a call saying my son was arrested, I paid 50000 on UPI and now the number is switched off", "source": "realchat:cyber"}
+{"id": "d_dowry", "stratum": "D", "message": "My in-laws are demanding 5 lakh more dowry and threatening to throw me out of the house", "source": "realchat:dowry"}
+{"id": "d_shop_burglary", "stratum": "D", "message": "Someone broke into my shop at night and took the cash box", "source": "realchat:shop_burglary"}
+{"id": "d_dog_killed", "stratum": "D", "message": "My neighbour killed my dog by poisoning it", "source": "realchat:dog_killed"}
+{"id": "d_real_lost_bike", "stratum": "D", "message": "I lost my bike at the market today, what do I do?", "source": "realchat:real_lost_bike"}
+{"id": "e_doc_fir", "stratum": "E", "message": "Please check whether this document is legally valid and complete.", "case": "doc_fir", "source": "realchat:doc_fir"}
+{"id": "e_doc_rent", "stratum": "E", "message": "Please check whether this document is legally valid and complete.", "case": "doc_rent", "source": "realchat:doc_rent"}
+{"id": "e_doc_judgment", "stratum": "E", "message": "Please check whether this document is legally valid and complete.", "case": "doc_judgment", "source": "realchat:doc_judgment"}
+{"id": "f_snatch", "stratum": "F", "message": "Someone snatched my phone near the bus stop an hour ago", "contenders": ["crime_report", "general_query"], "gold": {"intent": "crime_report"}, "source": "realchat:snatch"}
+{"id": "f_divorce_lawyer", "stratum": "F", "message": "Need a divorce lawyer in Mumbai", "contenders": ["find_lawyer", "general_query"], "gold": {"intent": "find_lawyer"}, "source": "realchat:divorce_mumbai"}
+{"id": "f_hma", "stratum": "F", "message": "What are the grounds for divorce under the Hindu Marriage Act?", "contenders": ["find_lawyer", "general_query"], "gold": {"intent": "general_query"}, "source": "realchat:hma_divorce"}
+{"id": "f_threat", "stratum": "F", "message": "My neighbour keeps threatening to kill me if I don't move out of the building", "contenders": ["crime_report", "general_query"], "gold": {"intent": "crime_report"}, "source": "realchat:threat"}
+{"id": "f_evict", "stratum": "F", "message": "Can my landlord evict me without notice in Delhi?", "contenders": ["crime_report", "general_query"], "gold": {"intent": "general_query"}, "source": "realchat:evict"}
+{"id": "f_bail_lawyer", "stratum": "F", "message": "Can you suggest a good criminal advocate in Bengaluru for my brother's bail?", "contenders": ["find_lawyer", "general_query"], "gold": {"intent": "find_lawyer"}, "source": "realchat:bail_bengaluru"}
