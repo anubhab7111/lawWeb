@@ -59,6 +59,7 @@ NUM_CTX = 8192
 SEED0 = 1000
 SCREEN_PER_STRATUM = {"A": 4, "B": 2, "C": 2, "D": 2, "E": 1, "F": 2}
 BLIND_PER_STRATUM = {"A": 6, "B": 3, "C": 2, "D": 3, "E": 1}
+BLIND_MAX_CHARS = 3000
 
 
 def ollama_url() -> str:
@@ -457,7 +458,10 @@ def cmd_blind(args) -> None:
         for r in answers:
             code = hashlib.sha1(f"{it['id']}|{r['model']}|{rng.random()}".encode()).hexdigest()[:6]
             key[code] = {"item": it["id"], "model": r["model"]}
-            sheet.append(f"\n{'-' * 60}\nANSWER {code}\n{r['visible'] or '(no answer produced)'}")
+            text = r["visible"] or "(no answer produced)"
+            if len(text) > BLIND_MAX_CHARS:
+                text = f"{text[:BLIND_MAX_CHARS]}\n[... {len(text) - BLIND_MAX_CHARS} more characters; ended: {r['done_reason']}]"
+            sheet.append(f"\n{'-' * 60}\nANSWER {code}\n{text}")
     (OUT / "blind_sheet.txt").write_text("".join(sheet))
     (OUT / "blind_key.json").write_text(json.dumps(key, indent=1))
     print(f"{len(key)} answers over {len(chosen)} items -> {OUT / 'blind_sheet.txt'} (key kept in blind_key.json)")
