@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@babel/runtime": "^7.29.10",
     "braintree-web-drop-in-react": "^1.2.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
