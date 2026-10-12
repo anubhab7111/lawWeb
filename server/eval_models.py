@@ -32,7 +32,7 @@ from app.metrics import model_bench as mb  # noqa: E402
 GOLD = Path("tests/gold/model_bench.jsonl")
 CASES = Path("tests/gold/realchat_cases.json")
 OUT = Path("results/model_bench")
-CALLS = OUT / "calls.jsonl"
+CALLS = Path("tests/gold/model_bench_calls.jsonl")
 FIT = OUT / "fit.json"
 REPLAY = OUT / "replay.jsonl"
 SCORES = OUT / "scores.json"
