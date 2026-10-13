@@ -142,7 +142,7 @@ Before looking at any automated findings, reason independently about what this t
 
 Think through the following, step by step:
 
-1. **GOVERNING STATUTES:** Which specific Indian Acts, Sections, and Rules govern this document type? List each with its section number.
+1. **GOVERNING STATUTES:** Which specific Indian Acts and Rules govern this document type? Name each Act with at most three key section numbers; never list a run or range of sections.
 
 2. **MANDATORY ELEMENTS:** What elements are absolutely required by statute? For each element, state:
    - What it is

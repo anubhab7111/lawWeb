@@ -11,12 +11,12 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
 
-    llm_model: str = "qwen3:4b"
+    llm_model: str = "qwen3:4b-instruct"
 
-    fast_llm_model: str = "qwen3:4b"
+    fast_llm_model: str = "qwen3:4b-instruct"
     llm_temperature: float = 0.1
 
-    llm_thinking: bool = True
+    llm_thinking: bool = False
 
     reranker_model: str = "BAAI/bge-reranker-base"
     reranker_model_gpu: str = "BAAI/bge-reranker-v2-m3"

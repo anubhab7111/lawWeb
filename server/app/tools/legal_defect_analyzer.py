@@ -1,5 +1,6 @@
 """Legal Defect Analyzer (Layer 3) — ReAct Pattern Uses Reasoning-then-Action (ReAct) prompting for document validation."""
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.prompts import (
@@ -28,6 +29,15 @@ DISCLAIMER_FOOTER = (
     "the substantive validity or enforceability of the document. "
     "For a definitive legal opinion, consult a practising advocate.*"
 )
+
+
+_NUMBER_RUN_RE = re.compile(r"(?:\d{1,4}[A-Za-z]?\s*,\s*){15,}")
+_CHECKLIST_MAX_WORDS = 600
+
+
+def is_degenerate_checklist(text: str) -> bool:
+    """A THINK output that is a runaway enumeration ("Section 10, 11, 12, ...") or far over the 300 words asked for. Such output must not be cached as the checklist for its document kind."""
+    return bool(_NUMBER_RUN_RE.search(text)) or len(text.split()) > _CHECKLIST_MAX_WORDS
 
 
 class LegalDefectAnalyzer:
@@ -122,7 +132,12 @@ class LegalDefectAnalyzer:
             ),
         )
 
-        return await self._invoke_llm(prompt)
+        from app.chatbot import get_think_llm
+
+        checklist = await self._invoke_llm(prompt, llm=get_think_llm())
+        if is_degenerate_checklist(checklist):
+            raise RuntimeError("THINK output was a runaway list, not a checklist")
+        return checklist
 
     @staticmethod
     def _regex_findings(validation: StatutoryValidationResult) -> Dict[str, str]:
@@ -253,12 +268,12 @@ class LegalDefectAnalyzer:
             text, rag.find_case if ready else (lambda name: None)
         )
 
-    async def _invoke_llm(self, prompt: str, stream: bool = False) -> str:
+    async def _invoke_llm(self, prompt: str, stream: bool = False, llm=None) -> str:
         """Invoke the LLM with a prompt and return the response content."""
         from app.chatbot import _INCOMPLETE_GENERATION_NOTE, invoke_llm_safely
 
         text = await invoke_llm_safely(
-            self.llm, prompt, stream=stream, notify_incomplete=False
+            llm or self.llm, prompt, stream=stream, notify_incomplete=False
         )
         if text == _INCOMPLETE_GENERATION_NOTE:
             raise RuntimeError("LLM did not finish this step")
