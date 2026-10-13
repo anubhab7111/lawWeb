@@ -62,3 +62,41 @@ def test_think_fallback_is_not_cached(monkeypatch):
     assert asyncio.run(analyzer.think(fir)) == analyzer._fallback_think(fir)
     assert asyncio.run(analyzer.think(fir)) == "fir checklist"
     assert len(calls) == 2
+
+
+def test_degenerate_checklist_detection():
+    runaway = "**THOUGHT 1 — Governing Law:**\nIndian Contract Act, 1872 (Section " + ", ".join(
+        str(n) for n in range(10, 200)
+    )
+    assert lda.is_degenerate_checklist(runaway)
+    assert lda.is_degenerate_checklist("word " * 700)
+    ok = (
+        "**THOUGHT 1 — Governing Law:**\nIndian Contract Act, 1872 (Section 1, 2, 17); Registration Act, 1908 (Section 17).\n"
+        "**THOUGHT 2 — Mandatory Elements Checklist:**\n- Parties — Section 10 — void if missing"
+    )
+    assert not lda.is_degenerate_checklist(ok)
+
+
+def test_runaway_think_output_falls_back_and_is_not_cached(monkeypatch):
+    monkeypatch.setattr(lda, "_THINK_CACHE", {})
+    import app.chatbot as cb
+
+    monkeypatch.setattr(cb, "get_think_llm", lambda: object())
+    outputs = ["Section " + ", ".join(str(n) for n in range(10, 400)), "rent checklist"]
+    analyzer = lda.LegalDefectAnalyzer(llm=None)
+
+    async def fake_invoke(prompt, stream=False, llm=None):
+        return outputs.pop(0)
+
+    analyzer._invoke_llm = fake_invoke
+    rent = DocumentClassification(document_type="Rent Agreement", confidence=0.9)
+
+    assert asyncio.run(analyzer.think(rent)) == analyzer._fallback_think(rent)
+    assert lda._THINK_CACHE == {}
+    assert asyncio.run(analyzer.think(rent)) == "rent checklist"
+
+
+def test_think_prompt_limits_section_lists():
+    from app.prompts import REACT_THINK_PROMPT
+
+    assert "at most three key section numbers" in REACT_THINK_PROMPT

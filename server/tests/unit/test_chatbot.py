@@ -110,6 +110,8 @@ def _report(score, flagged=(), llm_succeeded=True):
 
 @pytest.fixture(autouse=True)
 def env(monkeypatch):
+    # FakeLLM models a thinking build (reasoning, then "</think>", then the answer).
+    monkeypatch.setenv("LLM_THINKING", "true")
     get_settings.cache_clear()
     monkeypatch.setattr(cb, "_llm_breaker", cb._LLMCircuitBreaker())
     rate_limit.reset_rate_limits()
@@ -331,6 +333,40 @@ def test_chat_and_stream_agree(monkeypatch):
         "response"
     ]
     assert streamed.strip() == plain.strip()
+
+
+class PlainLLM(FakeLLM):
+    """A non-thinking build: the answer with no reasoning block."""
+
+    async def ainvoke(self, messages):
+        self.prompts.append(messages[0].content)
+        return SimpleNamespace(content=self._next())
+
+    async def astream(self, messages):
+        self.prompts.append(messages[0].content)
+        for word in self._next().split(" "):
+            yield SimpleNamespace(content=word + " ")
+
+
+def test_non_thinking_model_answers_in_chat_and_stream(monkeypatch):
+    monkeypatch.setenv("LLM_THINKING", "false")
+    get_settings.cache_clear()
+    args = (_classification("general_query"), [_statute()], [_report(1.0)])
+    streamed = run(Rig(monkeypatch, PlainLLM(["Plain answer."]), *args).stream())[-1]["response"]
+    plain = run(
+        Rig(monkeypatch, PlainLLM(["Plain answer."]), *args).bot.chat("Can an FIR be quashed by the High Court?", "s")
+    )["response"]
+    assert streamed.strip() == plain.strip() == "Plain answer."
+
+
+def test_default_settings_are_the_non_thinking_instruct_model(monkeypatch):
+    for name in ("LLM_THINKING", "LLM_MODEL", "FAST_LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    from app.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.llm_thinking is False
+    assert settings.llm_model == settings.fast_llm_model == "qwen3:4b-instruct"
 
 
 def _state(text, doc=None, messages=()):

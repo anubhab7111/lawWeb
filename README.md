@@ -19,7 +19,7 @@ Optional integrations (all off unless configured in `server/.env`): `FCM_SERVICE
 
 - **Conda env** `legal_chatbot_env` (Python 3.14) — the project's only supported Python environment.
 - **PostgreSQL** running locally (one-time setup below).
-- **Ollama** with `qwen3:4b` pulled (the default answering model; change `LLM_MODEL` / `FAST_LLM_MODEL` in `server/.env`, and set `LLM_THINKING=false` for models that don't emit a thinking block).
+- **Ollama** with `qwen3:4b-instruct` pulled (the default answering model, chosen by the benchmark in `server/eval_models.py`; change `LLM_MODEL` / `FAST_LLM_MODEL` in `server/.env`, and set `LLM_THINKING=true` only for a build that always opens a thinking block, such as `qwen3:4b`).
 - **Tesseract + Poppler** for OCR (`pytesseract`, `pdf2image`).
 - **Node 18+** for the client only.
 

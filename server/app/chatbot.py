@@ -118,6 +118,26 @@ def get_llm() -> ChatOllama:
     )
 
 
+THINK_NUM_PREDICT = 1000
+
+
+@lru_cache()
+def get_think_llm() -> ChatOllama:
+    """get_llm() with a short output limit, for the document THINK checklist (under 300 words by its prompt)."""
+    settings = get_settings()
+    return ChatOllama(
+        model=settings.llm_model,
+        temperature=settings.llm_temperature,
+        base_url=settings.ollama_base_url,
+        num_ctx=LLM_NUM_CTX,
+        # A thinking build spends most of its budget before the checklist starts.
+        num_predict=LLM_NUM_PREDICT if settings.llm_thinking else THINK_NUM_PREDICT,
+        timeout=210.0,
+        reasoning=False,
+        keep_alive="1h",
+    )
+
+
 def _truncate_block(block: str, max_chars: int) -> str:
     """Cut a context block to max_chars at a provision boundary (" • " entries) or, failing that, the last line/sentence end."""
     if len(block) <= max_chars:
