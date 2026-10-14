@@ -58,7 +58,7 @@ Not shown: the v1 cheque mock-up (the real app answers that question wrongly; re
 
 ## Storyboard (≈ 50 % architecture, 40 % metrics, 10 % live product)
 1. **Hook** — VRAM meter (live reading) + headline.
-2. **Live** — real capture in a browser card (wait at 8×, streaming at 1×, tail at 4×, speed badge + real elapsed timer), nvidia-smi panel beside it, label "qwen3:4b-instruct (PR #64, not merged)".
+2. **Live** — real capture in a browser card (wait at 7×, then 6 s of streaming in real time, speed badge + real elapsed timer), nvidia-smi panel beside it, label "qwen3:4b-instruct (PR #64, not merged)". The clip ends before the answer's last two lines, which misstate CrPC §151(2) and §41; reported, not shown.
 3. **System architecture** — client → FastAPI (SSE) → LangGraph → GPU lane (Ollama, qwen3 4B) and CPU lane (BGE-M3, reranker, InLegalBERT statute classifier, routing/doc/crime heads, fastText + IndicTrans2) → data (unified statute index, judgment index, case law, Postgres chat memory).
 4. **Agent graph** — real node names and the corrective loop.
 5. **Retrieval** — BM25 + BGE-M3 → RRF → rerank; index sizes; hit@3 0.90 (39 questions, re-run).

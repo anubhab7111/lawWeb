@@ -171,7 +171,7 @@ def multilingual_scene(d):
         ("Mask citations", "§ 41 · BNSS · AIR 1978 SC 597 → placeholders"),
         ("Translate to English", "IndicTrans2 200M via CTranslate2, on the CPU"),
         ("Answer in English", "the same LangGraph pipeline"),
-        ("Translate back, restore", "citations and markdown put back (PR #65)"),
+        ("Translate back, restore", "citations restored; a line that would lose one stays in English (PR #65)"),
     ]
     step_html = "\n".join(
         f'            <div class="ml-step"><div class="ml-n num">{i + 1}</div><div><div class="ml-t">{t}</div>'
