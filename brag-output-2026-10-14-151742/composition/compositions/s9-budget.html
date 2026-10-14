@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s9-root { position: absolute; inset: 0; overflow: hidden; }
+        #s9-stage { position: absolute; inset: 0; background: var(--bg); }
+        #s9-meter { position: absolute; left: 120px; top: 300px; width: 1680px; }
+        #s9-m-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+        #s9-m-k { font: 600 24px/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-2); }
+        #s9-m-v { font-size: 48px; line-height: 1; color: var(--text-strong); }
+        #s9-m-v span { font-size: 34px; color: var(--muted); }
+        #s9-track { position: relative; width: 1680px; height: 84px; border-radius: 10px; background: var(--surface-alt); border: 1px solid var(--border-2); overflow: hidden; }
+        #s9-fill {
+          position: absolute; left: 0; top: 0; width: 1533px; height: 84px; transform-origin: left center;
+          background: linear-gradient(90deg, var(--accent-line), var(--accent));
+          display: flex; align-items: center; padding-left: 30px;
+          font: 500 26px/1 var(--font-mono); color: var(--text-strong);
+        }
+        #s9-head-room { position: absolute; right: 0; top: 0; width: 147px; height: 84px; display: flex; align-items: center; justify-content: center; font: 500 20px/1.1 var(--font-body); color: var(--muted); text-align: center; }
+        #s9-grid { position: absolute; left: 120px; top: 500px; width: 1680px; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+        .s9-chip { padding: 30px 36px; }
+        .s9-chip-t { font: 520 38px/1.15 var(--font-head); letter-spacing: -0.01em; color: var(--text-strong); }
+        .s9-chip-t code { font: 500 32px/1 var(--font-mono); color: var(--accent-dark); }
+        .s9-chip-d { font: 400 25px/1.35 var(--font-body); color: var(--text-2); margin-top: 10px; }
+      </style>
+
+      <div id="s9-root" data-composition-id="s9-budget" data-width="1920" data-height="1080">
+        <div id="s9-stage">
+          <div class="fig-head" id="s9-head">
+            <div class="fig-tag">Fig. 8 · Hardware budget</div>
+            <div class="fig-title">Every byte <em>budgeted</em></div>
+          </div>
+
+          <div id="s9-meter">
+            <div id="s9-m-top">
+              <div id="s9-m-k">RTX 3050 laptop GPU · 4 GB VRAM</div>
+              <div id="s9-m-v" class="num">3.65 <span>/ 4.00 GB</span></div>
+            </div>
+            <div id="s9-track">
+              <div id="s9-fill">qwen3 4B weights + KV cache at num_ctx 8192</div>
+              <div id="s9-head-room">headroom</div>
+            </div>
+          </div>
+
+          <div id="s9-grid">
+            <div class="card s9-chip">
+              <div class="s9-chip-t">Embeddings and reranker on the CPU</div>
+              <div class="s9-chip-d">so the language model never spills off the GPU</div>
+            </div>
+            <div class="card s9-chip">
+              <div class="s9-chip-t">One <code>num_ctx</code> for every call</div>
+              <div class="s9-chip-d">no ~2 s model reloads in the middle of a request</div>
+            </div>
+            <div class="card s9-chip">
+              <div class="s9-chip-t">Reranker fine-tune at 2.35 GB peak</div>
+              <div class="s9-chip-d">frozen word embeddings, small micro-batches</div>
+            </div>
+            <div class="card s9-chip">
+              <div class="s9-chip-t">Resumable, thermal-guarded GPU jobs</div>
+              <div class="s9-chip-d">the 1M-passage index build survives power cuts</div>
+            </div>
+          </div>
+
+          <div class="fig-source" id="s9-src">15 GB of system RAM, shared by the API, the search indices and the model runner.</div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const tl = gsap.timeline({ paused: true });
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#s9-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#s9-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
+          tl.fromTo("#s9-meter", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 0.5);
+          tl.fromTo("#s9-fill", { scaleX: 0 }, { scaleX: 1, duration: 1.0, ease: "power2.inOut" }, 0.7);
+          tl.fromTo("#s9-head-room", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 1.6);
+          tl.fromTo(".s9-chip", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, stagger: 0.35, ease: "power2.out" }, 1.7);
+          tl.fromTo("#s9-src", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 3.3);
+          tl.to("#s9-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 6.0);
+          window.__timelines["s9-budget"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

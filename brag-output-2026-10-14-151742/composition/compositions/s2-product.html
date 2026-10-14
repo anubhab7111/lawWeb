@@ -1,0 +1,161 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s2-root { position: absolute; inset: 0; overflow: hidden; }
+        #s2-stage { position: absolute; inset: 0; background: var(--bg); }
+        #s2-cap { position: absolute; left: 160px; top: 54px; display: flex; align-items: baseline; gap: 26px; }
+        #s2-cap-title { font: 520 46px/1 var(--font-head); letter-spacing: -0.015em; color: var(--text-strong); }
+        #s2-window {
+          position: absolute; left: 160px; top: 136px; width: 1600px; height: 890px;
+          background: var(--surface); border: 1px solid var(--border-2); border-radius: 12px;
+          box-shadow: 0 30px 70px rgba(30, 26, 17, 0.14), 0 2px 8px rgba(30, 26, 17, 0.06);
+          overflow: hidden;
+        }
+        #s2-nav {
+          position: absolute; left: 0; top: 0; right: 0; height: 84px; display: flex; align-items: center; gap: 44px;
+          padding: 0 40px; border-bottom: 1px solid var(--border);
+        }
+        .s2-brand { display: flex; align-items: center; gap: 14px; margin-right: 20px; }
+        .s2-logo {
+          width: 44px; height: 44px; border-radius: 4px; border: 1.5px solid var(--accent); color: var(--accent);
+          display: flex; align-items: center; justify-content: center; font: 600 25px/1 var(--font-head); flex: none;
+        }
+        .s2-brand-name { font: 600 28px var(--font-head); letter-spacing: 0.03em; color: var(--text-strong); }
+        .s2-nav-item { font: 500 22px var(--font-body); color: var(--text-2); }
+        .s2-nav-item.on { color: var(--text-strong); box-shadow: inset 0 -2px 0 var(--accent); padding-bottom: 6px; }
+        #s2-msgs { position: absolute; left: 120px; right: 120px; top: 132px; display: flex; flex-direction: column; gap: 40px; }
+        #s2-bubble {
+          align-self: flex-end; background: #ece4d1; color: #3a3122; padding: 20px 30px; border-radius: 12px;
+          font: 400 29px/1.4 var(--font-body);
+        }
+        #s2-answer { display: flex; gap: 24px; }
+        #s2-answer .s2-logo { width: 52px; height: 52px; font-size: 28px; }
+        #s2-answer-body { flex: 1; }
+        #s2-label { font: 600 19px/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+        #s2-text { font: 400 36px/1.5 var(--font-serif); color: var(--text-strong); max-width: 1180px; }
+        #s2-text strong { font-weight: 600; color: var(--accent-dark); }
+        #s2-cites { display: flex; align-items: center; gap: 18px; margin-top: 26px; }
+        #s2-cite {
+          font: 600 22px/1 var(--font-body); color: var(--accent-dark); background: var(--accent-tint);
+          border: 1px solid #e3d3a8; border-radius: 99px; padding: 12px 22px;
+        }
+        #s2-status { display: flex; align-items: center; gap: 12px; font: 500 22px/1 var(--font-body); color: var(--green-fg); }
+        #s2-status-dot { width: 26px; height: 26px; border-radius: 99px; background: var(--green-fg); position: relative; }
+        #s2-status-dot svg { position: absolute; left: 5px; top: 5px; }
+        #s2-composer {
+          position: absolute; left: 120px; right: 120px; bottom: 44px; height: 92px; display: flex; align-items: center;
+          background: var(--surface); border: 1px solid var(--border-2); border-radius: 8px; padding: 0 16px 0 30px;
+        }
+        #s2-field { position: relative; flex: 1; font: 400 28px var(--font-body); color: var(--text); white-space: nowrap; height: 36px; }
+        #s2-placeholder { position: absolute; left: 0; top: 0; color: var(--muted); }
+        #s2-typed { position: absolute; left: 0; top: 0; }
+        .s2-send { width: 60px; height: 60px; border-radius: 6px; background: var(--ink); display: flex; align-items: center; justify-content: center; }
+        #s2-note {
+          position: absolute; left: 1080px; top: 724px; width: 600px; padding: 20px 28px;
+          background: var(--accent-tint); border: 1px solid var(--accent-line); border-radius: 10px;
+        }
+        #s2-note-k { font: 500 22px/1 var(--font-mono); color: var(--accent-dark); margin-bottom: 10px; }
+        #s2-note-t { font: 400 27px/1.35 var(--font-serif); color: var(--text-strong); }
+      </style>
+
+      <div id="s2-root" data-composition-id="s2-product" data-width="1920" data-height="1080">
+        <div id="s2-stage">
+          <div id="s2-cap"><span class="fig-tag">Fig. 1 · The product</span><span id="s2-cap-title">Answers cite the bare act</span></div>
+          <div id="s2-window">
+            <div id="s2-nav">
+              <div class="s2-brand"><div class="s2-logo">L</div><div class="s2-brand-name">LawWeb</div></div>
+              <div class="s2-nav-item on">Ask AI</div>
+              <div class="s2-nav-item">Find Lawyers</div>
+              <div class="s2-nav-item">Documents</div>
+              <div class="s2-nav-item">My Cases</div>
+            </div>
+            <div id="s2-msgs">
+              <div id="s2-bubble">A cheque I received has bounced. What can I do?</div>
+              <div id="s2-answer">
+                <div class="s2-logo" id="s2-alogo">L</div>
+                <div id="s2-answer-body">
+                  <div id="s2-label">LawWeb · Counsel</div>
+                  <div id="s2-text"></div>
+                  <div id="s2-cites">
+                    <div id="s2-cite">Negotiable Instruments Act, 1881 · s.138</div>
+                    <div id="s2-status">
+                      <div id="s2-status-dot"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#fbf7ec" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                      <span>Citations checked against the statutes</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="s2-composer">
+              <div id="s2-field"><span id="s2-placeholder">Ask a legal question…</span><span id="s2-typed"></span></div>
+              <div class="s2-send"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7" fill="none" stroke="#fbf7ec" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            </div>
+          </div>
+          <div id="s2-note">
+            <div id="s2-note-k">gq_verify</div>
+            <div id="s2-note-t">Each cited section is matched against the retrieved statute text.</div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const Q = "A cheque I received has bounced. What can I do?";
+          const typed = document.getElementById("s2-typed");
+          Q.split("").forEach((ch) => {
+            const s = document.createElement("span");
+            s.className = "s2-c";
+            s.textContent = ch;
+            typed.appendChild(s);
+          });
+          const ANSWER = [
+            ["This is an offence under ", false],
+            ["Section 138, Negotiable Instruments Act, 1881.", true],
+            [" Send the drawer a written demand notice within 30 days of the bank's return memo.", false],
+          ];
+          const textEl = document.getElementById("s2-text");
+          ANSWER.forEach(([chunk, strong]) => {
+            const host = strong ? document.createElement("strong") : textEl;
+            chunk.split(/(\s+)/).forEach((tok) => {
+              if (!tok) return;
+              if (/^\s+$/.test(tok)) { host.appendChild(document.createTextNode(tok)); return; }
+              const w = document.createElement("span");
+              w.className = "s2-w";
+              w.textContent = tok;
+              host.appendChild(w);
+            });
+            if (strong) textEl.appendChild(host);
+          });
+
+          const tl = gsap.timeline({ paused: true });
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#s2-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#s2-window", { y: 30 }, { y: 0, duration: 0.9, ease: "power3.out" }, 0);
+          tl.set(["#s2-bubble", "#s2-answer", "#s2-cite", "#s2-status", "#s2-note"], { opacity: 0 }, 0);
+          tl.set(".s2-c", { opacity: 0 }, 0);
+          tl.set(".s2-w", { opacity: 0 }, 0);
+          tl.set("#s2-placeholder", { opacity: 1 }, 0);
+
+          tl.set("#s2-placeholder", { opacity: 0 }, 0.45);
+          tl.to(".s2-c", { opacity: 1, duration: 0.01, stagger: 0.026 }, 0.45);
+          const postAt = 0.45 + Q.length * 0.026 + 0.25;
+          tl.set(".s2-c", { opacity: 0 }, postAt);
+          tl.set("#s2-placeholder", { opacity: 1 }, postAt);
+          tl.fromTo("#s2-bubble", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, postAt);
+          tl.fromTo("#s2-answer", { opacity: 0 }, { opacity: 1, duration: 0.3 }, postAt + 0.35);
+          tl.to(".s2-w", { opacity: 1, duration: 0.18, stagger: 0.075 }, postAt + 0.5);
+          const words = document.querySelectorAll(".s2-w").length;
+          const doneAt = postAt + 0.5 + words * 0.075 + 0.2;
+          tl.fromTo("#s2-cite", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, doneAt);
+          tl.fromTo("#s2-status", { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, doneAt + 0.35);
+          tl.fromTo("#s2-note", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, doneAt + 0.7);
+          tl.to("#s2-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 7.2);
+          window.__timelines["s2-product"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

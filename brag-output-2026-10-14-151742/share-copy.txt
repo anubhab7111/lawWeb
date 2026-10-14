@@ -1,0 +1,1 @@
+LawWeb, my academic project: Indian legal answers cited to the exact bare-act section, from a 4B model on a 4 GB laptop GPU. Hybrid RAG over 15,100 statute sections and 1M+ Supreme Court passages, a statute classifier at 38.35 macro-F1 on IL-TUR (best published: 28.08), and document review cut from ~250 s to 99 s. Code: github.com/anubhab7111/lawWeb

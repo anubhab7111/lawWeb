@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s1-root { position: absolute; inset: 0; overflow: hidden; }
+        #s1-stage { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #s1-glow {
+          position: absolute; left: 210px; top: 90px; width: 1500px; height: 900px;
+          background: radial-gradient(closest-side, rgba(201, 171, 99, 0.32), rgba(201, 171, 99, 0) 70%);
+          opacity: 0.45; pointer-events: none;
+        }
+        #s1-eyebrow { position: relative; font: 600 26px/1 var(--font-body); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-dark); margin-bottom: 46px; }
+        .s1-line {
+          position: relative; display: block; text-align: center;
+          font-family: var(--font-head); font-weight: 540; font-size: 132px; line-height: 1.06; letter-spacing: -0.03em;
+          color: var(--text-strong); font-variation-settings: "opsz" 144;
+        }
+        .s1-line em { font-style: italic; color: var(--accent); }
+        #s1-meter { position: relative; margin-top: 84px; width: 1180px; display: flex; flex-direction: column; gap: 18px; }
+        #s1-meter-top { display: flex; justify-content: space-between; align-items: baseline; }
+        #s1-gpu { font: 600 26px/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); }
+        #s1-readout { font-size: 54px; line-height: 1; color: var(--text-strong); }
+        #s1-readout span { color: var(--muted); font-size: 40px; }
+        #s1-track { position: relative; width: 1180px; height: 30px; border-radius: 8px; background: var(--surface-alt); border: 1px solid var(--border-2); overflow: hidden; }
+        #s1-fill { position: absolute; left: 0; top: 0; width: 1180px; height: 30px; background: linear-gradient(90deg, var(--accent-line), var(--accent)); transform-origin: left center; }
+        #s1-cap { font: 500 26px/1 var(--font-mono); color: var(--text-2); }
+      </style>
+
+      <div id="s1-root" data-composition-id="s1-hook" data-width="1920" data-height="1080">
+        <div id="s1-stage">
+          <div id="s1-glow"></div>
+          <div id="s1-eyebrow">LawWeb · Technical walkthrough</div>
+          <div class="s1-line" id="s1-l1">Indian legal AI,</div>
+          <div class="s1-line" id="s1-l2">on a <em>4 GB</em> laptop GPU.</div>
+          <div id="s1-meter">
+            <div id="s1-meter-top">
+              <div id="s1-gpu">RTX 3050 · VRAM</div>
+              <div id="s1-readout" class="num"><b id="s1-gb">0.00</b> <span>/ 4.00 GB</span></div>
+            </div>
+            <div id="s1-track"><div id="s1-fill"></div></div>
+            <div id="s1-cap">qwen3 4B · num_ctx 8192 · fully on the GPU, no CPU spill</div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const tl = gsap.timeline({ paused: true });
+          tl.fromTo("#s1-eyebrow", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.15);
+          tl.fromTo("#s1-l1", { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 0.3);
+          tl.fromTo("#s1-l2", { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 0.75);
+          tl.fromTo("#s1-meter", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 1.4);
+          const gb = { v: 0 };
+          const gbEl = document.getElementById("s1-gb");
+          tl.fromTo("#s1-fill", { scaleX: 0 }, { scaleX: 3.65 / 4, duration: 1.6, ease: "power2.inOut" }, 1.7);
+          tl.fromTo(gb, { v: 0 }, {
+            v: 3.65, duration: 1.6, ease: "power2.inOut",
+            onUpdate: () => { gbEl.textContent = gb.v.toFixed(2); },
+          }, 1.7);
+          tl.fromTo("#s1-cap", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 3.0);
+          // Audio-reactive: the gold glow breathes with the music bed's RMS (this scene starts at 0).
+          const rms = window.AUDIO_RMS || [];
+          for (let f = 0; f < 6 * 30 && f < rms.length; f++) {
+            tl.set("#s1-glow", { opacity: 0.3 + 0.45 * rms[f], scale: 0.96 + 0.06 * rms[f] }, f / 30);
+          }
+          tl.to("#s1-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 5.4);
+          window.__timelines["s1-hook"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

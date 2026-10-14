@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s3-root { position: absolute; inset: 0; overflow: hidden; }
+        #s3-stage { position: absolute; inset: 0; background: var(--bg); }
+        #s3-svg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+        .s3-node {
+          position: absolute; height: 62px; display: flex; align-items: center; justify-content: center;
+          border-radius: 8px; background: var(--surface); border: 1.5px solid var(--border-2);
+          font: 500 27px/1 var(--font-mono); color: var(--text-strong);
+          box-shadow: 0 6px 16px rgba(30, 26, 17, 0.06);
+        }
+        .s3-node.gold { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent-dark); }
+        .s3-intent {
+          position: absolute; top: 300px; height: 50px; display: flex; align-items: center; justify-content: center;
+          border-radius: 99px; border: 1px solid var(--border-2); background: var(--surface);
+          font: 600 23px/1 var(--font-body); color: var(--text-2);
+        }
+        .s3-intent.on { background: var(--ink); border-color: var(--ink); color: var(--ink-fg); }
+        .s3-arc-label { position: absolute; font: italic 400 26px/1.2 var(--font-serif); color: var(--accent-dark); white-space: nowrap; }
+        #s3-stack {
+          position: absolute; left: 120px; right: 120px; bottom: 54px; display: flex; gap: 14px; align-items: center;
+          font: 500 22px/1 var(--font-body); color: var(--text-2);
+        }
+        #s3-stack .s3-k { font: 600 20px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-dark); margin-right: 10px; }
+        #s3-stack .s3-sep { color: var(--accent-line); }
+      </style>
+
+      <div id="s3-root" data-composition-id="s3-graph" data-width="1920" data-height="1080">
+        <div id="s3-stage">
+          <div class="fig-head" id="s3-head">
+            <div class="fig-tag">Fig. 2 · Orchestration</div>
+            <div class="fig-title">A LangGraph agent with a <em>corrective</em> loop</div>
+          </div>
+
+          <svg id="s3-svg" viewBox="0 0 1920 1080">
+            <defs>
+              <marker id="s3-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0L10 5L0 10z" fill="#8c6f2f" />
+              </marker>
+              <marker id="s3-ahd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0L10 5L0 10z" fill="#6a6252" />
+              </marker>
+            </defs>
+            <path id="s3-p-fan" class="s3-line" d="M424 325 H508" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s3-ahd)" />
+            <path id="s3-p-drop" class="s3-line" d="M1221 352 V470 H250 V541" stroke="#8c6f2f" stroke-width="2.5" fill="none" />
+            <path id="s3-p-a1" class="s3-line s3-row" d="M382 591 H462" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s3-ahd)" />
+            <path id="s3-p-a2" class="s3-line s3-row" d="M732 591 H812" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s3-ahd)" />
+            <path id="s3-p-a3" class="s3-line s3-row" d="M1082 591 H1162" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s3-ahd)" />
+            <path id="s3-p-a4" class="s3-line s3-row" d="M1432 591 H1512" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s3-ahd)" />
+            <path id="s3-p-rw" class="s3-line" d="M950 624 C950 700 930 761 905 761 H645 C620 761 600 700 600 641" stroke="#8c6f2f" stroke-width="2.5" fill="none" />
+            <path id="s3-p-vf" class="s3-line" d="M1650 624 V868 Q1650 896 1622 896 H558 Q530 896 530 868 V641" stroke="#8c6f2f" stroke-width="2.5" fill="none" />
+            <!-- Arrowheads for the long paths fade in when the line arrives (markers would show before the draw finishes). -->
+            <polygon id="s3-h-drop" points="243,540 257,540 250,554" fill="#8c6f2f" />
+            <polygon id="s3-h-rw" points="593,642 607,642 600,628" fill="#8c6f2f" />
+            <polygon id="s3-h-vf" points="523,642 537,642 530,628" fill="#8c6f2f" />
+          </svg>
+
+          <div class="s3-node" id="s3-classify" style="left:120px; top:294px; width:300px;">classify_intent</div>
+          <div class="s3-intent" style="left:520px; width:170px;">document</div>
+          <div class="s3-intent" style="left:712px; width:200px;">crime report</div>
+          <div class="s3-intent" style="left:934px; width:190px;">find lawyer</div>
+          <div class="s3-intent on" style="left:1146px; width:150px;">general</div>
+          <div class="s3-intent" style="left:1318px; width:160px;">non-legal</div>
+          <div class="s3-intent" style="left:1500px; width:140px;">clarify</div>
+
+          <div class="s3-node s3-loop" style="left:120px; top:560px; width:260px;">gq_plan</div>
+          <div class="s3-node s3-loop" style="left:470px; top:560px; width:260px;">gq_retrieve</div>
+          <div class="s3-node s3-loop" style="left:820px; top:560px; width:260px;">gq_grade</div>
+          <div class="s3-node s3-loop" style="left:1170px; top:560px; width:260px;">gq_generate</div>
+          <div class="s3-node s3-loop" style="left:1520px; top:560px; width:260px;">gq_verify</div>
+          <div class="s3-node gold" id="s3-rewrite" style="left:645px; top:730px; width:260px;">gq_rewrite</div>
+
+          <div class="s3-arc-label" id="s3-l-rw" style="left:960px; top:742px;">weak retrieval → widen the search</div>
+          <div class="s3-arc-label" id="s3-l-vf" style="left:820px; top:914px;">ungrounded claim → re-retrieve, regenerate once</div>
+
+          <div id="s3-stack">
+            <span class="s3-k">Stack</span>
+            <span>React + Vite</span><span class="s3-sep">·</span>
+            <span>FastAPI + SSE streaming</span><span class="s3-sep">·</span>
+            <span>LangGraph</span><span class="s3-sep">·</span>
+            <span>FAISS + SQLite FTS5</span><span class="s3-sep">·</span>
+            <span>Ollama, fully local</span>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const tl = gsap.timeline({ paused: true });
+          const len = (id) => document.getElementById(id).getTotalLength();
+          const draw = (id, at, dur) => {
+            const L = len(id);
+            tl.fromTo("#" + id, { strokeDasharray: L + " " + L, strokeDashoffset: L }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, at);
+          };
+
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#s3-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#s3-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
+          tl.fromTo("#s3-classify", { opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, 0.5);
+          draw("s3-p-fan", 0.85, 0.25);
+          tl.fromTo(".s3-intent", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.08, ease: "power2.out" }, 1.0);
+          draw("s3-p-drop", 2.7, 0.7);
+          tl.fromTo("#s3-h-drop", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 3.35);
+          tl.fromTo("#s3-h-rw", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 6.85);
+          tl.fromTo("#s3-h-vf", { opacity: 0 }, { opacity: 1, duration: 0.1 }, 8.55);
+          tl.fromTo(".s3-loop", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.25, ease: "power2.out" }, 3.3);
+          ["s3-p-a1", "s3-p-a2", "s3-p-a3", "s3-p-a4"].forEach((id, i) => draw(id, 3.45 + i * 0.25, 0.22));
+          // Loop arrows land as the narration says "rewrite if the evidence is weak" and "verify".
+          tl.fromTo("#s3-rewrite", { opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.6)" }, 6.1);
+          draw("s3-p-rw", 6.2, 0.7);
+          tl.fromTo("#s3-l-rw", { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.4 }, 6.6);
+          draw("s3-p-vf", 7.8, 0.8);
+          tl.fromTo("#s3-l-vf", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4 }, 8.2);
+          tl.fromTo("#s3-stack", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 4.8);
+          tl.to("#s3-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 10.0);
+          window.__timelines["s3-graph"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>
