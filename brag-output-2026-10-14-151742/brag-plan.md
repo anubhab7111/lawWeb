@@ -68,7 +68,7 @@ A results board (the best measured numbers, held), then the deep-ink closing pan
 Do not show: absolute faithfulness/recall scores, routing crime recall, or any before/after pair measured on different query sets.
 
 ## Share copy (draft)
-LawWeb, my academic project: Indian legal answers cited to the exact section, from a 4B model on a 4 GB laptop GPU. Hybrid RAG over 1M+ Supreme Court passages, a statute classifier at 38.35 macro-F1 on IL-TUR (published best 28.08), and document review cut from ~250 s to 99 s.
+LawWeb, my academic project: Indian legal answers cited to the exact section, from a 4B model on a 4 GB laptop GPU. Hybrid RAG over 1M+ Supreme Court passages, a statute classifier at 38.35 macro-F1 on IL-TUR (published LeSICiN baseline 28.08), and document review cut from ~250 s to 99 s.
 
 ## Audio direction
 - Role: narration leads; warm, steady bed underneath; very sparse accents
@@ -83,17 +83,17 @@ LawWeb, my academic project: Indian legal answers cited to the exact section, fr
 
 ## Voiceover script (as generated: Kokoro af_heart, speed 1.1, one clip per sentence)
 1. LawWeb answers Indian legal questions on a four gigabyte laptop GPU.
-2. Ask in plain language. / Answers cite the exact section, and every citation is checked before you see it.
+2. Ask in plain language. / Answers cite the exact section, and every citation is checked against the statutes.
 3. A LangGraph agent routes each message. / Legal questions run a corrective loop: retrieve, grade, rewrite if the evidence is weak, then generate and verify.
 4. Retrieval is hybrid: keyword and dense search, fused, then reranked. / The right section is in the top three, ninety-four percent of the time.
 5. Our statute classifier beats the published IL-TUR baselines by more than ten points.
-6. Slow, brittle prompt steps became small trained classifiers.
+6. Then small trained classifiers took over routing, document typing, and crime sections.
 7. Document review now makes two model calls instead of three, and streams as it writes. / About two hundred fifty seconds became ninety-nine.
 8. We benchmarked seven small models, with the decision rule fixed before any of them ran. / The winner shows its first word in one second, not twelve.
 9. And every byte is budgeted, so the model never leaves the GPU.
 10. All of it, measured on held-out tests. / LawWeb. An academic project, open on GitHub.
 
-(171 words, 59.7 s of speech. Spoken numbers are rounded; the screen shows exact figures. Kokoro phonemizes "IL-TUR" as "ill-tur". The name is shown, not spoken: Kokoro reads "Anubhab" as "AN-uh-b-hab". Scenes 10 and 11 were merged into one results + identity card to stay near 75 s.)
+(~180 words, ~61 s of speech. Spoken numbers are rounded; the screen shows exact figures. Kokoro phonemizes "IL-TUR" as "ill-tur". The name is shown, not spoken: Kokoro reads "Anubhab" as "AN-uh-b-hab". Scenes 10 and 11 were merged into one results + identity card to stay near 75 s.)
 
 ## Storyboard
 Durations are targets; the final cut follows the generated narration (+0.8-1.5 s visual tail per scene).
@@ -123,7 +123,7 @@ Sequential/interaction: pipeline stages light in order; index cards; then the he
 Transition mood: soft crossfade → Scene 5
 
 ### Scene 5 — IL-TUR benchmark — ~7.5 s
-"Fig. 4 — IL-TUR statute identification (macro-F1)". Four horizontal bars grow from a shared axis: GPT-4 0-shot 23.99 · InLegalBERT 26.23 · LeSICiN 28.08 (muted ink) · **LawWeb 38.35** (gold, last, labelled "InLegalBERT classifier, chunked"). A bracket marks "+10.27 over best published". Fine print: "13,019 test cases · official leaderboard scorer · 37.43 with near-duplicate cases removed".
+"Fig. 4 — IL-TUR statute identification (macro-F1)". Four horizontal bars grow from a shared axis: GPT-4 0-shot 23.99 · InLegalBERT 26.23 · LeSICiN 28.08 (muted ink) · **LawWeb 38.35** (gold, last, labelled "InLegalBERT classifier, chunked"). A bracket marks "+10.27" over LeSICiN. Fine print: "13,019 test cases · official leaderboard scorer · 37.43 with near-duplicate cases removed".
 Sequential/interaction: baselines grow together, LawWeb bar grows last and longer
 Audio-coupled idea: one soft drop as the LawWeb bar lands
 Transition mood: soft crossfade → Scene 6

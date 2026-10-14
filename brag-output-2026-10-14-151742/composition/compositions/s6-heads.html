@@ -63,8 +63,9 @@
           // Fade through paper: hold hidden while the previous scene fades out, then fade in.
           tl.fromTo("#s6-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
           tl.fromTo("#s6-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
-          tl.fromTo(".s6-card", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, stagger: 0.5, ease: "power3.out" }, 0.8);
-          tl.fromTo("#s6-src", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 2.6);
+          // Each card lands as the narration names it: routing, document typing, crime sections.
+          tl.fromTo(".s6-card", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, stagger: 0.8, ease: "power3.out" }, 2.2);
+          tl.fromTo("#s6-src", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 4.4);
           tl.to("#s6-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 6.8);
           window.__timelines["s6-heads"] = tl;
         })();

@@ -13,7 +13,7 @@ Create a narrated ~75 s technical walkthrough of LawWeb for YC founders: an acad
 - Project root: the lawWeb repo (this worktree, rebased on main at c75c094)
 - Primary files read: `server/app/chatbot.py` (LangGraph graph, `gq_grade` / `gq_rewrite` / `gq_verify`), `server/app/config.py` (BGE-M3, bge-reranker), `server/app/data/README.md` (judgment index, IL-TUR results), `server/app/data/faiss_index/unified/sections.json` (15,100 sections, 100 sources), `metrics_20261004_153111.json` (retrieval sweep), PR #43 / #55 / #57 / #63 bodies, commits 1c48047 / d9181d2 / 2572866, the earlier brag film's chat UI
 - Product name: LawWeb
-- Strongest claim: statute classifier at 38.35 macro-F1 on IL-TUR vs 28.08 best published
+- Strongest claim: statute classifier at 38.35 macro-F1 on IL-TUR vs the published LeSICiN baseline (28.08)
 - Key UI to recreate: the Ask AI chat answer card citing Section 138, NI Act; the document page with its real streaming status labels
 - Copy that must appear verbatim:
   - "Checking the law that applies…", "Reading the document…", "Writing the analysis…" (real status labels)
@@ -35,7 +35,7 @@ Create a narrated ~75 s technical walkthrough of LawWeb for YC founders: an acad
 
 ## Storyboard
 1. Hook — 6.0 s — VRAM meter + headline
-2. Product — 7.8 s — cheque question → answer citing s.138 NI Act → "Citations checked against the statutes" + `gq_verify` note
+2. Product — 7.8 s — cheque question → answer citing s.138 NI Act → real status label "Checking citations against the statutes…" (then clears) + `gq_verify` note
 3. Agent graph — 10.6 s — intent fan-out and the corrective loop, stack strip
 4. Hybrid retrieval — 9.3 s — BM25 + BGE-M3 → RRF → rerank; 15,100 sections; 1,074,755 passages; hit@3 0.94
 5. IL-TUR — 7.8 s — bars 23.99 / 26.23 / 28.08 / 38.35, +10.27 bracket

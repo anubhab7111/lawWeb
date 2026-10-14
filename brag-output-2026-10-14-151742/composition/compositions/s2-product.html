@@ -42,9 +42,8 @@
           font: 600 22px/1 var(--font-body); color: var(--accent-dark); background: var(--accent-tint);
           border: 1px solid #e3d3a8; border-radius: 99px; padding: 12px 22px;
         }
-        #s2-status { display: flex; align-items: center; gap: 12px; font: 500 22px/1 var(--font-body); color: var(--green-fg); }
-        #s2-status-dot { width: 26px; height: 26px; border-radius: 99px; background: var(--green-fg); position: relative; }
-        #s2-status-dot svg { position: absolute; left: 5px; top: 5px; }
+        #s2-status { display: flex; align-items: center; gap: 12px; font: 500 22px/1 var(--font-body); color: var(--text-2); }
+        #s2-status-dot { width: 14px; height: 14px; border-radius: 99px; background: var(--accent); }
         #s2-composer {
           position: absolute; left: 120px; right: 120px; bottom: 44px; height: 92px; display: flex; align-items: center;
           background: var(--surface); border: 1px solid var(--border-2); border-radius: 8px; padding: 0 16px 0 30px;
@@ -82,8 +81,8 @@
                   <div id="s2-cites">
                     <div id="s2-cite">Negotiable Instruments Act, 1881 · s.138</div>
                     <div id="s2-status">
-                      <div id="s2-status-dot"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#fbf7ec" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-                      <span>Citations checked against the statutes</span>
+                      <div id="s2-status-dot"></div>
+                      <span>Checking citations against the statutes…</span>
                     </div>
                   </div>
                 </div>
@@ -150,7 +149,10 @@
           const words = document.querySelectorAll(".s2-w").length;
           const doneAt = postAt + 0.5 + words * 0.075 + 0.2;
           tl.fromTo("#s2-cite", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, doneAt);
+          // The real status label shows while gq_verify runs, then clears.
           tl.fromTo("#s2-status", { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, doneAt + 0.35);
+          tl.fromTo("#s2-status-dot", { scale: 0.7 }, { scale: 1.15, duration: 0.45, repeat: 3, yoyo: true, ease: "sine.inOut" }, doneAt + 0.35);
+          tl.to("#s2-status", { opacity: 0, duration: 0.4 }, doneAt + 2.2);
           tl.fromTo("#s2-note", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, doneAt + 0.7);
           tl.to("#s2-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 7.2);
           window.__timelines["s2-product"] = tl;
