@@ -62,6 +62,26 @@ def split_for_translation(line: str, limit: int = _MAX_SEGMENT_CHARS) -> list[st
     return pieces
 
 
+_LINE_PREFIX_RE = re.compile(r"^(\s*(?:[-*+]\s+|\d+[.)]\s+|#{1,6}\s+|>\s*)?)")
+# IndicTrans2 detokenizes "**" as "* *"; a star touching another star is already intact.
+_SPLIT_BOLD_RE = re.compile(r"(?<!\*)\*\s+\*(?!\*)")
+_LOOSE_BOLD_RE = re.compile(r"\*\*\s*(.+?)\s*\*\*")
+
+
+def split_line_prefix(line: str) -> tuple[str, str]:
+    """Split off indentation and a list/heading/quote marker, which the translator drops."""
+    prefix = _LINE_PREFIX_RE.match(line).group(1)
+    return prefix, line[len(prefix):]
+
+
+def repair_markdown(line: str) -> str:
+    """Rejoin bold markers the translator split, and tighten their spacing when they pair up."""
+    line = _SPLIT_BOLD_RE.sub("**", line)
+    if line.count("**") % 2 == 0:
+        line = _LOOSE_BOLD_RE.sub(lambda m: f"**{m.group(1)}**", line)
+    return line
+
+
 def _cache_key(text: str, src: str, tgt: str) -> str:
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
     return f"{src}>{tgt}:{digest}"
@@ -188,10 +208,13 @@ class IndicTrans2Service:
         assert direction is not None
 
         lines = text.split("\n")
+        prefixes: dict[int, str] = {}
         segments: list[tuple[int, str]] = []
         for i, line in enumerate(lines):
-            if line.strip():
-                segments.extend((i, part) for part in split_for_translation(line))
+            prefix, body = split_line_prefix(line)
+            if body.strip():
+                prefixes[i] = prefix
+                segments.extend((i, part) for part in split_for_translation(body))
         if not segments:
             return text
 
@@ -222,10 +245,16 @@ class IndicTrans2Service:
         outputs = self._processor.postprocess_batch(decoded, lang=tgt_tag)
 
         rebuilt: dict[int, list[str]] = {}
-        for (line_no, _), out, mapping in zip(segments, outputs, mappings):
-            rebuilt.setdefault(line_no, []).append(entity_guard.unmask(out, mapping))
+        for (line_no, source), out, mapping in zip(segments, outputs, mappings):
+            restored = entity_guard.unmask(out, mapping)
+            if not entity_guard.is_complete(restored, mapping):
+                # A citation the translator lost can't be put back: keep this piece in English.
+                logger.info("Translation dropped a protected span; keeping the source piece")
+                restored = source
+            rebuilt.setdefault(line_no, []).append(restored)
+        # Markdown is repaired per line, after its pieces are rejoined: a bold span can straddle a split.
         return "\n".join(
-            " ".join(rebuilt[i]) if i in rebuilt else line
+            prefixes[i] + repair_markdown(" ".join(rebuilt[i])) if i in rebuilt else line
             for i, line in enumerate(lines)
         )
 

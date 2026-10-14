@@ -12,6 +12,8 @@ _DIGIT_LETTERS = "ABCDEFGHIJ"
 _SENTINEL_PREFIX = "QZXQ"
 _SENTINEL_SUFFIX = "QXZQ"
 _SENTINEL_RE = re.compile(rf"{_SENTINEL_PREFIX}([A-J]+){_SENTINEL_SUFFIX}")
+# What IndicTrans2 sometimes leaves of a sentinel it mangled (e.g. QZXQAQXZQ -> QZXQXZQ).
+_REMNANT_RE = re.compile(r"(?<![A-Z])[QZXA-J]*(?:ZX|XZ)[QZXA-J]*(?![A-Z])")
 
 
 def _make_sentinel(n: int) -> str:
@@ -67,7 +69,19 @@ def mask(text: str) -> tuple[str, dict[str, str]]:
 
         text = pattern.sub(_replace, text)
 
-    return text, mapping
+    # Patterns run one after another, so renumber by position: unmask() can then match
+    # mangled sentinels to the spans they replaced, in reading order.
+    order: dict[str, str] = {}
+
+    def _renumber(m: re.Match[str]) -> str:
+        token = m.group(0)
+        if token not in mapping:
+            return token
+        order.setdefault(token, _make_sentinel(len(order)))
+        return order[token]
+
+    text = _SENTINEL_RE.sub(_renumber, text)
+    return text, {order[t]: mapping[t] for t in order}
 
 
 def unmask(text: str, mapping: dict[str, str]) -> str:
@@ -75,6 +89,7 @@ def unmask(text: str, mapping: dict[str, str]) -> str:
     if not mapping:
         return text
 
+    missing = [original for token, original in mapping.items() if token not in text]
     for token, original in mapping.items():
         text = text.replace(token, original)
 
@@ -84,4 +99,18 @@ def unmask(text: str, mapping: dict[str, str]) -> str:
     leftover = _SENTINEL_RE.sub(_resolve, text)
     if leftover != text:
         logger.debug("entity_guard: recovered leftover sentinels")
+
+    remnants = _REMNANT_RE.findall(leftover)
+    if remnants and len(remnants) == len(missing):
+        restore = iter(missing)
+        leftover = _REMNANT_RE.sub(lambda _: next(restore), leftover)
+        logger.info("entity_guard: restored %d mangled sentinel(s)", len(remnants))
+    elif remnants:
+        leftover = re.sub(rf"\s*{_REMNANT_RE.pattern}", "", leftover)
+        logger.info("entity_guard: dropped %d unmatched sentinel remnant(s)", len(remnants))
     return leftover
+
+
+def is_complete(text: str, mapping: dict[str, str]) -> bool:
+    """True if every protected span made it into ``text``."""
+    return all(original in text for original in mapping.values())
