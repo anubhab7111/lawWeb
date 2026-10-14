@@ -1,0 +1,15 @@
+# Rendered output and media stay local (music licence unverified for redistribution).
+# A complete, re-renderable copy (incl. live clips and narration) lives in ~/Videos/lawWeb-technical-v2.
+*.mp4
+*.jpg
+composition/assets/music/
+composition/assets/sfx/
+composition/assets/fonts/
+composition/assets/vendor/
+composition/assets/vo/
+composition/node_modules/
+composition/package-lock.json
+composition/.hfwork/
+composition/snapshots/
+composition/.hyperframes/
+composition/renders/
