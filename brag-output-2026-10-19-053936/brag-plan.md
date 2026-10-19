@@ -45,7 +45,7 @@ VRAM meter fills to the live nvidia-smi reading (3,467 / 4,096 MiB) under "India
 | Streaming | first status label 0.8-2.2 s | PR #57 | no |
 | Model selection | 7 models fit 4 GB; qwen3:4b-instruct quality 0.872 vs 0.876 (95 % interval −0.030…+0.024); answer call median 7.0 vs 21.4 s; first token 1.0 vs 12.6 s | `results/model_bench/scores.json`, prompt replay, 37 scored items × 2 seeds, 798 calls | no (committed results) |
 | Languages | 16 Indian languages detected end to end (of 23 mapped) | fastText lid.176 labels ∩ IndicTrans2 map | yes |
-| Tests | 370 unit tests passing on main (383 with PR #65) | `pytest tests/unit` | yes |
+| Tests | 388 server unit tests passing on main (2026-10-19, after #64/#65 merged) | `pytest tests/unit` | yes |
 
 Capture notes: one earlier English run (`en1`) stalled ~6 s with the GPU idle between prefill and the first token (first text 22.9 s); it did not recur in `en2`-`en4` or a probe run and is reported, not shown. `en2` flashed raw `**` while each bold label streamed, which led to the third PR #66 commit; `en3` had no enumerated list; `en4` is the take used. The clip ends at 18.2 s real, before two loose closing lines of that answer (§ 50 without the bailable-offence condition; "no exception" for non-cognizable offences, which overlooks § 42). A Hindi run (`hi1`) showed (क)-(ङ) enumerations still flush-left, which led to the second PR #66 commit; `hi2` was captured after it.
 
