@@ -29,7 +29,7 @@ LINES = [
     ("s8a", "Small classifiers route messages, type documents and suggest crime sections."),
     ("s9a", "Document review plans once per document type and streams its analysis, more than twice as fast as before."),
     ("s10a", "Seven small models were benchmarked with the rule fixed in advance."),
-    ("s10b", "On replayed prompts, the winner starts answering in one second, not twelve, at equal quality."),
+    ("s10b", "Timed on the LLM call alone: first token in one second, not twelve, at equal quality."),
     ("s11a", "Every byte is budgeted, so the model never leaves the GPU."),
     ("s12a", "Every number here was measured."),
     ("s12b", "The code is on GitHub."),

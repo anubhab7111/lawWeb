@@ -1,6 +1,12 @@
-# Brag Plan: LawWeb (technical cut, v2)
+# Brag Plan: LawWeb (technical cut, v3)
 
-v1 lives in `brag-output-2026-10-14-151742/` and is unchanged. v2 answers the user's notes on v1:
+v3 (2026-10-19) answers review notes on v2; v1 (`brag-output-2026-10-14-151742/`) and v2 (`brag-output-2026-10-14-170958/`) are unchanged.
+1. The 1.0 s first-token figure is the LLM call alone (prompt replay). It is labelled "LLM first token" and always paired with the live search + grading time measured in the capture.
+2. The live clips carry one constant badge, "waits compressed N×", next to a real elapsed timer. There is no "real time" state.
+3. PRs #64 and #65 merged on 2026-10-14, so no PR numbers appear on screen.
+4. Answer lists render as nested lists with (i)/(ii) markers (PR #66). Both live clips were re-captured with it, on a backend with the rebuilt judgment, precedent and classifier indices.
+
+v2 answered the user's notes on v1:
 1. every metric re-verified and labelled with its test set, nothing misleading;
 2. no name credit and no "academic project" anywhere (outro shows the repo link and email);
 3. multilingual support shown (architecture + a live Hindi answer);
@@ -52,21 +58,21 @@ Not shown: the v1 cheque mock-up (the real app answers that question wrongly; re
 7. On the IL-TUR benchmark, our statute classifier beats the published baselines by ten points.
 8. Small classifiers route messages, type documents and suggest crime sections.
 9. Document review plans once per document type and streams its analysis, more than twice as fast as before.
-10. Seven small models were benchmarked with the rule fixed in advance. On replayed prompts, the winner starts answering in one second, not twelve, at equal quality.
+10. Seven small models were benchmarked with the rule fixed in advance. Timed on the LLM call alone: first token in one second, not twelve, at equal quality.
 11. Every byte is budgeted, so the model never leaves the GPU.
 12. Every number here was measured. The code is on GitHub.
 
 ## Storyboard (≈ 50 % architecture, 40 % metrics, 10 % live product)
 1. **Hook** — VRAM meter (live reading) + headline.
-2. **Live** — real capture in a browser card (wait at 7×, then 6 s of streaming in real time, speed badge + real elapsed timer), nvidia-smi panel beside it, label "qwen3:4b-instruct (PR #64, not merged)". The clip ends before the answer's last two lines, which misstate CrPC §151(2) and §41; reported, not shown.
+2. **Live** — real capture in a browser card: typing at 1×, the search wait compressed (constant "waits compressed N×" badge), the answer streaming at 1×, beside a real elapsed timer and the nvidia-smi panel. A summary line gives the measured split: search + grading, then the model's first token.
 3. **System architecture** — client → FastAPI (SSE) → LangGraph → GPU lane (Ollama, qwen3 4B) and CPU lane (BGE-M3, reranker, InLegalBERT statute classifier, routing/doc/crime heads, fastText + IndicTrans2) → data (unified statute index, judgment index, case law, Postgres chat memory).
 4. **Agent graph** — real node names and the corrective loop.
 5. **Retrieval** — BM25 + BGE-M3 → RRF → rerank; index sizes; hit@3 0.90 (39 questions, re-run).
-6. **Multilingual** — detect → mask citations → IndicTrans2 → English graph → back-translate → restore; live Hindi clip labelled with PR #65.
+6. **Multilingual** — detect → mask citations → IndicTrans2 → English graph → back-translate → restore; live Hindi clip with the same badge and timer.
 7. **IL-TUR** — bars vs published baselines.
 8. **Classifiers** — routing / document type / crime sections with honest test-set labels.
 9. **Document pipeline** — THINK cached per document kind, overlapped with retrieval; ANALYZE streams; per-document latency (qwen3:4b).
-10. **Model selection** — table, pre-committed rule, answer-call figures labelled prompt replay.
+10. **Model selection** — table, pre-committed rule; first token and median time labelled "LLM call", with a note that search + grading run before it (~N s live) and a source line saying retrieval is excluded.
 11. **Hardware budget** — live VRAM reading + four fit decisions.
 12. **Outro** — results board, github.com/anubhab7111/lawWeb, anubhabdas7111@gmail.com.
 
