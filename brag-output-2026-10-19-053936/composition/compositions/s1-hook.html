@@ -40,7 +40,7 @@
               <div id="s1-readout" class="num"><b id="s1-gb">0</b> <span>/ 4,096 MiB</span></div>
             </div>
             <div id="s1-track"><div id="s1-fill"></div></div>
-            <div id="s1-cap">nvidia-smi during a live answer · Ollama 3,380 MiB · qwen3 4B, num_ctx 8192</div>
+            <div id="s1-cap">nvidia-smi during a live answer · Ollama 3,382 MiB · qwen3 4B, num_ctx 8192</div>
           </div>
         </div>
       </div>
@@ -54,9 +54,9 @@
           tl.fromTo("#s1-meter", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 1.4);
           const gb = { v: 0 };
           const gbEl = document.getElementById("s1-gb");
-          tl.fromTo("#s1-fill", { scaleX: 0 }, { scaleX: 3465 / 4096, duration: 1.6, ease: "power2.inOut" }, 1.7);
+          tl.fromTo("#s1-fill", { scaleX: 0 }, { scaleX: 3467 / 4096, duration: 1.6, ease: "power2.inOut" }, 1.7);
           tl.fromTo(gb, { v: 0 }, {
-            v: 3465, duration: 1.6, ease: "power2.inOut",
+            v: 3467, duration: 1.6, ease: "power2.inOut",
             onUpdate: () => { gbEl.textContent = Math.round(gb.v).toLocaleString("en-US"); },
           }, 1.7);
           tl.fromTo("#s1-cap", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 3.0);

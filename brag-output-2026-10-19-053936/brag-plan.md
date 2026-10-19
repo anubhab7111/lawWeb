@@ -20,7 +20,7 @@ LawWeb answers Indian legal questions, citing the exact bare-act section, with a
 Constraint-driven engineering, shown working and measured. The live clip proves it runs; the architecture scenes show how it fits; every number carries its test set.
 
 ## Hook
-VRAM meter fills to the live nvidia-smi reading (3,465 / 4,096 MiB) under "Indian legal AI, on a 4 GB laptop GPU."
+VRAM meter fills to the live nvidia-smi reading (3,467 / 4,096 MiB) under "Indian legal AI, on a 4 GB laptop GPU."
 
 ## Tone
 - Preset: polished. Creative direction: a research paper typeset in LawWeb's print look, coming to life; calm, exact; narrated.
