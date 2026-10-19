@@ -1,0 +1,32 @@
+export type ListMarker = { kind: "bullet" | "ordered"; label: string };
+export type ParsedLine = { indent: number; marker: ListMarker | null; text: string };
+
+const BULLET = /^[•\-*+]\s+/;
+// 1. / 1) / (1) / (a) / (iv) / a) / iv) — the forms statutes and the model use for enumerations.
+const ORDERED = /^(\d{1,3}[.)]|\((?:\d{1,3}|[ivxlc]{1,6}|[a-z])\)|(?:[ivxlc]{1,6}|[a-z])\))\s+/i;
+
+export function parseLine(raw: string): ParsedLine {
+  const lead = /^[ \t]*/.exec(raw)![0];
+  const indent = lead.replace(/\t/g, "    ").length;
+  const rest = raw.slice(lead.length).trimEnd();
+  const bullet = BULLET.exec(rest);
+  if (bullet) return { indent, marker: { kind: "bullet", label: "•" }, text: rest.slice(bullet[0].length) };
+  const ordered = ORDERED.exec(rest);
+  if (ordered) return { indent, marker: { kind: "ordered", label: ordered[1] }, text: rest.slice(ordered[0].length) };
+  return { indent, marker: null, text: rest };
+}
+
+// Nesting comes from indentation relative to the list items still open above, so 2-space and
+// 4-space styles both step one level at a time; an unindented paragraph closes the list.
+export function depthTracker(): (line: ParsedLine) => number {
+  const open: number[] = [];
+  return (line) => {
+    if (!line.marker) {
+      if (line.text && line.indent === 0) open.length = 0;
+      return 0;
+    }
+    while (open.length && open[open.length - 1] >= line.indent) open.pop();
+    open.push(line.indent);
+    return open.length - 1;
+  };
+}
