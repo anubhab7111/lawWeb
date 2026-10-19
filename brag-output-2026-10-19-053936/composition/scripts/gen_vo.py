@@ -17,7 +17,7 @@ OUT = "assets/vo"
 VOICE, SPEED = "af_heart", "1.1"
 LINES = [
     ("s1a", "LawWeb answers Indian legal questions, citing the exact section, on a four gigabyte laptop GPU."),
-    ("s2a", "Here it is, live: about fifteen seconds of searching, then the answer streams in and its citations are checked."),
+    ("s2a", "Here it is, live: about twelve seconds of search and grading on the CPU, then the first token in about a second, and the answer streams in."),
     ("s3a", "Everything runs locally."),
     ("s3b", "The model has the GPU; embeddings, reranking, classifiers and translation share the CPU."),
     ("s4a", "A LangGraph agent routes each message."),

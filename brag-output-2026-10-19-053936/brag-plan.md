@@ -27,12 +27,13 @@ VRAM meter fills to the live nvidia-smi reading (3,465 / 4,096 MiB) under "India
 
 ## Format: landscape 1920x1080 · Duration: ~90 s (user choice; overrides /brag's 15-25 s)
 
-## Verified numbers (frozen 2026-10-14; the video uses only these)
+## Verified numbers (frozen 2026-10-14, live rows re-captured 2026-10-19; the video uses only these)
 | Claim | Value | Source / test set | Re-run today? |
 |---|---|---|---|
-| Live answer (English) | first text 14.7 s, done 25.6 s | capture `en5`, question "Can the police arrest me without a warrant?", fresh backend, warm | live |
-| Live answer (Hindi) | done 32.3 s | capture `hi3`, same question in Hindi, with PR #65 | live |
-| GPU during the answer | 3,465 / 4,096 MiB used; Ollama 3,380 MiB; util up to 100 %; 67-78 °C | nvidia-smi every 250 ms during `en5` | live |
+| Live answer (English) | search + grading 11.9 s, then the model's first token +1.0 s (first text 12.9 s); done 21.8 s | capture `en4` (2026-10-19), "Can the police arrest me without a warrant?", main + PR #66 client, all indices loaded, backend restarted and warmed with three unrelated questions | live |
+| Live answer (Hindi) | search 0.5-14.8 s, drafting to 24.4 s, citation check, back-translation; full Hindi answer on screen at 33.2 s | capture `hi2` (2026-10-19), the same question in Hindi, same setup | live |
+| GPU during the answers | 3,467 / 4,096 MiB used; Ollama 3,382 MiB; util up to 100 %; 68-78 °C | nvidia-smi every 250 ms during `en4` and `hi2` | live |
+| First token, benchmark vs live | LLM call first token median 1.0 s on replayed answer prompts (median 1.7k prompt tokens; prefill ~1,600 tok/s measured); live `en4` +1.0 s after drafting starts | `scores.json`; prefill re-measured 2026-10-19 on two benchmark prompts | yes |
 | Statute index | 15,100 sections · 100 acts, rules & mapping tables | `faiss_index/unified/sections.json` | yes |
 | Judgment index | 1,074,755 passages · 38,338 SC judgments · IVF4096-SQ8 + SQLite FTS5 | `faiss_index/judgments/meta.json` | yes |
 | Retrieval | hit@1 0.744 · hit@3 0.897 · MRR 0.816 | `eval_retrieval_only.py --extended`, 39 hand-written questions with gold sections, production `retrieve_statutes` path | yes |
@@ -46,11 +47,13 @@ VRAM meter fills to the live nvidia-smi reading (3,465 / 4,096 MiB) under "India
 | Languages | 16 Indian languages detected end to end (of 23 mapped) | fastText lid.176 labels ∩ IndicTrans2 map | yes |
 | Tests | 370 unit tests passing on main (383 with PR #65) | `pytest tests/unit` | yes |
 
+Capture notes: one earlier English run (`en1`) stalled ~6 s with the GPU idle between prefill and the first token (first text 22.9 s); it did not recur in `en2`-`en4` or a probe run and is reported, not shown. `en2` flashed raw `**` while each bold label streamed, which led to the third PR #66 commit; `en3` had no enumerated list; `en4` is the take used. The clip ends at 18.2 s real, before two loose closing lines of that answer (§ 50 without the bailable-offence condition; "no exception" for non-cognizable offences, which overlooks § 42). A Hindi run (`hi1`) showed (क)-(ङ) enumerations still flush-left, which led to the second PR #66 commit; `hi2` was captured after it.
+
 Not shown: the v1 cheque mock-up (the real app answers that question wrongly; reported), absolute faithfulness/recall, crime-report routing recall.
 
 ## Voiceover script (Kokoro af_heart, 1.1x, one clip per sentence)
 1. LawWeb answers Indian legal questions, citing the exact section, on a four gigabyte laptop GPU.
-2. Here it is, live: about fifteen seconds of searching, then the answer streams in and its citations are checked.
+2. Here it is, live: about twelve seconds of search and grading on the CPU, then the first token in about a second, and the answer streams in.
 3. Everything runs locally. The model has the GPU; embeddings, reranking, classifiers and translation share the CPU.
 4. A LangGraph agent routes each message. Legal questions loop: retrieve, grade, widen the search if evidence is weak, then generate and verify.
 5. Search is hybrid: keyword and dense, fused and reranked. On our test questions, the right section is in the top three nine times in ten.
