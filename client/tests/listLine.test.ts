@@ -57,6 +57,15 @@ test("recognises the enumeration styles statutes use", () => {
   assert.deepEqual(labels, ["1.", "12)", "(1)", "(a)", "(iv)", "a)", "ii)", "•", "•", "•"]);
 });
 
+test("recognises enumerations IndicTrans2 writes in Indian scripts", () => {
+  // From a live Hindi answer: the model's (a)–(e) come back as (क)–(ङ).
+  const rows = layout("  - अधिकारी संतुष्ट है कि गिरफ्तारी निम्नलिखित के लिए आवश्यक हैः\n    (क) आगे के अपराध को रोकें;\n    (ङ) न्यायालय में व्यक्ति की उपस्थिति सुनिश्चित करना।");
+  assert.deepEqual(rows.map((r) => [r.depth, r.label]), [[0, "•"], [1, "(क)"], [1, "(ङ)"]]);
+  assert.equal(rows[1].text, "आगे के अपराध को रोकें;");
+  const labels = ["(१) a", "२. b", "(ক) c", "क) d", "(க) e"].map((l) => parseLine(l).marker?.label);
+  assert.deepEqual(labels, ["(१)", "२.", "(ক)", "क)", "(க)"]);
+});
+
 test("leaves ordinary text, emphasis and rules alone", () => {
   for (const l of [
     "**Bold** opening",

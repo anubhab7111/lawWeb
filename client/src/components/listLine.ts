@@ -2,8 +2,9 @@ export type ListMarker = { kind: "bullet" | "ordered"; label: string };
 export type ParsedLine = { indent: number; marker: ListMarker | null; text: string };
 
 const BULLET = /^[•\-*+]\s+/;
-// 1. / 1) / (1) / (a) / (iv) / a) / iv) — the forms statutes and the model use for enumerations.
-const ORDERED = /^(\d{1,3}[.)]|\((?:\d{1,3}|[ivxlc]{1,6}|[a-z])\)|(?:[ivxlc]{1,6}|[a-z])\))\s+/i;
+// 1. / 1) / (1) / (a) / (iv) / a) / iv) — the forms statutes and the model use for enumerations,
+// in any script: translated answers come back with (क), (१), (ক) and the like.
+const ORDERED = /^(\p{Nd}{1,3}[.)]|\((?:\p{Nd}{1,3}|[ivxlc]{1,6}|\p{L}\p{M}*)\)|(?:[ivxlc]{1,6}|\p{L}\p{M}*)\))\s+/iu;
 
 export function parseLine(raw: string): ParsedLine {
   const lead = /^[ \t]*/.exec(raw)![0];
