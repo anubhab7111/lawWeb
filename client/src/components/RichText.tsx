@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { depthTracker, parseLine, type ParsedLine } from "./listLine";
+import { balanceBold, depthTracker, parseLine, type ParsedLine } from "./listLine";
 
 // Dependency-free renderer for the markdown the backend emits: headings,
 // **bold**, *italic*, `code`, [links](https://…), nested bullet and numbered
@@ -33,10 +33,11 @@ function stripHtmlTags(line: string): string {
 }
 
 function renderLine(raw: string, line: ParsedLine, depth: number, key: string): ReactNode {
-  const trimmed = line.text.trim();
-  if (!trimmed) return raw.trim() ? null : <div key={key} style={{ height: 8 }} />;
+  const text = line.text.trim();
+  if (!text) return raw.trim() ? null : <div key={key} style={{ height: 8 }} />;
 
-  if (/^(-{3,}|\*{3,})$/.test(trimmed)) return <hr key={key} style={{ border: 0, borderTop: "1px solid var(--border)", margin: "12px 0" }} />;
+  if (/^(-{3,}|\*{3,})$/.test(text)) return <hr key={key} style={{ border: 0, borderTop: "1px solid var(--border)", margin: "12px 0" }} />;
+  const trimmed = balanceBold(text);
 
   const heading = /^(#{1,6})\s+(.*)$/.exec(trimmed);
   if (heading) {
