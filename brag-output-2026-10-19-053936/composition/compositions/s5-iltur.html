@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s5-root { position: absolute; inset: 0; overflow: hidden; }
+        #s5-stage { position: absolute; inset: 0; background: var(--bg); }
+        #s5-axis { position: absolute; left: 600px; top: 286px; font: 600 22px/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+        .s5-row { position: absolute; left: 0; width: 1920px; }
+        .s5-label { position: absolute; right: 1350px; text-align: right; }
+        .s5-name { font: 600 32px/1.1 var(--font-body); color: var(--text-strong); white-space: nowrap; }
+        .s5-sub { font: 400 22px/1.2 var(--font-body); color: var(--muted); margin-top: 6px; white-space: nowrap; }
+        .s5-bar { position: absolute; left: 600px; border-radius: 0 6px 6px 0; transform-origin: left center; }
+        .s5-bar.base { background: #b9ae98; }
+        .s5-bar.ours { background: linear-gradient(90deg, var(--accent-line), var(--accent)); }
+        .s5-val { position: absolute; font-size: 46px; line-height: 1; color: var(--text-2); }
+        .s5-val.ours { font-size: 64px; color: var(--accent); font-weight: 600; }
+        #s5-guide { position: absolute; left: 1329px; top: 630px; width: 0; height: 70px; border-left: 2px dashed var(--accent-line); }
+        #s5-dim { position: absolute; left: 1330px; top: 700px; width: 267px; height: 2px; background: var(--accent); transform-origin: left center; }
+        #s5-dim-l, #s5-dim-r { position: absolute; top: -9px; width: 2px; height: 20px; background: var(--accent); }
+        #s5-dim-l { left: 0; }
+        #s5-dim-r { right: 0; }
+        #s5-gain { position: absolute; left: 1330px; width: 267px; top: 652px; text-align: center; font: italic 600 36px/1 var(--font-head); color: var(--accent-dark); }
+      </style>
+
+      <div id="s5-root" data-composition-id="s5-iltur" data-width="1920" data-height="1080">
+        <div id="s5-stage">
+          <div class="fig-head" id="s5-head">
+            <div class="fig-tag">Fig. 5 · Benchmark</div>
+            <div class="fig-title">Statute identification on <em>IL-TUR</em></div>
+          </div>
+          <div id="s5-axis">Macro-F1 · higher is better</div>
+
+          <div class="s5-row s5-base-row" style="top:340px;">
+            <div class="s5-label" style="top:4px;"><div class="s5-name">GPT-4, zero-shot</div><div class="s5-sub">published</div></div>
+            <div class="s5-bar base" style="top:0; width:624px; height:66px;"></div>
+            <div class="s5-val num" style="left:1244px; top:10px;">23.99</div>
+          </div>
+          <div class="s5-row s5-base-row" style="top:450px;">
+            <div class="s5-label" style="top:4px;"><div class="s5-name">InLegalBERT</div><div class="s5-sub">published</div></div>
+            <div class="s5-bar base" style="top:0; width:682px; height:66px;"></div>
+            <div class="s5-val num" style="left:1302px; top:10px;">26.23</div>
+          </div>
+          <div class="s5-row s5-base-row" style="top:560px;">
+            <div class="s5-label" style="top:4px;"><div class="s5-name">LeSICiN</div><div class="s5-sub">published</div></div>
+            <div class="s5-bar base" style="top:0; width:730px; height:66px;"></div>
+            <div class="s5-val num" style="left:1350px; top:10px;">28.08</div>
+          </div>
+          <div class="s5-row" id="s5-ours-row" style="top:730px;">
+            <div class="s5-label" style="top:6px;"><div class="s5-name">LawWeb</div><div class="s5-sub">chunked InLegalBERT classifier</div></div>
+            <div class="s5-bar ours" id="s5-ours-bar" style="top:0; width:997px; height:82px;"></div>
+            <div class="s5-val ours num" id="s5-ours-val" style="left:1620px; top:10px;">38.35</div>
+          </div>
+
+          <div id="s5-guide"></div>
+          <div id="s5-dim"><div id="s5-dim-l"></div><div id="s5-dim-r"></div></div>
+          <div id="s5-gain">+10.27</div>
+
+          <div class="fig-source" id="s5-src"><b>13,019 test cases</b>, official leaderboard scorer · 37.43 with near-duplicate cases removed · test split never indexed</div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const tl = gsap.timeline({ paused: true });
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#s5-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#s5-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
+          tl.fromTo("#s5-axis", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 0.4);
+          tl.fromTo(".s5-base-row .s5-label", { opacity: 0, x: -12 }, { opacity: 1, x: 0, duration: 0.4, stagger: 0.15 }, 0.6);
+          tl.fromTo(".s5-base-row .s5-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.8, stagger: 0.15, ease: "power2.out" }, 0.7);
+          tl.fromTo(".s5-base-row .s5-val", { opacity: 0 }, { opacity: 1, duration: 0.3, stagger: 0.15 }, 1.35);
+          tl.fromTo("#s5-ours-row .s5-label", { opacity: 0, x: -12 }, { opacity: 1, x: 0, duration: 0.4 }, 2.1);
+          tl.fromTo("#s5-ours-bar", { scaleX: 0 }, { scaleX: 1, duration: 1.1, ease: "power3.out" }, 2.2);
+          const ov = { v: 0 };
+          const oEl = document.getElementById("s5-ours-val");
+          tl.fromTo("#s5-ours-val", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 2.6);
+          tl.fromTo(ov, { v: 0 }, { v: 38.35, duration: 0.9, ease: "power2.out", onUpdate: () => { oEl.textContent = ov.v.toFixed(2); } }, 2.4);
+          tl.fromTo("#s5-guide", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 3.7);
+          tl.fromTo("#s5-dim", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 3.8);
+          tl.fromTo("#s5-gain", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 4.1);
+          tl.fromTo("#s5-src", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 4.4);
+          tl.to("#s5-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 6.6);
+          window.__timelines["s5-iltur"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #sy-root { position: absolute; inset: 0; overflow: hidden; }
+        #sy-stage { position: absolute; inset: 0; background: var(--bg); }
+        #sy-svg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+        .sy-box {
+          position: absolute; left: 120px; width: 320px; height: 100px; padding: 0 24px;
+          display: flex; flex-direction: column; justify-content: center; gap: 6px;
+          background: var(--surface); border: 1.5px solid var(--border-2); border-radius: 10px;
+          box-shadow: 0 6px 16px rgba(30, 26, 17, 0.06);
+        }
+        .sy-box b { font: 600 27px/1.1 var(--font-body); color: var(--text-strong); }
+        .sy-box i { font: normal 400 21px/1.2 var(--font-body); color: var(--text-2); }
+        .sy-box.ink { background: var(--ink); border-color: var(--ink); }
+        .sy-box.ink b { color: var(--ink-fg); }
+        .sy-box.ink i { color: var(--ink-muted); }
+        .sy-lane { position: absolute; left: 560px; width: 1240px; border-radius: 12px; padding: 22px 26px; }
+        .sy-lane-h { font: 600 21px/1 var(--font-body); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 16px; }
+        #sy-gpu { top: 252px; height: 158px; background: var(--accent-tint); border: 1.5px solid var(--accent-line); }
+        #sy-gpu .sy-lane-h { color: var(--accent-dark); }
+        #sy-cpu { top: 438px; height: 284px; background: var(--surface); border: 1.5px solid var(--border-2); }
+        #sy-cpu .sy-lane-h, #sy-data .sy-lane-h { color: var(--text-2); }
+        #sy-data { top: 750px; height: 196px; background: var(--surface-alt); border: 1.5px solid var(--border-2); }
+        .sy-grid { display: grid; gap: 14px; }
+        #sy-cpu .sy-grid { grid-template-columns: repeat(3, 1fr); }
+        #sy-data .sy-grid { grid-template-columns: 1fr 1.25fr 0.8fr; }
+        .sy-chip { padding: 14px 18px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border-2); }
+        .sy-chip b { display: block; font: 500 25px/1.1 var(--font-mono); color: var(--text-strong); }
+        .sy-chip i { display: block; font: normal 400 20px/1.25 var(--font-body); color: var(--text-2); margin-top: 5px; }
+        #sy-model { display: flex; align-items: baseline; gap: 22px; }
+        #sy-model b { font: 500 34px/1 var(--font-mono); color: var(--text-strong); }
+        #sy-model i { font: normal 400 23px/1.2 var(--font-body); color: var(--text-2); }
+      </style>
+
+      <div id="sy-root" data-composition-id="s3-system" data-width="1920" data-height="1080">
+        <div id="sy-stage">
+          <div class="fig-head" id="sy-head">
+            <div class="fig-tag">Fig. 1 · System</div>
+            <div class="fig-title">Everything runs <em>locally</em></div>
+          </div>
+
+          <svg id="sy-svg" viewBox="0 0 1920 1080">
+            <path class="sy-v" d="M280 366 V412" stroke="#6a6252" stroke-width="2.5" fill="none" />
+            <path class="sy-v" d="M280 516 V562" stroke="#6a6252" stroke-width="2.5" fill="none" />
+            <path class="sy-v" d="M280 666 V752" stroke="#6a6252" stroke-width="2.5" fill="none" />
+            <path id="sy-c1" d="M440 612 H496 V331 H552" stroke="#8c6f2f" stroke-width="2.5" fill="none" />
+            <path id="sy-c2" d="M440 612 H496 V580 H552" stroke="#6a6252" stroke-width="2.5" fill="none" />
+            <path id="sy-c3" d="M440 612 H496 V848 H552" stroke="#6a6252" stroke-width="2.5" fill="none" />
+          </svg>
+
+          <div class="sy-box sy-l" style="top:266px;"><b>Browser</b><i>React + Vite</i></div>
+          <div class="sy-box sy-l" style="top:416px;"><b>FastAPI</b><i>REST + SSE streaming</i></div>
+          <div class="sy-box sy-l ink" style="top:566px;"><b>LangGraph agent</b><i>6 intents · corrective loop</i></div>
+          <div class="sy-box sy-l" style="top:756px;"><b>PostgreSQL</b><i>users · bookings · chat memory</i></div>
+
+          <div class="sy-lane" id="sy-gpu">
+            <div class="sy-lane-h">GPU · RTX 3050 Laptop · 4 GB</div>
+            <div id="sy-model"><b>Ollama · qwen3 4B</b><i>num_ctx 8192 · 3,380 MiB, fully in VRAM</i></div>
+          </div>
+          <div class="sy-lane" id="sy-cpu">
+            <div class="sy-lane-h">CPU · 15 GB RAM, shared</div>
+            <div class="sy-grid">
+              <div class="sy-chip sy-cc"><b>BGE-M3</b><i>multilingual embeddings</i></div>
+              <div class="sy-chip sy-cc"><b>bge-reranker</b><i>cross-encoder rerank</i></div>
+              <div class="sy-chip sy-cc"><b>InLegalBERT</b><i>statute classifier</i></div>
+              <div class="sy-chip sy-cc"><b>Small heads</b><i>routing · documents · crimes</i></div>
+              <div class="sy-chip sy-cc"><b>fastText</b><i>language detection</i></div>
+              <div class="sy-chip sy-cc"><b>IndicTrans2</b><i>translation, CTranslate2</i></div>
+            </div>
+          </div>
+          <div class="sy-lane" id="sy-data">
+            <div class="sy-lane-h">Indices</div>
+            <div class="sy-grid">
+              <div class="sy-chip sy-dc"><b>Statutes</b><i>15,100 sections · FAISS + BM25</i></div>
+              <div class="sy-chip sy-dc"><b>Judgments</b><i>1,074,755 passages · IVF-SQ8 + FTS5</i></div>
+              <div class="sy-chip sy-dc"><b>Landmarks</b><i>86 cases</i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const tl = gsap.timeline({ paused: true });
+          const draw = (sel, at, dur) => {
+            document.querySelectorAll(sel).forEach((p, i) => {
+              const L = p.getTotalLength();
+              tl.fromTo(p, { strokeDasharray: L + " " + L, strokeDashoffset: L }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, at + i * 0.12);
+            });
+          };
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#sy-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#sy-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
+          tl.fromTo(".sy-l", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.4, stagger: 0.25, ease: "power2.out" }, 0.5);
+          draw(".sy-v", 0.8, 0.25);
+          draw("#sy-c1, #sy-c2, #sy-c3", 1.7, 0.45);
+          // Lanes and chips land as the narration names them: the model, then each CPU component, then the data.
+          tl.fromTo("#sy-gpu", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 2.1);
+          tl.fromTo("#sy-cpu", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 3.0);
+          tl.fromTo(".sy-cc", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.48, ease: "power2.out" }, 3.3);
+          tl.fromTo("#sy-data", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 6.3);
+          tl.fromTo(".sy-dc", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.25, ease: "power2.out" }, 6.5);
+          tl.to("#sy-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 8.2);
+          window.__timelines["s3-system"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

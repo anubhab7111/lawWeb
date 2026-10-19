@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s7-root { position: absolute; inset: 0; overflow: hidden; }
+        #s7-stage { position: absolute; inset: 0; background: var(--bg); }
+        #s7-app { position: absolute; left: 120px; top: 300px; width: 680px; height: 600px; padding: 38px 40px; }
+        #s7-app-title { font: 520 42px/1 var(--font-head); letter-spacing: -0.015em; color: var(--text-strong); }
+        #s7-file {
+          display: inline-flex; align-items: center; gap: 14px; margin-top: 26px; padding: 14px 22px;
+          background: var(--surface-alt); border: 1px solid var(--border-2); border-radius: 6px;
+          font: 600 25px/1 var(--font-body); color: var(--text-strong);
+        }
+        .s7-status { display: flex; align-items: center; gap: 16px; margin-top: 22px; font: 500 25px/1.2 var(--font-body); color: var(--text-2); }
+        .s7-status:first-of-type { margin-top: 30px; }
+        .s7-dot { width: 28px; height: 28px; border-radius: 99px; background: var(--green-fg); position: relative; flex: none; }
+        .s7-dot svg { position: absolute; left: 6px; top: 6px; }
+        #s7-out { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--border); }
+        #s7-out-h { font: 600 28px/1 var(--font-head); color: var(--text-strong); }
+        #s7-out-t { font: 400 27px/1.45 var(--font-serif); color: var(--text-strong); margin-top: 12px; }
+        #s7-chart { position: absolute; left: 900px; top: 300px; width: 900px; }
+        .s7-row-label { font: 600 24px/1.2 var(--font-body); color: var(--text-strong); }
+        .s7-row-label span { font-weight: 400; color: var(--muted); }
+        .s7-bar { position: relative; height: 58px; margin-top: 14px; display: flex; transform-origin: left center; }
+        .s7-seg {
+          height: 58px; display: flex; align-items: center; justify-content: center;
+          font: 500 21px/1 var(--font-mono); color: var(--ink-fg); border-right: 2px solid var(--bg);
+        }
+        .s7-seg.old { background: #6f6656; }
+        .s7-seg.new { background: var(--accent-dark); }
+        .s7-seg.cached { background: var(--accent-line); color: var(--text-strong); }
+        .s7-end { position: absolute; top: 15px; font: 500 28px/1 var(--font-head); color: var(--text-2); white-space: nowrap; }
+        #s7-axis { position: relative; margin-top: 26px; height: 40px; border-top: 2px solid var(--border-2); }
+        .s7-tick { position: absolute; top: 10px; font: 400 21px/1 var(--font-body); color: var(--muted); white-space: nowrap; transform: translateX(-50%); }
+        #s7-hero { position: absolute; left: 900px; top: 700px; }
+        #s7-hero-n { font-size: 104px; line-height: 1; letter-spacing: -0.03em; color: var(--text-strong); }
+        #s7-hero-n em { font-style: normal; color: var(--accent); }
+        #s7-hero-s { font: 400 26px/1.35 var(--font-body); color: var(--text-2); margin-top: 14px; }
+      </style>
+
+      <div id="s7-root" data-composition-id="s7-docs" data-width="1920" data-height="1080">
+        <div id="s7-stage">
+          <div class="fig-head" id="s7-head">
+            <div class="fig-tag">Fig. 7 · Document pipeline</div>
+            <div class="fig-title">Document review, over <em>2x</em> faster</div>
+          </div>
+
+          <div class="card" id="s7-app">
+            <div id="s7-app-title">Analyze a document</div>
+            <div id="s7-file">
+              <svg width="24" height="28" viewBox="0 0 24 28"><path d="M3 2h12l6 6v18H3z" fill="none" stroke="#745a22" stroke-width="2" stroke-linejoin="round"/><path d="M15 2v6h6" fill="none" stroke="#745a22" stroke-width="2" stroke-linejoin="round"/></svg>
+              Rent_Agreement.pdf
+            </div>
+            <div class="s7-status"><div class="s7-dot"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#fbf7ec" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Reading the document…</div>
+            <div class="s7-status"><div class="s7-dot"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#fbf7ec" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Checking the law that applies…</div>
+            <div class="s7-status"><div class="s7-dot"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#fbf7ec" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Writing the analysis…</div>
+            <div id="s7-out">
+              <div id="s7-out-h">Legal Analysis</div>
+              <div id="s7-out-t"></div>
+            </div>
+          </div>
+
+          <div id="s7-chart">
+            <div class="s7-row-label" id="s7-l-old">Before <span>· 3 sequential LLM calls</span></div>
+            <div class="s7-bar" id="s7-bar-old" style="width:774px;">
+              <div class="s7-seg old" style="width:258px;">THINK</div>
+              <div class="s7-seg old" style="width:258px;">OBSERVE</div>
+              <div class="s7-seg old" style="width:258px;">ANALYZE</div>
+              <div class="s7-end num" id="s7-end-old" style="left:790px;">247–269 s</div>
+            </div>
+            <div class="s7-row-label" id="s7-l-new" style="margin-top:36px;">After <span>· 2 calls, THINK cached per document kind</span></div>
+            <div class="s7-bar" id="s7-bar-new" style="width:297px;">
+              <div class="s7-seg cached" style="width:84px; font-size:18px;">THINK</div>
+              <div class="s7-seg new" style="width:213px;">ANALYZE</div>
+              <div class="s7-end num" id="s7-end-new" style="left:313px;">99 s</div>
+            </div>
+            <div id="s7-axis">
+              <div class="s7-tick" style="left:0; transform:none;">0</div>
+              <div class="s7-tick" style="left:300px;">100 s</div>
+              <div class="s7-tick" style="left:600px;">200 s</div>
+              <div class="s7-tick" style="left:900px; transform:translateX(-100%);">300 s</div>
+            </div>
+          </div>
+
+          <div id="s7-hero">
+            <div id="s7-hero-n" class="num">~250 s → <em>99 s</em></div>
+            <div id="s7-hero-s">Rent agreement on qwen3:4b · FIR 220 → 103 s · first status in 1–2 s</div>
+          </div>
+
+          <div class="fig-source" id="s7-src">PR #55 and #57 · same documents, model fully on the GPU · no fallbacks in 4 runs (was 4 of 6)</div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const TEXT = "Monthly rent of Rs. 28,000 and one month's notice are both stated in the agreement.";
+          const out = document.getElementById("s7-out-t");
+          TEXT.split(" ").forEach((w, i) => {
+            if (i) out.appendChild(document.createTextNode(" "));
+            const s = document.createElement("span");
+            s.className = "s7-w";
+            s.textContent = w;
+            out.appendChild(s);
+          });
+
+          const tl = gsap.timeline({ paused: true });
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#s7-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#s7-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
+          tl.fromTo("#s7-app", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 0.3);
+          tl.fromTo(".s7-status", { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.35, stagger: 0.55, ease: "power2.out" }, 0.8);
+          tl.fromTo("#s7-out", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 2.4);
+          tl.set(".s7-w", { opacity: 0 }, 0);
+          tl.to(".s7-w", { opacity: 1, duration: 0.15, stagger: 0.12 }, 3.3);
+
+          tl.fromTo("#s7-l-old", { opacity: 0 }, { opacity: 1, duration: 0.35 }, 1.1);
+          tl.fromTo("#s7-bar-old", { scaleX: 0 }, { scaleX: 1, duration: 0.8, ease: "power2.out" }, 1.25);
+          tl.fromTo("#s7-end-old", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 2.1);
+          tl.fromTo("#s7-axis", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 1.3);
+          tl.fromTo("#s7-l-new", { opacity: 0 }, { opacity: 1, duration: 0.35 }, 2.3);
+          tl.fromTo("#s7-bar-new", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 2.45);
+          tl.fromTo("#s7-end-new", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 3.0);
+
+          tl.fromTo("#s7-hero", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out" }, 5.2);
+          tl.fromTo("#s7-src", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 5.6);
+          tl.to("#s7-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 8.0);
+          window.__timelines["s7-docs"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

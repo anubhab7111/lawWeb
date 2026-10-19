@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s8-root { position: absolute; inset: 0; overflow: hidden; }
+        #s8-stage { position: absolute; inset: 0; background: var(--bg); }
+        #s8-table { position: absolute; left: 120px; top: 290px; width: 860px; }
+        .s8-hdr, .s8-row { position: relative; display: flex; align-items: center; height: 60px; padding: 0 22px; }
+        .s8-hdr { height: 44px; font: 600 20px/1 var(--font-body); letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border-2); }
+        .s8-row { border-bottom: 1px solid var(--border); }
+        .s8-c1 { width: 420px; font: 500 26px/1 var(--font-mono); color: var(--text-strong); }
+        .s8-c2 { width: 150px; font-size: 32px; line-height: 1; color: var(--text-2); }
+        .s8-c3 { flex: 1; }
+        .s8-hdr .s8-c1, .s8-hdr .s8-c2 { font: inherit; color: inherit; }
+        .s8-gate { display: inline-block; padding: 8px 14px; border-radius: 99px; font: 600 20px/1 var(--font-body); }
+        .s8-gate.pass { background: var(--green-bg); color: var(--green-fg); }
+        .s8-gate.fail { background: var(--surface-alt); color: #6b5f4c; }
+        #s8-win-bg { position: absolute; left: 0; top: 104px; width: 860px; height: 60px; background: var(--accent-tint); border-left: 5px solid var(--accent); transform-origin: left center; }
+        #s8-rule {
+          position: absolute; left: 120px; top: 770px; width: 860px; padding: 22px 26px;
+          border: 1.5px dashed var(--accent-line); border-radius: 10px;
+          font: 400 24px/1.4 var(--font-body); color: var(--text-2);
+        }
+        #s8-rule b { font-weight: 600; color: var(--accent-dark); }
+        #s8-panel { position: absolute; left: 1060px; top: 290px; width: 740px; height: 600px; padding: 42px 46px; }
+        #s8-p-tag { font: 600 22px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-dark); }
+        #s8-p-name { font: 500 38px/1 var(--font-mono); color: var(--text-strong); margin-top: 16px; }
+        .s8-stat { margin-top: 38px; }
+        .s8-stat-k { font: 500 25px/1 var(--font-body); color: var(--text-2); }
+        .s8-stat-v { font-size: 74px; line-height: 1; color: var(--text-strong); margin-top: 10px; letter-spacing: -0.02em; }
+        .s8-stat-v .was { color: var(--muted); font-size: 52px; }
+        .s8-stat-v em { font-style: normal; color: var(--accent); }
+        .s8-stat-v.small { font-size: 50px; }
+        .s8-stat-v.small span { font: 400 26px/1 var(--font-body); color: var(--muted); }
+        .s8-stat-n { font: 400 22px/1.2 var(--font-body); color: var(--muted); margin-top: 8px; }
+      </style>
+
+      <div id="s8-root" data-composition-id="s8-models" data-width="1920" data-height="1080">
+        <div id="s8-stage">
+          <div class="fig-head" id="s8-head">
+            <div class="fig-tag">Fig. 8 · Model selection</div>
+            <div class="fig-title">Seven small models, <em>one</em> 4 GB GPU</div>
+          </div>
+
+          <div id="s8-table">
+            <div id="s8-win-bg"></div>
+            <div class="s8-hdr"><div class="s8-c1">Model</div><div class="s8-c2">Quality</div><div class="s8-c3">Gates</div></div>
+            <div class="s8-row"><div class="s8-c1">qwen3:4b (baseline)</div><div class="s8-c2 num">0.876</div><div class="s8-c3"><span class="s8-gate fail">fails no-leak</span></div></div>
+            <div class="s8-row"><div class="s8-c1">qwen3:4b-instruct</div><div class="s8-c2 num">0.872</div><div class="s8-c3"><span class="s8-gate pass">pass</span></div></div>
+            <div class="s8-row"><div class="s8-c1">llama3.2:3b</div><div class="s8-c2 num">0.836</div><div class="s8-c3"><span class="s8-gate pass">pass</span></div></div>
+            <div class="s8-row"><div class="s8-c1">granite4.2:3b</div><div class="s8-c2 num">0.826</div><div class="s8-c3"><span class="s8-gate fail">fails reliability</span></div></div>
+            <div class="s8-row"><div class="s8-c1">phi4-mini</div><div class="s8-c2 num">0.816</div><div class="s8-c3"><span class="s8-gate fail">fails no-leak</span></div></div>
+            <div class="s8-row"><div class="s8-c1">qwen2.5:3b-instruct</div><div class="s8-c2 num">0.806</div><div class="s8-c3"><span class="s8-gate pass">pass</span></div></div>
+            <div class="s8-row"><div class="s8-c1">nemotron-mini:4b</div><div class="s8-c2 num">0.484</div><div class="s8-c3"><span class="s8-gate fail">fails reliability</span></div></div>
+          </div>
+
+          <div id="s8-rule"><b>Decision rule, committed before any run:</b> pass every gate → within 0.03 of the best quality → fastest.</div>
+
+          <div class="card" id="s8-panel">
+            <div id="s8-p-tag">Selected</div>
+            <div id="s8-p-name">qwen3:4b-instruct</div>
+            <div class="s8-stat" id="s8-st1">
+              <div class="s8-stat-k">LLM call · first token</div>
+              <div class="s8-stat-v num"><span class="was">12.6 s →</span> <em>1.0 s</em></div>
+              <div class="s8-stat-n">starts after search + grading, ~14 s live</div>
+            </div>
+            <div class="s8-stat" id="s8-st2">
+              <div class="s8-stat-k">LLM call · median time</div>
+              <div class="s8-stat-v num"><span class="was">21.4 s →</span> <em>7.0 s</em></div>
+            </div>
+            <div class="s8-stat" id="s8-st3">
+              <div class="s8-stat-k">Quality vs baseline</div>
+              <div class="s8-stat-v small num">0.876 → 0.872 <span>a statistical tie</span></div>
+            </div>
+          </div>
+
+          <div class="fig-source" id="s8-src">Prompt replay times the LLM call alone, retrieval excluded · 37 scored items × 2 seeds · 798 calls · every model fully in VRAM</div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const tl = gsap.timeline({ paused: true });
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#s8-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#s8-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
+          tl.fromTo(".s8-hdr", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.55);
+          tl.fromTo(".s8-row", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.3, stagger: 0.12, ease: "power2.out" }, 0.7);
+          tl.fromTo(".s8-gate", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.25, stagger: 0.09, ease: "power2.out" }, 1.8);
+          tl.fromTo("#s8-rule", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 2.4);
+          tl.fromTo("#s8-win-bg", { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 0.5, ease: "power2.out" }, 4.2);
+          tl.fromTo("#s8-panel", { opacity: 0, x: 24 }, { opacity: 1, x: 0, duration: 0.55, ease: "power3.out" }, 4.5);
+          tl.fromTo("#s8-st1", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 5.8);
+          tl.fromTo("#s8-st2", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 6.6);
+          tl.fromTo("#s8-st3", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 7.6);
+          tl.fromTo("#s8-src", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 7.0);
+          tl.to("#s8-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 9.4);
+          window.__timelines["s8-models"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

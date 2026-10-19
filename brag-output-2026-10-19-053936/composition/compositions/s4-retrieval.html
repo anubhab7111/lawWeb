@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #s4-root { position: absolute; inset: 0; overflow: hidden; }
+        #s4-stage { position: absolute; inset: 0; background: var(--bg); }
+        #s4-svg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+        .s4-box {
+          position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+          background: var(--surface); border: 1.5px solid var(--border-2); border-radius: 9px;
+          box-shadow: 0 6px 16px rgba(30, 26, 17, 0.06);
+        }
+        .s4-box b { font: 500 28px/1 var(--font-mono); color: var(--text-strong); }
+        .s4-box i { font: normal 500 21px/1 var(--font-body); color: var(--muted); }
+        .s4-box.gold { background: var(--accent-tint); border-color: var(--accent-line); }
+        .s4-box.gold b { color: var(--accent-dark); }
+        .s4-idx { position: absolute; top: 604px; width: 520px; height: 246px; padding: 34px 38px; display: flex; flex-direction: column; }
+        .s4-idx-n { font-size: 84px; line-height: 1; color: var(--text-strong); letter-spacing: -0.02em; }
+        .s4-idx-k { font: 600 27px/1.2 var(--font-body); color: var(--text-strong); margin-top: 18px; }
+        .s4-idx-d { font: 400 23px/1.3 var(--font-body); color: var(--muted); margin-top: 8px; }
+        #s4-hero { position: absolute; left: 1270px; top: 292px; width: 530px; height: 558px; padding: 44px 48px; display: flex; flex-direction: column; }
+        #s4-hero-tag { font: 600 22px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-dark); }
+        #s4-hero-n { font-size: 150px; line-height: 0.9; color: var(--accent); margin-top: 36px; letter-spacing: -0.03em; }
+        #s4-hero-k { font: 500 30px/1 var(--font-mono); color: var(--text-strong); margin-top: 22px; }
+        #s4-hero-t { font: 400 30px/1.3 var(--font-serif); color: var(--text-2); margin-top: 10px; }
+        #s4-hero-rule { height: 1px; background: var(--border-2); margin: 30px 0 24px; }
+        #s4-hero-sub { font: 500 26px/1.3 var(--font-body); color: var(--text-strong); }
+        #s4-hero-fine { font: 400 22px/1.3 var(--font-body); color: var(--muted); margin-top: 8px; }
+      </style>
+
+      <div id="s4-root" data-composition-id="s4-retrieval" data-width="1920" data-height="1080">
+        <div id="s4-stage">
+          <div class="fig-head" id="s4-head">
+            <div class="fig-tag">Fig. 3 · Retrieval</div>
+            <div class="fig-title">Hybrid search, then <em>rerank</em></div>
+          </div>
+
+          <svg id="s4-svg" viewBox="0 0 1920 1080">
+            <defs>
+              <marker id="s4-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0L10 5L0 10z" fill="#6a6252" />
+              </marker>
+              <marker id="s4-ahg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0L10 5L0 10z" fill="#8c6f2f" />
+              </marker>
+            </defs>
+            <path id="s4-l1" d="M272 410 C305 410 305 345 332 345" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s4-ah)" />
+            <path id="s4-l2" d="M272 410 C305 410 305 475 332 475" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s4-ah)" />
+            <path id="s4-l3" d="M612 345 C650 345 650 410 682 410" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s4-ah)" />
+            <path id="s4-l4" d="M612 475 C650 475 650 410 682 410" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s4-ah)" />
+            <path id="s4-l5" d="M892 410 H962" stroke="#6a6252" stroke-width="2.5" fill="none" marker-end="url(#s4-ah)" />
+            <path id="s4-l6" d="M1192 410 H1262" stroke="#8c6f2f" stroke-width="2.5" fill="none" marker-end="url(#s4-ahg)" />
+          </svg>
+
+          <div class="s4-box" id="s4-q" style="left:120px; top:372px; width:152px; height:76px;"><b>query</b></div>
+          <div class="s4-box s4-mid" style="left:340px; top:302px; width:272px; height:86px;"><b>BM25</b><i>keyword</i></div>
+          <div class="s4-box s4-mid" style="left:340px; top:432px; width:272px; height:86px;"><b>BGE-M3</b><i>dense vectors</i></div>
+          <div class="s4-box" id="s4-rrf" style="left:690px; top:367px; width:202px; height:86px;"><b>RRF</b><i>rank fusion</i></div>
+          <div class="s4-box gold" id="s4-rr" style="left:970px; top:367px; width:222px; height:86px;"><b>rerank</b><i>cross-encoder</i></div>
+
+          <div class="card s4-idx" id="s4-idx1" style="left:120px;">
+            <div class="s4-idx-n num">15,100</div>
+            <div class="s4-idx-k">statute sections</div>
+            <div class="s4-idx-d">100 acts, rules &amp; IPC→BNS mapping tables</div>
+          </div>
+          <div class="card s4-idx" id="s4-idx2" style="left:672px;">
+            <div class="s4-idx-n num">1,074,755</div>
+            <div class="s4-idx-k">Supreme Court passages</div>
+            <div class="s4-idx-d">38,338 judgments · IVF4096-SQ8 + FTS5</div>
+          </div>
+
+          <div class="card" id="s4-hero">
+            <div id="s4-hero-tag">Retrieval accuracy</div>
+            <div id="s4-hero-n" class="num">0.897</div>
+            <div id="s4-hero-k">hit@3</div>
+            <div id="s4-hero-t">the right section is in the top three</div>
+            <div id="s4-hero-rule"></div>
+            <div id="s4-hero-sub">hit@1 0.744 · MRR 0.816</div>
+            <div id="s4-hero-fine">39 hand-written test questions · re-run Oct 14</div>
+          </div>
+
+          <div class="fig-source" id="s4-src">Reranker runs on the CPU, so the 4 GB GPU stays free for the language model.</div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const tl = gsap.timeline({ paused: true });
+          const draw = (id, at, dur) => {
+            const L = document.getElementById(id).getTotalLength();
+            tl.fromTo("#" + id, { strokeDasharray: L + " " + L, strokeDashoffset: L }, { strokeDashoffset: 0, duration: dur, ease: "power1.inOut" }, at);
+          };
+          // Fade through paper: hold hidden while the previous scene fades out, then fade in.
+          tl.fromTo("#s4-stage", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: (t) => (t < 0.5 ? 0 : 1 - Math.pow(2 - 2 * t, 2)) }, 0);
+          tl.fromTo("#s4-head", { y: 16 }, { y: 0, duration: 0.7, ease: "power2.out" }, 0);
+          tl.fromTo("#s4-q", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, 0.5);
+          draw("s4-l1", 0.8, 0.3);
+          draw("s4-l2", 0.8, 0.3);
+          tl.fromTo(".s4-mid", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.4, stagger: 0.12, ease: "power2.out" }, 1.6);
+          draw("s4-l3", 2.3, 0.3);
+          draw("s4-l4", 2.3, 0.3);
+          tl.fromTo("#s4-rrf", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, 2.9);
+          draw("s4-l5", 3.4, 0.25);
+          tl.fromTo("#s4-rr", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, 3.6);
+          tl.fromTo("#s4-idx1", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 3.6);
+          tl.fromTo("#s4-idx2", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 3.8);
+          draw("s4-l6", 4.0, 0.3);
+          tl.fromTo("#s4-hero", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out" }, 4.25);
+          const hv = { v: 0 };
+          const hEl = document.getElementById("s4-hero-n");
+          tl.fromTo(hv, { v: 0 }, { v: 0.897, duration: 0.9, ease: "power2.out", onUpdate: () => { hEl.textContent = hv.v.toFixed(3); } }, 4.35);
+          tl.fromTo("#s4-src", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 5.2);
+          tl.to("#s4-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 8.6);
+          window.__timelines["s4-retrieval"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>
