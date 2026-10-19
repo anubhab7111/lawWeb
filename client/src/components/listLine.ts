@@ -17,6 +17,14 @@ export function parseLine(raw: string): ParsedLine {
   return { indent, marker: null, text: rest };
 }
 
+// While an answer streams, a bold label's closing ** arrives a few tokens after the opening one;
+// close it early (or drop a bare trailing **) so raw asterisks never flash on screen.
+export function balanceBold(text: string): string {
+  const parts = text.split("**");
+  if (parts.length % 2 === 1) return text;
+  return parts[parts.length - 1] ? `${text}**` : text.slice(0, -2);
+}
+
 // Nesting comes from indentation relative to the list items still open above, so 2-space and
 // 4-space styles both step one level at a time; an unindented paragraph closes the list.
 export function depthTracker(): (line: ParsedLine) => number {

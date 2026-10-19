@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { depthTracker, parseLine } from "../src/components/listLine.ts";
+import { balanceBold, depthTracker, parseLine } from "../src/components/listLine.ts";
 
 function layout(text: string) {
   const depthOf = depthTracker();
@@ -94,4 +94,18 @@ test("a paragraph between lists restarts nesting", () => {
 test("details-block lines without markers are untouched", () => {
   const line = parseLine("<summary>Validation report</summary>");
   assert.deepEqual(line, { indent: 0, marker: null, text: "<summary>Validation report</summary>" });
+});
+
+test("a bold label still streaming renders bold instead of showing its asterisks", () => {
+  // Mid-stream frames of a real answer: the closing ** of a bullet's label arrives a few tokens later.
+  assert.equal(balanceBold("**Mandatory"), "**Mandatory**");
+  assert.equal(balanceBold("**Notice to the person** and **more"), "**Notice to the person** and **more**");
+  assert.equal(balanceBold("The officer **"), "The officer ");
+  assert.equal(balanceBold("**"), "");
+});
+
+test("complete or bold-free lines are left alone", () => {
+  for (const l of ["**Mandatory recording**: The officer must", "plain text", "*italic* text", "§ 41 and § 35", ""]) {
+    assert.equal(balanceBold(l), l);
+  }
 });
