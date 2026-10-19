@@ -1,7 +1,9 @@
 import { Fragment, type ReactNode } from "react";
+import { depthTracker, parseLine, type ParsedLine } from "./listLine";
 
 // Dependency-free renderer for the markdown the backend emits: headings,
-// **bold**, *italic*, `code`, [links](https://…), bullet and numbered lists,
+// **bold**, *italic*, `code`, [links](https://…), nested bullet and numbered
+// lists (including (i)/(a) enumerations),
 // horizontal rules, and the <details>/<summary> blocks of the validation
 // report (rendered collapsed; a block still open mid-stream runs to the end).
 
@@ -30,8 +32,8 @@ function stripHtmlTags(line: string): string {
   return line.replace(/<\/?(details|summary|strong)>/gi, (m) => (/strong/i.test(m) ? "**" : ""));
 }
 
-function renderLine(raw: string, key: string): ReactNode {
-  const trimmed = stripHtmlTags(raw).trim();
+function renderLine(raw: string, line: ParsedLine, depth: number, key: string): ReactNode {
+  const trimmed = line.text.trim();
   if (!trimmed) return raw.trim() ? null : <div key={key} style={{ height: 8 }} />;
 
   if (/^(-{3,}|\*{3,})$/.test(trimmed)) return <hr key={key} style={{ border: 0, borderTop: "1px solid var(--border)", margin: "12px 0" }} />;
@@ -45,22 +47,32 @@ function renderLine(raw: string, key: string): ReactNode {
     );
   }
 
-  const bullet = /^[•\-*]\s+/.test(trimmed);
-  const numbered = /^\d+[.)]\s+/.exec(trimmed);
-  const content = bullet ? trimmed.replace(/^[•\-*]\s+/, "") : trimmed;
+  if (!line.marker) {
+    return (
+      <div key={key} style={{ marginBottom: 2 }}>
+        <span>{renderInline(trimmed)}</span>
+      </div>
+    );
+  }
+
+  const bullet = line.marker.kind === "bullet";
   return (
-    <div key={key} style={{ display: "flex", gap: bullet || numbered ? 8 : 0, marginBottom: 2 }}>
-      {bullet && <span style={{ color: "var(--accent)", flex: "none" }}>•</span>}
-      <span>{renderInline(content)}</span>
+    <div key={key} style={{ display: "flex", gap: 8, marginBottom: 2, marginLeft: `${depth * 1.4}em` }}>
+      <span style={bullet ? { color: "var(--accent)", flex: "none" } : { flex: "none", minWidth: "1.7em", fontVariantNumeric: "tabular-nums" }}>
+        {bullet ? (depth ? "◦" : "•") : line.marker.label}
+      </span>
+      <span>{renderInline(trimmed)}</span>
     </div>
   );
 }
 
 function renderLines(lines: string[], keyPrefix: string): ReactNode[] {
   const out: ReactNode[] = [];
+  const depthOf = depthTracker();
   for (let i = 0; i < lines.length; i++) {
     if (!/^\s*<details>/i.test(lines[i])) {
-      out.push(renderLine(lines[i], `${keyPrefix}${i}`));
+      const line = parseLine(stripHtmlTags(lines[i]));
+      out.push(renderLine(lines[i], line, depthOf(line), `${keyPrefix}${i}`));
       continue;
     }
     let end = lines.findIndex((l, j) => j > i && /<\/details>/i.test(l));
