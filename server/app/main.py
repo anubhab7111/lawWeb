@@ -25,7 +25,8 @@ from app.routers import (
 from app.scheduler import get_scheduler, register_jobs
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 configure_logging(get_settings().log_level)
@@ -89,10 +90,28 @@ app = FastAPI(
     title="Legal Platform API",
     description="AI-powered legal assistant with document analysis, crime reporting guidance, lawyer search, auth, and bookings.",
     version="1.0.0",
-    docs_url="/docs",
+    docs_url=None,
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+SWAGGER_UI_VERSION = "5.17.14"
+FORCE_LIGHT_HEAD = (
+    '<meta name="color-scheme" content="only light">'
+    "<style>:root{color-scheme:only light}html,body{background:#fff}</style>"
+)
+
+
+@app.get("/docs", include_in_schema=False)
+async def swagger_docs() -> HTMLResponse:
+    page = get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+        swagger_js_url=f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui-bundle.js",
+        swagger_css_url=f"https://cdn.jsdelivr.net/npm/swagger-ui-dist@{SWAGGER_UI_VERSION}/swagger-ui.css",
+    )
+    html = page.body.decode().replace("</head>", f"{FORCE_LIGHT_HEAD}</head>", 1)
+    return HTMLResponse(html)
 
 
 app.add_middleware(
